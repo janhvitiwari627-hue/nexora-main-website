@@ -6,11 +6,23 @@ const app = await readFile(
   new URL("../app/nexora-app.tsx", import.meta.url),
   "utf8",
 );
+const nextConfig = await readFile(
+  new URL("../next.config.ts", import.meta.url),
+  "utf8",
+);
 
 test("active login client accepts the configured Vite Supabase variables", () => {
   assert.match(app, /\(import\.meta as ImportMeta/);
   assert.match(app, /viteEnv\.VITE_SUPABASE_URL/);
   assert.match(app, /viteEnv\.VITE_SUPABASE_ANON_KEY/);
+  assert.match(
+    nextConfig,
+    /NEXT_PUBLIC_SUPABASE_URL:[\s\S]*process\.env\.VITE_SUPABASE_URL/,
+  );
+  assert.match(
+    nextConfig,
+    /NEXT_PUBLIC_SUPABASE_ANON_KEY:[\s\S]*process\.env\.VITE_SUPABASE_ANON_KEY/,
+  );
 });
 
 test("password auth and the staging profile role contract stay aligned", () => {
