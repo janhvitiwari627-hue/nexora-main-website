@@ -580,7 +580,7 @@ function BookingPage({
       if (!bookingId) throw new Error("Booking was created, but its payment reference was not returned.");
 
       const { data: orderData, error: orderError } = await client.functions.invoke<RazorpayOrder>("razorpay-create-order", {
-        body: { booking_id: bookingId },
+        body: { booking_id: bookingId, stage: "advance" },
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
       if (orderError) throw orderError;

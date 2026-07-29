@@ -32,6 +32,7 @@ test("booking guard does not alter roles and uses the existing payment contracts
   assert.doesNotMatch(app, /updateUser\([\s\S]*platform_role/);
   assert.match(app, /client\.rpc\("create_customer_booking"/);
   assert.match(app, /client\.functions\.invoke<RazorpayOrder>\("razorpay-create-order"/);
+  assert.match(app, /body: \{ booking_id: bookingId, stage: "advance" \}/);
   assert.match(app, /description: order\.description \?\? "25% booking advance"/);
   assert.doesNotMatch(app, /price_paise\s*\*\s*0\.25|price_paise\s*\/\s*4/);
 });
