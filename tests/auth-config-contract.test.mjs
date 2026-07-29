@@ -8,7 +8,7 @@ const app = await readFile(
 );
 
 test("active login client accepts the configured Vite Supabase variables", () => {
-  assert.match(app, /import\.meta\.env/);
+  assert.match(app, /\(import\.meta as ImportMeta/);
   assert.match(app, /viteEnv\.VITE_SUPABASE_URL/);
   assert.match(app, /viteEnv\.VITE_SUPABASE_ANON_KEY/);
 });

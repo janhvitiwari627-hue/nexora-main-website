@@ -51,7 +51,10 @@ type RazorpayOrder = {
   description?: string;
 };
 
-const viteEnv = import.meta.env as Record<string, string | undefined>;
+const viteEnv =
+  (import.meta as ImportMeta & {
+    env?: Record<string, string | undefined>;
+  }).env ?? {};
 const supabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL ??
   viteEnv.VITE_SUPABASE_URL ??
