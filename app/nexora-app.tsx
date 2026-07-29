@@ -545,6 +545,12 @@ function BookingPage({
     try {
       const client = getClient();
       if (!client) throw new Error("Staging connection is not configured.");
+      const { data: { session }, error: sessionError } = await client.auth.getSession();
+      if (sessionError || !session?.access_token) {
+        setMessage("Your Customer session expired. Please log in again to continue booking.");
+        navigate(`${customerLoginPath}&reason=session-expired`);
+        return;
+      }
       const appointmentStart = new Date(`${date}T${time}:00`);
       if (Number.isNaN(appointmentStart.valueOf()) || appointmentStart <= new Date()) {
         throw new Error("Choose a future appointment date and time.");
@@ -563,6 +569,7 @@ function BookingPage({
 
       const { data: orderData, error: orderError } = await client.functions.invoke<RazorpayOrder>("razorpay-create-order", {
         body: { booking_id: bookingId },
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
       if (orderError) throw orderError;
       const order = orderData ?? {};
@@ -614,13 +621,14 @@ function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (pat
   const params = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
   const requested = params.get("role");
   const requestedReturnTo = params.get("returnTo");
+  const reason = params.get("reason");
   const returnTo = requestedReturnTo?.startsWith("/") && !requestedReturnTo.startsWith("//") ? requestedReturnTo : null;
   const [role, setRole] = useState<Role>(requested === "owner" ? "business_user" : requested === "growth-partner" ? "growth_partner" : "customer");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(reason === "session-expired" ? "Your Customer session expired. Log in again to continue booking." : "");
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setMessage("");
     try {

@@ -36,6 +36,15 @@ test("booking guard does not alter roles and uses the existing payment contracts
   assert.doesNotMatch(app, /price_paise\s*\*\s*0\.25|price_paise\s*\/\s*4/);
 });
 
+test("Razorpay order invocation explicitly uses the logged-in Customer JWT", () => {
+  assert.match(app, /client\.auth\.getSession\(\)/);
+  assert.match(app, /if \(sessionError \|\| !session\?\.access_token\)/);
+  assert.match(app, /headers: \{ Authorization: `Bearer \$\{session\.access_token\}` \}/);
+  assert.doesNotMatch(app, /Authorization: `Bearer \$\{supabaseKey\}`/);
+  assert.doesNotMatch(app, /Authorization:\s*supabaseKey/);
+  assert.match(app, /reason=session-expired/);
+});
+
 test("booking preserves salon and optional service context through Customer login", () => {
   assert.match(app, /const bookingReturnPath = `\/booking\/\$\{encodeURIComponent\(slug\)\}`/);
   assert.match(app, /returnTo=\$\{encodeURIComponent\(destination\)\}/);
