@@ -97,7 +97,7 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
         return;
       }
 
-      setAuthState({ loading: false, session });
+      setAuthState({ loading: true, session });
       const { data: profile } = await client
         .from("profiles")
         .select("platform_role,is_active")
@@ -132,16 +132,16 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const signOut = () => {
+  const signOut = async (destination = "/") => {
     setAuthState({ loading: false, session: null });
-    navigate("/");
-    void getClient()?.auth.signOut();
+    await getClient()?.auth.signOut();
+    navigate(destination);
   };
 
   let content: React.ReactNode;
   if (path === "/salons") content = <CatalogPage navigate={navigate} online={online} />;
   else if (path.startsWith("/salons/"))
-    content = <SalonPage slug={decodeURIComponent(path.slice(8))} navigate={navigate} online={online} />;
+    content = <SalonPage slug={decodeURIComponent(path.slice(8))} navigate={navigate} online={online} authState={authState} signOut={signOut} />;
   else if (path === "/terms") content = <LegalPage type="terms" />;
   else if (path === "/privacy") content = <LegalPage type="privacy" />;
   else if (path === "/cancellation-refund") content = <LegalPage type="refund" />;
@@ -170,7 +170,7 @@ function Header({
 }: {
   navigate: (path: string) => void;
   authState: AuthState;
-  signOut: () => void;
+  signOut: (destination?: string) => Promise<void>;
 }) {
   const dashboardLabel =
     authState.role === "business_user"
@@ -196,7 +196,7 @@ function Header({
         {authState.session ? (
           <>
             <button className="nav-cta" onClick={() => navigate(dashboardPath)}>{dashboardLabel}</button>
-            <button onClick={signOut}>Sign out</button>
+            <button onClick={() => void signOut()}>Sign out</button>
           </>
         ) : (
           !authState.loading && <button className="nav-cta" onClick={() => navigate("/login")}>Log in</button>
@@ -347,10 +347,24 @@ function SalonCard({ item, navigate }: { item: CatalogItem; navigate: (path: str
   );
 }
 
-function SalonPage({ slug, navigate, online }: { slug: string; navigate: (path: string) => void; online: boolean }) {
+function SalonPage({
+  slug,
+  navigate,
+  online,
+  authState,
+  signOut,
+}: {
+  slug: string;
+  navigate: (path: string) => void;
+  online: boolean;
+  authState: AuthState;
+  signOut: (destination?: string) => Promise<void>;
+}) {
   const [item, setItem] = useState<CatalogItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [roleMismatch, setRoleMismatch] = useState(false);
+  const [switchingAccount, setSwitchingAccount] = useState(false);
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
@@ -371,9 +385,28 @@ function SalonPage({ slug, navigate, online }: { slug: string; navigate: (path: 
   const config = item.website.config as { profile?: Record<string, unknown>; services?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; offers?: Array<Record<string, unknown>> };
   const services = Array.isArray(config.services) ? config.services : [];
   const openingHours = config.profile?.opening_hours as Record<string, unknown> | undefined;
+  const bookingReturnPath = `/salons/${encodeURIComponent(slug)}?book=1`;
+  const customerLoginPath = `/login?role=customer&returnTo=${encodeURIComponent(bookingReturnPath)}`;
+  const startBooking = () => {
+    if (authState.loading) return;
+    if (!authState.session) {
+      navigate(customerLoginPath);
+      return;
+    }
+    if (authState.role === "customer") {
+      navigate(`/dashboard/customer?salon=${encodeURIComponent(slug)}&intent=book`);
+      return;
+    }
+    setRoleMismatch(true);
+  };
+  const switchToCustomer = async () => {
+    setSwitchingAccount(true);
+    await signOut(customerLoginPath);
+  };
   return (
     <main>
-      <section className="store-hero"><span className="verified-pill">✓ Nexora verified</span><h1>{item.name}</h1><p>{String(config.profile?.description ?? item.description ?? "Professional beauty services with easy online booking.")}</p><div className="store-facts"><span>★ {Number(item.rating_average).toFixed(1)} rating</span><span>⌖ {item.area ?? item.city}, {item.city}</span></div><button className="primary" onClick={() => navigate("/login?role=customer")}>Book appointment</button></section>
+      <section className="store-hero"><span className="verified-pill">✓ Nexora verified</span><h1>{item.name}</h1><p>{String(config.profile?.description ?? item.description ?? "Professional beauty services with easy online booking.")}</p><div className="store-facts"><span>★ {Number(item.rating_average).toFixed(1)} rating</span><span>⌖ {item.area ?? item.city}, {item.city}</span></div><button className="primary" disabled={authState.loading} onClick={startBooking}>{authState.loading ? "Checking account…" : "Book appointment"}</button></section>
+      {roleMismatch && <section className="role-mismatch" role="alert" aria-labelledby="booking-role-title"><div className="role-mismatch-card"><span className="eyebrow">Switch account</span><h2 id="booking-role-title">Customer account required</h2><p>Booking is only available for Customer accounts. Please sign out and log in with a Customer account.</p><div className="button-row"><button className="primary" disabled={switchingAccount} onClick={() => void switchToCustomer()}>{switchingAccount ? "Signing out…" : "Sign out and continue as Customer"}</button><button className="secondary" onClick={() => setRoleMismatch(false)}>Back to salon</button><button className="text-button" onClick={() => navigate(authState.role ? `/dashboard/${authState.role}` : "/dashboard")}>Go to my dashboard</button></div></div></section>}
       <section className="section"><div className="section-heading"><span className="eyebrow">Services</span><h2>Choose your service</h2></div>
       {!services.length ? <StateCard title="Services are being updated" text="Please check back soon." /> : <div className="service-grid">{services.map((service, index) => <article className="service-card" key={String(service.id ?? index)}><div><h3>{String(service.name ?? "Salon service")}</h3><p>{String(service.description ?? "Professional salon service")}</p><small>{Number(service.duration_minutes ?? 0)} minutes</small></div><b>{money(Number(service.price_paise ?? 0))}</b></article>)}</div>}</section>
       <section className="section salon-info"><div><span className="eyebrow">Visit</span><h2>{item.name}</h2><p>{item.address}, {item.city}</p>{openingHours && <p>Open {String(openingHours.opens ?? "—")}–{String(openingHours.closes ?? "—")}</p>}</div><button className="secondary" onClick={() => navigate("/cancellation-refund")}>Cancellation policy</button></section>
@@ -384,6 +417,8 @@ function SalonPage({ slug, navigate, online }: { slug: string; navigate: (path: 
 function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (path: string) => void }) {
   const params = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
   const requested = params.get("role");
+  const requestedReturnTo = params.get("returnTo");
+  const returnTo = requestedReturnTo?.startsWith("/") && !requestedReturnTo.startsWith("//") ? requestedReturnTo : null;
   const [role, setRole] = useState<Role>(requested === "owner" ? "business_user" : requested === "growth-partner" ? "growth_partner" : "customer");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -408,7 +443,7 @@ function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (pat
       const { data: profile, error: profileError } = await client.from("profiles").select("platform_role,is_active").eq("id", user.id).single();
       if (profileError) throw profileError;
       if (!profile.is_active) { await client.auth.signOut(); throw new Error("This account is inactive. Contact Nexora support."); }
-      navigate(`/dashboard/${profile.platform_role}`);
+      navigate(profile.platform_role === "customer" && returnTo ? returnTo : `/dashboard/${profile.platform_role}`);
     } catch (cause) { setMessage(friendlyError(cause)); } finally { setBusy(false); }
   };
   return (
@@ -427,7 +462,7 @@ function DashboardPage({
   signOut,
 }: {
   navigate: (path: string) => void;
-  signOut: () => void;
+  signOut: (destination?: string) => Promise<void>;
 }) {
   const [state, setState] = useState<{ loading: boolean; role?: Role; name?: string; error?: string }>({ loading: true });
   const load = useCallback(async () => {
@@ -449,7 +484,7 @@ function DashboardPage({
   if (state.loading) return <main className="center-page"><div className="loader" aria-label="Loading dashboard" /></main>;
   if (state.error) return <main className="center-page"><StateCard title="Dashboard unavailable" text={state.error} action="Retry" onAction={load} /></main>;
   const label = state.role === "business_user" ? "Shop Owner" : state.role === "growth_partner" ? "Growth Partner" : "Customer";
-  return <main className="section page-top"><div className="dashboard-hero"><span className="eyebrow">{label} dashboard</span><h1>Welcome, {state.name}</h1><p>Your session is protected by the assigned Nexora role. Data access remains limited by staging RLS.</p></div><RoleWorkspace role={state.role!} navigate={navigate} /><button className="secondary signout" onClick={signOut}>Sign out</button></main>;
+  return <main className="section page-top"><div className="dashboard-hero"><span className="eyebrow">{label} dashboard</span><h1>Welcome, {state.name}</h1><p>Your session is protected by the assigned Nexora role. Data access remains limited by staging RLS.</p></div><RoleWorkspace role={state.role!} navigate={navigate} /><button className="secondary signout" onClick={() => void signOut()}>Sign out</button></main>;
 }
 
 type Proposal = {
