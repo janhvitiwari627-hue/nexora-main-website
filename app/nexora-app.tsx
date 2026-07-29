@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { createClient, Session, SupabaseClient } from "@supabase/supabase-js";
 
 type Role = "customer" | "business_user" | "growth_partner";
 type Salon = {
@@ -26,6 +26,11 @@ type Website = {
   published_at: string | null;
 };
 type CatalogItem = Salon & { website: Website };
+type AuthState = {
+  loading: boolean;
+  session: Session | null;
+  role?: Role;
+};
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -57,6 +62,10 @@ function friendlyError(error: unknown) {
 export function NexoraApp({ initialPath }: { initialPath: string }) {
   const [path, setPath] = useState(initialPath);
   const [online, setOnline] = useState(true);
+  const [authState, setAuthState] = useState<AuthState>({
+    loading: Boolean(supabaseUrl && supabaseKey),
+    session: null,
+  });
 
   useEffect(() => {
     const sync = () => setOnline(navigator.onLine);
@@ -72,10 +81,61 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
     };
   }, []);
 
+  useEffect(() => {
+    const client = getClient();
+    if (!client) return;
+
+    let active = true;
+    let sessionRevision = 0;
+
+    const syncSession = async (session: Session | null) => {
+      const revision = ++sessionRevision;
+      if (!active) return;
+
+      if (!session) {
+        setAuthState({ loading: false, session: null });
+        return;
+      }
+
+      setAuthState({ loading: false, session });
+      const { data: profile } = await client
+        .from("profiles")
+        .select("platform_role,is_active")
+        .eq("id", session.user.id)
+        .single();
+
+      if (!active || revision !== sessionRevision) return;
+      setAuthState({
+        loading: false,
+        session,
+        role: profile?.is_active ? profile.platform_role : undefined,
+      });
+    };
+
+    void client.auth.getSession().then(({ data }) => syncSession(data.session));
+    const {
+      data: { subscription },
+    } = client.auth.onAuthStateChange((_event, session) => {
+      window.setTimeout(() => void syncSession(session), 0);
+    });
+
+    return () => {
+      active = false;
+      sessionRevision += 1;
+      subscription.unsubscribe();
+    };
+  }, []);
+
   const navigate = (target: string) => {
     window.history.pushState({}, "", target);
     setPath(new URL(target, window.location.origin).pathname);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const signOut = () => {
+    setAuthState({ loading: false, session: null });
+    navigate("/");
+    void getClient()?.auth.signOut();
   };
 
   let content: React.ReactNode;
@@ -88,7 +148,7 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   else if (path === "/login" || path === "/signup")
     content = <AuthPage mode={path === "/login" ? "login" : "signup"} navigate={navigate} />;
   else if (path.startsWith("/dashboard"))
-    content = <DashboardPage navigate={navigate} />;
+    content = <DashboardPage navigate={navigate} signOut={signOut} />;
   else if (path === "/customer" || path === "/owner" || path === "/growth-partner")
     content = <RoleEntry path={path} navigate={navigate} />;
   else content = <HomePage navigate={navigate} online={online} />;
@@ -96,14 +156,32 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   return (
     <div className="site-shell">
       {!online && <div className="offline-banner">Offline — live salon and account data may be unavailable.</div>}
-      <Header navigate={navigate} />
+      <Header navigate={navigate} authState={authState} signOut={signOut} />
       {content}
       <Footer navigate={navigate} />
     </div>
   );
 }
 
-function Header({ navigate }: { navigate: (path: string) => void }) {
+function Header({
+  navigate,
+  authState,
+  signOut,
+}: {
+  navigate: (path: string) => void;
+  authState: AuthState;
+  signOut: () => void;
+}) {
+  const dashboardLabel =
+    authState.role === "business_user"
+      ? "Shop Owner dashboard"
+      : authState.role === "growth_partner"
+        ? "Growth Partner dashboard"
+        : authState.role === "customer"
+          ? "Customer dashboard"
+          : "Account";
+  const dashboardPath = authState.role ? `/dashboard/${authState.role}` : "/dashboard";
+
   return (
     <header className="topbar">
       <button className="brand" onClick={() => navigate("/")} aria-label="Nexora home">
@@ -115,7 +193,14 @@ function Header({ navigate }: { navigate: (path: string) => void }) {
         <button onClick={() => navigate("/customer")}>Customer</button>
         <button onClick={() => navigate("/owner")}>Shop Owner</button>
         <button onClick={() => navigate("/growth-partner")}>Growth Partner</button>
-        <button className="nav-cta" onClick={() => navigate("/login")}>Log in</button>
+        {authState.session ? (
+          <>
+            <button className="nav-cta" onClick={() => navigate(dashboardPath)}>{dashboardLabel}</button>
+            <button onClick={signOut}>Sign out</button>
+          </>
+        ) : (
+          !authState.loading && <button className="nav-cta" onClick={() => navigate("/login")}>Log in</button>
+        )}
       </nav>
     </header>
   );
@@ -336,7 +421,13 @@ function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (pat
   );
 }
 
-function DashboardPage({ navigate }: { navigate: (path: string) => void }) {
+function DashboardPage({
+  navigate,
+  signOut,
+}: {
+  navigate: (path: string) => void;
+  signOut: () => void;
+}) {
   const [state, setState] = useState<{ loading: boolean; role?: Role; name?: string; error?: string }>({ loading: true });
   const load = useCallback(async () => {
     setState({ loading: true });
@@ -357,7 +448,7 @@ function DashboardPage({ navigate }: { navigate: (path: string) => void }) {
   if (state.loading) return <main className="center-page"><div className="loader" aria-label="Loading dashboard" /></main>;
   if (state.error) return <main className="center-page"><StateCard title="Dashboard unavailable" text={state.error} action="Retry" onAction={load} /></main>;
   const label = state.role === "business_user" ? "Shop Owner" : state.role === "growth_partner" ? "Growth Partner" : "Customer";
-  return <main className="section page-top"><div className="dashboard-hero"><span className="eyebrow">{label} dashboard</span><h1>Welcome, {state.name}</h1><p>Your session is protected by the assigned Nexora role. Data access remains limited by staging RLS.</p></div><RoleWorkspace role={state.role!} navigate={navigate} /><button className="secondary signout" onClick={async () => { await getClient()?.auth.signOut(); navigate("/"); }}>Sign out</button></main>;
+  return <main className="section page-top"><div className="dashboard-hero"><span className="eyebrow">{label} dashboard</span><h1>Welcome, {state.name}</h1><p>Your session is protected by the assigned Nexora role. Data access remains limited by staging RLS.</p></div><RoleWorkspace role={state.role!} navigate={navigate} /><button className="secondary signout" onClick={signOut}>Sign out</button></main>;
 }
 
 type Proposal = {
