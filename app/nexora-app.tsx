@@ -370,12 +370,13 @@ function SalonPage({ slug, navigate, online }: { slug: string; navigate: (path: 
   if (error || !item) return <main className="center-page"><StateCard title="Salon unavailable" text={error || "This website is not public."} action="Back to salons" onAction={() => navigate("/salons")} /></main>;
   const config = item.website.config as { profile?: Record<string, unknown>; services?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; offers?: Array<Record<string, unknown>> };
   const services = Array.isArray(config.services) ? config.services : [];
+  const openingHours = config.profile?.opening_hours as Record<string, unknown> | undefined;
   return (
     <main>
       <section className="store-hero"><span className="verified-pill">✓ Nexora verified</span><h1>{item.name}</h1><p>{String(config.profile?.description ?? item.description ?? "Professional beauty services with easy online booking.")}</p><div className="store-facts"><span>★ {Number(item.rating_average).toFixed(1)} rating</span><span>⌖ {item.area ?? item.city}, {item.city}</span></div><button className="primary" onClick={() => navigate("/login?role=customer")}>Book appointment</button></section>
       <section className="section"><div className="section-heading"><span className="eyebrow">Services</span><h2>Choose your service</h2></div>
       {!services.length ? <StateCard title="Services are being updated" text="Please check back soon." /> : <div className="service-grid">{services.map((service, index) => <article className="service-card" key={String(service.id ?? index)}><div><h3>{String(service.name ?? "Salon service")}</h3><p>{String(service.description ?? "Professional salon service")}</p><small>{Number(service.duration_minutes ?? 0)} minutes</small></div><b>{money(Number(service.price_paise ?? 0))}</b></article>)}</div>}</section>
-      <section className="section salon-info"><div><span className="eyebrow">Visit</span><h2>{item.name}</h2><p>{item.address}, {item.city}</p></div><button className="secondary" onClick={() => navigate("/cancellation-refund")}>Cancellation policy</button></section>
+      <section className="section salon-info"><div><span className="eyebrow">Visit</span><h2>{item.name}</h2><p>{item.address}, {item.city}</p>{openingHours && <p>Open {String(openingHours.opens ?? "—")}–{String(openingHours.closes ?? "—")}</p>}</div><button className="secondary" onClick={() => navigate("/cancellation-refund")}>Cancellation policy</button></section>
     </main>
   );
 }
@@ -453,29 +454,293 @@ function DashboardPage({
 
 type Proposal = {
   id: string;
+  onboarding_application_id: string;
   salon_id: string | null;
+  owner_user_id: string | null;
   owner_email: string | null;
   status: string;
   payload: Record<string, unknown>;
   version: number;
+  owner_notes: string | null;
+  submitted_at: string | null;
+  published_at: string | null;
   updated_at: string;
 };
+
+type ServiceDraft = {
+  key: string;
+  name: string;
+  description: string;
+  price: string;
+  duration: string;
+};
+
+type PartnerState = {
+  id: string;
+  status: string;
+  partner_code: string;
+};
+
+const emptyService = (): ServiceDraft => ({
+  key: crypto.randomUUID(),
+  name: "",
+  description: "",
+  price: "",
+  duration: "30",
+});
+
+function GrowthPartnerProposalForm({ onSubmitted }: { onSubmitted: () => Promise<void> }) {
+  const [businessName, setBusinessName] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [city, setCity] = useState("");
+  const [area, setArea] = useState("");
+  const [address, setAddress] = useState("");
+  const [description, setDescription] = useState("");
+  const [openingTime, setOpeningTime] = useState("09:00");
+  const [closingTime, setClosingTime] = useState("20:00");
+  const [templateKey, setTemplateKey] = useState("modern-salon");
+  const [logoUrl, setLogoUrl] = useState("");
+  const [coverUrl, setCoverUrl] = useState("");
+  const [services, setServices] = useState<ServiceDraft[]>(() => [emptyService()]);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const ensurePartner = async (client: SupabaseClient, userId: string): Promise<PartnerState> => {
+    const { data: existing, error: readError } = await client
+      .from("growth_partners")
+      .select("id,status,partner_code")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (readError) throw readError;
+    if (existing) return existing as PartnerState;
+
+    const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
+    const { data: created, error: createError } = await client
+      .from("growth_partners")
+      .insert({
+        user_id: userId,
+        partner_code: `NXR${suffix}`,
+        referral_code: `REF${suffix}`,
+        status: "applied",
+      })
+      .select("id,status,partner_code")
+      .single();
+    if (createError) throw createError;
+    return created as PartnerState;
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setMessage("");
+    try {
+      const client = getClient();
+      if (!client) throw new Error("Staging connection is not configured.");
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) throw new Error("Your session expired. Log in again.");
+      if (!services.length || services.some((service) => !service.name.trim() || Number(service.price) < 0 || Number(service.duration) < 1)) {
+        throw new Error("Add at least one service with a name, valid price, and duration.");
+      }
+
+      const partner = await ensurePartner(client, user.id);
+      const lowestPrice = Math.min(...services.map((service) => Math.round(Number(service.price) * 100)));
+      const { data: application, error: applicationError } = await client
+        .from("shop_onboarding_applications")
+        .insert({
+          submitted_by_partner_id: partner.id,
+          status: "draft",
+          current_step: 6,
+          owner_email: ownerEmail.trim().toLowerCase(),
+          owner_phone: phone.trim(),
+          shop_name: businessName.trim(),
+          city: city.trim(),
+          locality: area.trim(),
+          full_address: address.trim(),
+          opening_time: openingTime,
+          closing_time: closingTime,
+          starting_price_paise: lowestPrice,
+          about_shop: description.trim(),
+          website_template: templateKey,
+        })
+        .select("id")
+        .single();
+      if (applicationError) throw applicationError;
+
+      const payload = {
+        profile: {
+          name: businessName.trim(),
+          description: description.trim(),
+          phone: phone.trim(),
+          email: ownerEmail.trim().toLowerCase(),
+          address: address.trim(),
+          area: area.trim(),
+          city: city.trim(),
+          logo_url: logoUrl.trim(),
+          cover_url: coverUrl.trim(),
+          starting_price_paise: lowestPrice,
+          opening_hours: { opens: openingTime, closes: closingTime },
+        },
+        services: services.map((service) => ({
+          name: service.name.trim(),
+          description: service.description.trim(),
+          price_paise: Math.round(Number(service.price) * 100),
+          duration_minutes: Number(service.duration),
+        })),
+        staff: [],
+        photos: coverUrl.trim() ? [{ url: coverUrl.trim(), title: `${businessName.trim()} cover`, is_cover: true }] : [],
+        offers: [],
+        template: { key: templateKey },
+      };
+      const { error: proposalError } = await client.rpc("save_growth_partner_salon_setup", {
+        p_application_id: application.id,
+        p_payload: payload,
+        p_submit: true,
+      });
+      if (proposalError) throw proposalError;
+
+      setBusinessName("");
+      setOwnerEmail("");
+      setPhone("");
+      setCity("");
+      setArea("");
+      setAddress("");
+      setDescription("");
+      setLogoUrl("");
+      setCoverUrl("");
+      setServices([emptyService()]);
+      setMessage("Proposal submitted privately for Shop Owner review.");
+      await onSubmitted();
+    } catch (cause) {
+      setMessage(friendlyError(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="workspace-card">
+      <div className="workspace-heading">
+        <div><span className="eyebrow">Salon setup</span><h2>Create website proposal</h2></div>
+        <span className="private-pill">Private until Owner publishes</span>
+      </div>
+      <form className="proposal-form" onSubmit={submit}>
+        <div className="form-grid">
+          <label>Salon / business name<input required maxLength={160} value={businessName} onChange={(event) => setBusinessName(event.target.value)} /></label>
+          <label>Shop Owner email<input required type="email" value={ownerEmail} onChange={(event) => setOwnerEmail(event.target.value)} /></label>
+          <label>Phone / contact<input required maxLength={30} value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
+          <label>City<input required maxLength={100} value={city} onChange={(event) => setCity(event.target.value)} /></label>
+          <label>Area / locality<input required maxLength={160} value={area} onChange={(event) => setArea(event.target.value)} /></label>
+          <label className="wide-field">Full address<textarea required rows={3} value={address} onChange={(event) => setAddress(event.target.value)} /></label>
+          <label className="wide-field">Salon description<textarea required rows={4} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+          <label>Opening time<input required type="time" value={openingTime} onChange={(event) => setOpeningTime(event.target.value)} /></label>
+          <label>Closing time<input required type="time" value={closingTime} onChange={(event) => setClosingTime(event.target.value)} /></label>
+          <label>Website theme<select value={templateKey} onChange={(event) => setTemplateKey(event.target.value)}><option value="modern-salon">Modern salon</option><option value="minimal-studio">Minimal studio</option><option value="luxury-beauty">Luxury beauty</option></select></label>
+          <label>Logo URL (optional)<input type="url" placeholder="https://…" value={logoUrl} onChange={(event) => setLogoUrl(event.target.value)} /></label>
+          <label className="wide-field">Cover photo URL (optional)<input type="url" placeholder="https://…" value={coverUrl} onChange={(event) => setCoverUrl(event.target.value)} /></label>
+        </div>
+        <div className="service-editor">
+          <div className="workspace-heading"><div><h3>Services</h3><p>Prices are stored securely and published only after Owner approval.</p></div><button type="button" className="secondary compact" onClick={() => setServices((current) => [...current, emptyService()])}>Add service</button></div>
+          {services.map((service, index) => (
+            <div className="service-row" key={service.key}>
+              <label>Service name<input required value={service.name} onChange={(event) => setServices((current) => current.map((item) => item.key === service.key ? { ...item, name: event.target.value } : item))} /></label>
+              <label>Price (₹)<input required type="number" min="0" step="1" value={service.price} onChange={(event) => setServices((current) => current.map((item) => item.key === service.key ? { ...item, price: event.target.value } : item))} /></label>
+              <label>Duration (minutes)<input required type="number" min="1" step="1" value={service.duration} onChange={(event) => setServices((current) => current.map((item) => item.key === service.key ? { ...item, duration: event.target.value } : item))} /></label>
+              <label className="service-description">Description<input value={service.description} onChange={(event) => setServices((current) => current.map((item) => item.key === service.key ? { ...item, description: event.target.value } : item))} /></label>
+              {services.length > 1 && <button type="button" className="text-button remove-service" aria-label={`Remove service ${index + 1}`} onClick={() => setServices((current) => current.filter((item) => item.key !== service.key))}>Remove</button>}
+            </div>
+          ))}
+        </div>
+        {message && <div className="form-message" role="status">{message}</div>}
+        <button className="primary" disabled={busy}>{busy ? "Submitting…" : "Submit proposal for Owner review"}</button>
+      </form>
+    </section>
+  );
+}
+
+function OwnerBusinessSetup({ onReady }: { onReady: () => Promise<void> }) {
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("Salon");
+  const [phone, setPhone] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setMessage("");
+    try {
+      const client = getClient();
+      if (!client) throw new Error("Staging connection is not configured.");
+      const { error } = await client.rpc("bootstrap_shop_owner", {
+        p_business_name: name.trim(),
+        p_business_category: category.trim(),
+        p_contact_number: phone.trim() || null,
+      });
+      if (error) throw error;
+      setMessage("Owner workspace connected. Assigned proposals are now available.");
+      await onReady();
+    } catch (cause) {
+      setMessage(friendlyError(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="workspace-card">
+      <span className="eyebrow">Owner setup</span>
+      <h2>Connect your salon workspace</h2>
+      <p className="preview-note">This uses Nexora&apos;s existing secure owner setup. Proposals addressed to your account are linked automatically.</p>
+      <form className="proposal-form inline-setup" onSubmit={submit}>
+        <label>Business name<input required maxLength={160} value={name} onChange={(event) => setName(event.target.value)} /></label>
+        <label>Business category<input required value={category} onChange={(event) => setCategory(event.target.value)} /></label>
+        <label>Contact number<input value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
+        {message && <div className="form-message" role="status">{message}</div>}
+        <button className="primary" disabled={busy}>{busy ? "Connecting…" : "Connect owner workspace"}</button>
+      </form>
+    </section>
+  );
+}
 
 function RoleWorkspace({ role, navigate }: { role: Role; navigate: (path: string) => void }) {
   const [items, setItems] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(role !== "customer");
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState("");
+  const [ownerReady, setOwnerReady] = useState(true);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [websiteSlugs, setWebsiteSlugs] = useState<Record<string, string>>({});
+  const [attributions, setAttributions] = useState<Record<string, string>>({});
   const load = useCallback(async () => {
     if (role === "customer") return;
     setLoading(true); setError("");
     try {
       const client = getClient(); if (!client) throw new Error("Staging connection is not configured.");
+      if (role === "business_user") {
+        const { data: salons, error: salonError } = await client.from("salons").select("id").limit(1);
+        if (salonError) throw salonError;
+        setOwnerReady(Boolean(salons?.length));
+      }
       const { data, error: queryError } = await client.from("salon_setup_proposals")
-        .select("id,salon_id,owner_email,status,payload,version,updated_at")
+        .select("id,onboarding_application_id,salon_id,owner_user_id,owner_email,status,payload,version,owner_notes,submitted_at,published_at,updated_at")
         .order("updated_at", { ascending: false });
       if (queryError) throw queryError;
-      setItems((data ?? []) as Proposal[]);
+      const proposals = (data ?? []) as Proposal[];
+      setItems(proposals);
+      const salonIds = proposals.flatMap((proposal) => proposal.salon_id ? [proposal.salon_id] : []);
+      if (salonIds.length) {
+        const websiteQuery = client.from("salon_public_websites").select("salon_id,slug").in("salon_id", salonIds).eq("is_published", true);
+        const attributionQuery = role === "growth_partner"
+          ? client.from("shop_attributions").select("salon_id,status").in("salon_id", salonIds)
+          : Promise.resolve({ data: [], error: null });
+        const [{ data: websites, error: websiteError }, { data: attributionRows, error: attributionError }] = await Promise.all([websiteQuery, attributionQuery]);
+        if (websiteError) throw websiteError;
+        if (attributionError) throw attributionError;
+        setWebsiteSlugs(Object.fromEntries((websites ?? []).map((website) => [website.salon_id, website.slug])));
+        setAttributions(Object.fromEntries((attributionRows ?? []).map((attribution) => [attribution.salon_id, attribution.status])));
+      } else {
+        setWebsiteSlugs({});
+        setAttributions({});
+      }
     } catch (cause) { setError(friendlyError(cause)); } finally { setLoading(false); }
   }, [role]);
   useEffect(() => {
@@ -487,30 +752,39 @@ function RoleWorkspace({ role, navigate }: { role: Role; navigate: (path: string
     return <div className="role-grid"><RoleCard title="Published salons" text="Browse only verified, active, owner-published salon websites." path="/salons" navigate={navigate} /><RoleCard title="Payments and refunds" text="Advance, final payment, cancellation, dispute, and refund status is server-verified." path="/cancellation-refund" navigate={navigate} /></div>;
   }
   if (loading) return <div className="loader" aria-label="Loading website proposals" />;
-  if (error) return <StateCard title="Could not load website data" text={error} action="Retry" onAction={load} />;
-  if (!items.length) return <StateCard title="No website proposals yet" text={role === "business_user" ? "Submitted Growth Partner website proposals will appear here for review." : "Create or submit a salon setup in the Growth Partner app to see its preview here."} />;
 
-  const review = async (proposal: Proposal, action: "approve" | "publish" | "request_changes") => {
+  const review = async (proposal: Proposal, action: "approve" | "publish" | "request_changes" | "reject") => {
     setBusyId(proposal.id); setError("");
     try {
       const client = getClient(); if (!client) throw new Error("Staging connection is not configured.");
       const { error: rpcError } = await client.rpc("review_salon_setup", {
         p_proposal_id: proposal.id,
         p_action: action,
-        p_notes: action === "request_changes" ? "Changes requested from the Nexora dashboard." : null,
+        p_notes: action === "request_changes" ? "Changes requested from the Nexora dashboard." : action === "reject" ? "Proposal rejected from the Nexora dashboard." : null,
       });
       if (rpcError) throw rpcError;
       await load();
     } catch (cause) { setError(friendlyError(cause)); } finally { setBusyId(""); }
   };
 
-  return <div className="proposal-list">{error && <div className="form-message">{error}</div>}{items.map((proposal) => {
-    const payload = proposal.payload as { profile?: Record<string, unknown>; services?: unknown[]; staff?: unknown[]; template?: Record<string, unknown> };
-    return <article className="proposal-card" key={proposal.id}><div className="proposal-head"><div><span className={`status status-${proposal.status}`}>{proposal.status.replaceAll("_", " ")}</span><h2>{String(payload.profile?.name ?? "Salon website proposal")}</h2><p>{proposal.owner_email ?? "Linked Shop Owner"} · Revision {proposal.version}</p></div><span className="template-badge">{String(payload.template?.key ?? "modern-salon")}</span></div>
-      <div className="proposal-preview"><div><small>Public profile</small><p>{String(payload.profile?.description ?? "No description added yet.")}</p></div><div><b>{Array.isArray(payload.services) ? payload.services.length : 0}</b><small>services</small></div><div><b>{Array.isArray(payload.staff) ? payload.staff.length : 0}</b><small>staff</small></div></div>
-      {role === "business_user" ? <div className="button-row">{proposal.status === "submitted" && <button className="secondary" disabled={busyId === proposal.id} onClick={() => void review(proposal, "approve")}>Approve</button>}{["submitted","approved"].includes(proposal.status) && <button className="primary" disabled={busyId === proposal.id} onClick={() => void review(proposal, "publish")}>Approve & publish</button>}{["submitted","approved"].includes(proposal.status) && <button className="text-button" disabled={busyId === proposal.id} onClick={() => void review(proposal, "request_changes")}>Request changes</button>}</div> : <p className="preview-note">Preview is private to the attributed Growth Partner until the Shop Owner publishes it.</p>}
-    </article>;
-  })}</div>;
+  return <div className="workspace-stack">
+    {role === "growth_partner" && <GrowthPartnerProposalForm onSubmitted={load} />}
+    {role === "business_user" && !ownerReady && <OwnerBusinessSetup onReady={load} />}
+    {error && <StateCard title="Could not load website data" text={error} action="Retry" onAction={load} />}
+    {!items.length && !error && <StateCard title="No website proposals yet" text={role === "business_user" ? "Submitted Growth Partner website proposals assigned to your email will appear here for review." : "Complete the salon setup form above to submit your first private proposal."} />}
+    <div className="proposal-list">{items.map((proposal) => {
+      const payload = proposal.payload as { profile?: Record<string, unknown>; services?: unknown[]; staff?: unknown[]; template?: Record<string, unknown> };
+      const slug = proposal.salon_id ? websiteSlugs[proposal.salon_id] : undefined;
+      const attribution = proposal.salon_id ? attributions[proposal.salon_id] : undefined;
+      const hours = payload.profile?.opening_hours as Record<string, unknown> | undefined;
+      return <article className="proposal-card" key={proposal.id}><div className="proposal-head"><div><span className={`status status-${proposal.status}`}>{proposal.status.replaceAll("_", " ")}</span><h2>{String(payload.profile?.name ?? "Salon website proposal")}</h2><p>{proposal.owner_email ?? "Linked Shop Owner"} · Revision {proposal.version}</p></div><span className="template-badge">{String(payload.template?.key ?? "modern-salon")}</span></div>
+        <div className="proposal-preview"><div><small>Public profile</small><p>{String(payload.profile?.description ?? "No description added yet.")}</p></div><div><b>{Array.isArray(payload.services) ? payload.services.length : 0}</b><small>services</small></div><div><b>{Array.isArray(payload.staff) ? payload.staff.length : 0}</b><small>staff</small></div></div>
+        {expanded[proposal.id] && <div className="proposal-details"><p><b>Address:</b> {String(payload.profile?.address ?? "Not supplied")}, {String(payload.profile?.area ?? "")} {String(payload.profile?.city ?? "")}</p><p><b>Contact:</b> {String(payload.profile?.phone ?? "Not supplied")}</p><p><b>Opening hours:</b> {String(hours?.opens ?? "—")}–{String(hours?.closes ?? "—")}</p>{proposal.owner_notes && <p><b>Owner notes:</b> {proposal.owner_notes}</p>}</div>}
+        <div className="button-row"><button className="secondary compact" onClick={() => setExpanded((current) => ({ ...current, [proposal.id]: !current[proposal.id] }))}>{expanded[proposal.id] ? "Hide preview" : "Preview details"}</button>{slug && <button className="secondary compact" onClick={() => navigate(`/salons/${slug}`)}>Open public listing</button>}</div>
+        {role === "business_user" ? <div className="button-row">{proposal.status === "submitted" && <button className="secondary" disabled={busyId === proposal.id} onClick={() => void review(proposal, "approve")}>Approve</button>}{["submitted","approved"].includes(proposal.status) && <button className="primary" disabled={busyId === proposal.id} onClick={() => void review(proposal, "publish")}>Approve & publish</button>}{["submitted","approved"].includes(proposal.status) && <button className="text-button" disabled={busyId === proposal.id} onClick={() => void review(proposal, "request_changes")}>Request changes</button>}{proposal.status === "submitted" && <button className="text-button danger-link" disabled={busyId === proposal.id} onClick={() => void review(proposal, "reject")}>Reject</button>}</div> : <div className="gp-status"><p className="preview-note">Owner approval: <b>{proposal.status === "published" ? "Published" : proposal.status.replaceAll("_", " ")}</b>. Unpublished previews remain private.</p><p className="preview-note">GP attribution / commission: <b>{attribution ? attribution.replaceAll("_", " ") : proposal.status === "published" ? "Attribution pending" : "Preserved on publish"}</b></p></div>}
+      </article>;
+    })}</div>
+  </div>;
 }
 
 function LegalPage({ type }: { type: "terms" | "privacy" | "refund" }) {

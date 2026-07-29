@@ -4,7 +4,7 @@
 * { box-sizing:border-box; }
 html { scroll-behavior:smooth; }
 body { margin:0; background:#fff; color:var(--ink); font-family:Arial,Helvetica,sans-serif; }
-button,input,select { font:inherit; }
+button,input,select,textarea { font:inherit; }
 button { cursor:pointer; }
 .site-shell { min-height:100vh; overflow:hidden; }
 .offline-banner { background:#2d2330; color:#fff; text-align:center; padding:9px 16px; font-size:13px; }
@@ -98,6 +98,25 @@ h1,h2,h3,p { margin-top:0; }
 .dashboard-hero { padding:40px; color:#fff; border-radius:28px; background:linear-gradient(135deg,#26171e,#71133e); margin-bottom:28px; }
 .dashboard-hero h1 { font-size:44px; }
 .dashboard-hero p { color:#f8ddea; max-width:700px; }
+.workspace-stack { display:grid; gap:24px; }
+.workspace-card { border:1px solid var(--line); border-radius:24px; padding:28px; background:#fff; box-shadow:0 14px 35px #51132e0b; }
+.workspace-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; }
+.workspace-heading h2,.workspace-heading h3 { margin-bottom:7px; }
+.workspace-heading p { color:var(--muted); font-size:13px; margin-bottom:0; }
+.private-pill { display:inline-flex; border-radius:999px; padding:8px 11px; background:#fff1d8; color:#7d540b; font-size:11px; font-weight:850; white-space:nowrap; }
+.proposal-form { display:grid; gap:22px; margin-top:22px; }
+.form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.proposal-form label { display:grid; gap:8px; color:#4f3742; font-size:12px; font-weight:800; }
+.proposal-form input,.proposal-form select,.proposal-form textarea { width:100%; border:1px solid var(--line); border-radius:13px; padding:13px 14px; background:#fff; color:var(--ink); outline:0; resize:vertical; }
+.proposal-form input,.proposal-form select { min-height:48px; }
+.proposal-form input:focus,.proposal-form select:focus,.proposal-form textarea:focus { border-color:var(--pink); box-shadow:0 0 0 3px #e6007e14; }
+.wide-field { grid-column:1/-1; }
+.service-editor { display:grid; gap:14px; padding-top:20px; border-top:1px solid var(--line); }
+.service-row { display:grid; grid-template-columns:1.4fr .65fr .8fr 1.5fr auto; gap:12px; align-items:end; padding:16px; border:1px solid var(--line); border-radius:17px; background:var(--cream); }
+.remove-service { min-height:48px; padding:0 8px; }
+.inline-setup { grid-template-columns:repeat(3,minmax(0,1fr)); align-items:end; }
+.inline-setup .form-message { grid-column:1/-1; }
+.compact { min-height:40px; padding:0 15px; font-size:13px; }
 .proposal-list { display:grid; gap:18px; }
 .proposal-card { border:1px solid var(--line); border-radius:24px; padding:28px; background:#fff; box-shadow:0 14px 35px #51132e0b; }
 .proposal-head { display:flex; justify-content:space-between; gap:20px; align-items:flex-start; }
@@ -111,6 +130,10 @@ h1,h2,h3,p { margin-top:0; }
 .proposal-preview p { margin:5px 0 0; }
 .proposal-preview b { display:block; font-size:24px; color:var(--pink-dark); }
 .proposal-preview small { color:var(--muted); }
+.proposal-details { margin-top:14px; padding:17px; border:1px solid var(--line); border-radius:15px; color:var(--muted); font-size:13px; line-height:1.55; }
+.proposal-details p:last-child,.gp-status p:last-child { margin-bottom:0; }
+.danger-link { color:#a72b3e; }
+.gp-status { margin-top:17px; padding-top:15px; border-top:1px solid var(--line); }
 .signout { margin-top:28px; }
 .loader { width:44px; height:44px; border:4px solid #f4dce7; border-top-color:var(--pink); border-radius:50%; animation:spin .8s linear infinite; }
 @keyframes spin { to{transform:rotate(360deg)} }
@@ -125,6 +148,9 @@ footer .brand { color:#fff; padding:0; }
   .salon-grid,.role-grid { grid-template-columns:1fr 1fr; }
   .section-heading.split { align-items:stretch; flex-direction:column; }
   .service-grid { grid-template-columns:1fr; }
+  .service-row { grid-template-columns:1fr 1fr; }
+  .service-description { grid-column:1/-1; }
+  .inline-setup { grid-template-columns:1fr; }
 }
 @media(max-width:620px) {
   .topbar { height:66px; padding-inline:17px; }
@@ -139,6 +165,9 @@ footer .brand { color:#fff; padding:0; }
   .entry-card,.auth-card { padding:30px 22px; }
   .salon-info { align-items:flex-start; flex-direction:column; }
   .proposal-head { flex-direction:column; }
+  .workspace-heading { flex-direction:column; }
+  .form-grid,.service-row { grid-template-columns:1fr; }
+  .wide-field,.service-description { grid-column:auto; }
   .proposal-preview { grid-template-columns:1fr 1fr; }
   .proposal-preview>div:first-child { grid-column:1/-1; }
   footer { grid-template-columns:1fr; padding:45px 22px; }
