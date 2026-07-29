@@ -7,6 +7,9 @@ if [[ "${SITES_ENV_READY:-}" != "1" ]]; then
   exec "${script_dir}/sites-env.sh" -- "$0" "$@"
 fi
 
+: "${NEXT_PUBLIC_SUPABASE_URL:?NEXT_PUBLIC_SUPABASE_URL must be set for the production client build.}"
+: "${NEXT_PUBLIC_SUPABASE_ANON_KEY:?NEXT_PUBLIC_SUPABASE_ANON_KEY must be set for the production client build.}"
+
 command -v timeout >/dev/null || {
   echo "build-verified.sh requires GNU timeout." >&2
   exit 69
