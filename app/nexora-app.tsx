@@ -51,8 +51,17 @@ type RazorpayOrder = {
   description?: string;
 };
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+const viteEnv = import.meta.env as Record<string, string | undefined>;
+const supabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ??
+  viteEnv.VITE_SUPABASE_URL ??
+  "";
+const supabaseKey =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+  viteEnv.VITE_SUPABASE_ANON_KEY ??
+  "";
+const missingSupabaseConfigMessage =
+  "Nexora login service is not configured for this deployment.";
 let singleton: SupabaseClient | null = null;
 
 function getClient() {
@@ -295,7 +304,7 @@ function RoleEntry({ path, navigate }: { path: string; navigate: (path: string) 
 
 async function fetchCatalog(): Promise<CatalogItem[]> {
   const client = getClient();
-  if (!client) throw new Error("Staging connection is not configured.");
+  if (!client) throw new Error(missingSupabaseConfigMessage);
   const { data: websites, error: websiteError } = await client
     .from("salon_public_websites")
     .select("salon_id,slug,template_key,config,published_at")
@@ -502,7 +511,7 @@ function BookingPage({
     setMessage("");
     try {
       const client = getClient();
-      if (!client) throw new Error("Staging connection is not configured.");
+      if (!client) throw new Error(missingSupabaseConfigMessage);
       const match = (await fetchCatalog()).find((entry) => entry.website.slug === slug);
       if (!match) throw new Error("This salon website is not published or is unavailable.");
       const { data, error } = await client
@@ -544,7 +553,7 @@ function BookingPage({
     setMessage("");
     try {
       const client = getClient();
-      if (!client) throw new Error("Staging connection is not configured.");
+      if (!client) throw new Error(missingSupabaseConfigMessage);
       const { data: { session }, error: sessionError } = await client.auth.getSession();
       if (sessionError || !session?.access_token) {
         setMessage("Your Customer session expired. Please log in again to continue booking.");
@@ -633,7 +642,7 @@ function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (pat
     event.preventDefault(); setBusy(true); setMessage("");
     try {
       const client = getClient();
-      if (!client) throw new Error("Staging connection is not configured.");
+      if (!client) throw new Error(missingSupabaseConfigMessage);
       if (mode === "signup") {
         const { data, error } = await client.auth.signUp({ email, password, options: { data: { full_name: fullName.trim() || email.split("@")[0], signup_role: role } } });
         if (error) throw error;
@@ -672,7 +681,7 @@ function DashboardPage({
   const load = useCallback(async () => {
     setState({ loading: true });
     try {
-      const client = getClient(); if (!client) throw new Error("Staging connection is not configured.");
+      const client = getClient(); if (!client) throw new Error(missingSupabaseConfigMessage);
       const { data: { user } } = await client.auth.getUser(); if (!user) { navigate("/login"); return; }
       const { data, error } = await client.from("profiles").select("platform_role,full_name,is_active").eq("id", user.id).single();
       if (error) throw error; if (!data.is_active) throw new Error("This account is inactive.");
@@ -775,7 +784,7 @@ function GrowthPartnerProposalForm({ onSubmitted }: { onSubmitted: () => Promise
     setMessage("");
     try {
       const client = getClient();
-      if (!client) throw new Error("Staging connection is not configured.");
+      if (!client) throw new Error(missingSupabaseConfigMessage);
       const { data: { user } } = await client.auth.getUser();
       if (!user) throw new Error("Your session expired. Log in again.");
       if (!services.length || services.some((service) => !service.name.trim() || Number(service.price) < 0 || Number(service.duration) < 1)) {
@@ -909,7 +918,7 @@ function OwnerBusinessSetup({ onReady }: { onReady: () => Promise<void> }) {
     setMessage("");
     try {
       const client = getClient();
-      if (!client) throw new Error("Staging connection is not configured.");
+      if (!client) throw new Error(missingSupabaseConfigMessage);
       const { error } = await client.rpc("bootstrap_shop_owner", {
         p_business_name: name.trim(),
         p_business_category: category.trim(),
@@ -953,7 +962,7 @@ function RoleWorkspace({ role, navigate }: { role: Role; navigate: (path: string
     if (role === "customer") return;
     setLoading(true); setError("");
     try {
-      const client = getClient(); if (!client) throw new Error("Staging connection is not configured.");
+      const client = getClient(); if (!client) throw new Error(missingSupabaseConfigMessage);
       if (role === "business_user") {
         const { data: salons, error: salonError } = await client.from("salons").select("id").limit(1);
         if (salonError) throw salonError;
@@ -995,7 +1004,7 @@ function RoleWorkspace({ role, navigate }: { role: Role; navigate: (path: string
   const review = async (proposal: Proposal, action: "approve" | "publish" | "request_changes" | "reject") => {
     setBusyId(proposal.id); setError("");
     try {
-      const client = getClient(); if (!client) throw new Error("Staging connection is not configured.");
+      const client = getClient(); if (!client) throw new Error(missingSupabaseConfigMessage);
       const { error: rpcError } = await client.rpc("review_salon_setup", {
         p_proposal_id: proposal.id,
         p_action: action,
