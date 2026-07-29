@@ -3,7 +3,6 @@ node_modules
 .sites-runtime
 .vinext
 dist
-build
 .wrangler
 *.tar
 tsconfig.tsbuildinfo
