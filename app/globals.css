@@ -88,6 +88,21 @@ h1,h2,h3,p { margin-top:0; }
 .service-card { border:1px solid var(--line); border-radius:20px; padding:24px; display:flex; justify-content:space-between; gap:24px; }
 .service-card p,.service-card small { color:var(--muted); }
 .service-card>b { color:var(--pink-dark); white-space:nowrap; }
+.service-card>div:last-child { display:grid; justify-items:end; gap:8px; }
+.booking-page { max-width:1000px; }
+.booking-card { display:grid; gap:24px; padding:28px; border:1px solid var(--line); border-radius:24px; background:#fff; box-shadow:0 18px 50px #55132f0d; }
+.booking-card fieldset { display:grid; gap:16px; margin:0; padding:0; border:0; }
+.booking-card legend { margin-bottom:14px; font-size:18px; font-weight:900; color:var(--ink); }
+.booking-card label { display:grid; gap:8px; color:#4f3742; font-size:12px; font-weight:800; }
+.booking-card input,.booking-card textarea { width:100%; border:1px solid var(--line); border-radius:13px; padding:13px 14px; background:#fff; color:var(--ink); outline:0; }
+.booking-card input:focus,.booking-card textarea:focus { border-color:var(--pink); box-shadow:0 0 0 3px #e6007e14; }
+.booking-services { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
+.booking-services label { grid-template-columns:auto 1fr auto; align-items:center; padding:16px; border:1px solid var(--line); border-radius:16px; cursor:pointer; }
+.booking-services label.selected { border-color:var(--pink); background:#fff6fb; }
+.booking-services input { width:18px; height:18px; padding:0; accent-color:var(--pink); }
+.booking-services span { display:grid; gap:4px; }
+.booking-services small { color:var(--muted); }
+.booking-services strong { color:var(--pink-dark); }
 .salon-info { display:flex; align-items:center; justify-content:space-between; gap:30px; background:var(--cream); }
 .state-card { width:100%; padding:45px; text-align:center; border:1px dashed #e6c5d4; background:#fffafd; border-radius:24px; }
 .state-card>span { font-size:30px; color:var(--pink); }

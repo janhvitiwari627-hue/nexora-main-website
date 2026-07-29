@@ -12,7 +12,8 @@ test("anonymous booking redirects to an empty Customer login with a safe return 
 });
 
 test("Customer role can enter booking while non-Customer roles see switch-account UX", () => {
-  assert.match(app, /if \(authState\.role === "customer"\)[\s\S]*?intent=book/);
+  assert.match(app, /if \(authState\.role === "customer"\)[\s\S]*?navigate\(destination\)/);
+  assert.match(app, /path\.startsWith\("\/booking\/"\)/);
   assert.match(app, /setRoleMismatch\(true\)/);
   assert.match(app, /Booking is only available for Customer accounts\. Please sign out and log in with a Customer account\./);
   assert.match(app, /Sign out and continue as Customer/);
@@ -26,8 +27,18 @@ test("switching accounts signs out before opening Customer login", () => {
   assert.match(app, /profile\.platform_role === "customer" && returnTo/);
 });
 
-test("booking guard does not alter roles or payment contracts", () => {
+test("booking guard does not alter roles and uses the existing payment contracts", () => {
   assert.doesNotMatch(app, /\.from\("profiles"\)\s*\.update/);
   assert.doesNotMatch(app, /updateUser\([\s\S]*platform_role/);
-  assert.doesNotMatch(app, /Razorpay|razorpay|payment_intent/);
+  assert.match(app, /client\.rpc\("create_customer_booking"/);
+  assert.match(app, /client\.functions\.invoke<RazorpayOrder>\("razorpay-create-order"/);
+  assert.match(app, /description: order\.description \?\? "25% booking advance"/);
+  assert.doesNotMatch(app, /price_paise\s*\*\s*0\.25|price_paise\s*\/\s*4/);
+});
+
+test("booking preserves salon and optional service context through Customer login", () => {
+  assert.match(app, /const bookingReturnPath = `\/booking\/\$\{encodeURIComponent\(slug\)\}`/);
+  assert.match(app, /returnTo=\$\{encodeURIComponent\(destination\)\}/);
+  assert.match(app, /new URLSearchParams\(window\.location\.search\)\.get\("service"\)/);
+  assert.match(app, /profile\.platform_role === "customer" && returnTo \? returnTo/);
 });

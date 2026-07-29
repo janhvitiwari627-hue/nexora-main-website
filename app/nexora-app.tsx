@@ -31,6 +31,25 @@ type AuthState = {
   session: Session | null;
   role?: Role;
 };
+type BookableService = {
+  id: string;
+  salon_id: string;
+  name: string;
+  description: string | null;
+  duration_minutes: number;
+  price_paise: number;
+};
+type BookingResult = string | { id?: string; booking_id?: string };
+type RazorpayOrder = {
+  key?: string;
+  key_id?: string;
+  order_id?: string;
+  id?: string;
+  amount?: number;
+  currency?: string;
+  name?: string;
+  description?: string;
+};
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -142,6 +161,8 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   if (path === "/salons") content = <CatalogPage navigate={navigate} online={online} />;
   else if (path.startsWith("/salons/"))
     content = <SalonPage slug={decodeURIComponent(path.slice(8))} navigate={navigate} online={online} authState={authState} signOut={signOut} />;
+  else if (path.startsWith("/booking/"))
+    content = <BookingPage slug={decodeURIComponent(path.slice(9))} navigate={navigate} online={online} authState={authState} signOut={signOut} />;
   else if (path === "/terms") content = <LegalPage type="terms" />;
   else if (path === "/privacy") content = <LegalPage type="privacy" />;
   else if (path === "/cancellation-refund") content = <LegalPage type="refund" />;
@@ -385,16 +406,19 @@ function SalonPage({
   const config = item.website.config as { profile?: Record<string, unknown>; services?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; offers?: Array<Record<string, unknown>> };
   const services = Array.isArray(config.services) ? config.services : [];
   const openingHours = config.profile?.opening_hours as Record<string, unknown> | undefined;
-  const bookingReturnPath = `/salons/${encodeURIComponent(slug)}?book=1`;
+  const bookingReturnPath = `/booking/${encodeURIComponent(slug)}`;
   const customerLoginPath = `/login?role=customer&returnTo=${encodeURIComponent(bookingReturnPath)}`;
-  const startBooking = () => {
+  const startBooking = (serviceName?: string) => {
     if (authState.loading) return;
+    const destination = serviceName
+      ? `${bookingReturnPath}?service=${encodeURIComponent(serviceName)}`
+      : bookingReturnPath;
     if (!authState.session) {
-      navigate(customerLoginPath);
+      navigate(`/login?role=customer&returnTo=${encodeURIComponent(destination)}`);
       return;
     }
     if (authState.role === "customer") {
-      navigate(`/dashboard/customer?salon=${encodeURIComponent(slug)}&intent=book`);
+      navigate(destination);
       return;
     }
     setRoleMismatch(true);
@@ -405,11 +429,183 @@ function SalonPage({
   };
   return (
     <main>
-      <section className="store-hero"><span className="verified-pill">✓ Nexora verified</span><h1>{item.name}</h1><p>{String(config.profile?.description ?? item.description ?? "Professional beauty services with easy online booking.")}</p><div className="store-facts"><span>★ {Number(item.rating_average).toFixed(1)} rating</span><span>⌖ {item.area ?? item.city}, {item.city}</span></div><button className="primary" disabled={authState.loading} onClick={startBooking}>{authState.loading ? "Checking account…" : "Book appointment"}</button></section>
+      <section className="store-hero"><span className="verified-pill">✓ Nexora verified</span><h1>{item.name}</h1><p>{String(config.profile?.description ?? item.description ?? "Professional beauty services with easy online booking.")}</p><div className="store-facts"><span>★ {Number(item.rating_average).toFixed(1)} rating</span><span>⌖ {item.area ?? item.city}, {item.city}</span></div><button className="primary" disabled={authState.loading} onClick={() => startBooking()}>{authState.loading ? "Checking account…" : "Book appointment"}</button></section>
       {roleMismatch && <section className="role-mismatch" role="alert" aria-labelledby="booking-role-title"><div className="role-mismatch-card"><span className="eyebrow">Switch account</span><h2 id="booking-role-title">Customer account required</h2><p>Booking is only available for Customer accounts. Please sign out and log in with a Customer account.</p><div className="button-row"><button className="primary" disabled={switchingAccount} onClick={() => void switchToCustomer()}>{switchingAccount ? "Signing out…" : "Sign out and continue as Customer"}</button><button className="secondary" onClick={() => setRoleMismatch(false)}>Back to salon</button><button className="text-button" onClick={() => navigate(authState.role ? `/dashboard/${authState.role}` : "/dashboard")}>Go to my dashboard</button></div></div></section>}
       <section className="section"><div className="section-heading"><span className="eyebrow">Services</span><h2>Choose your service</h2></div>
-      {!services.length ? <StateCard title="Services are being updated" text="Please check back soon." /> : <div className="service-grid">{services.map((service, index) => <article className="service-card" key={String(service.id ?? index)}><div><h3>{String(service.name ?? "Salon service")}</h3><p>{String(service.description ?? "Professional salon service")}</p><small>{Number(service.duration_minutes ?? 0)} minutes</small></div><b>{money(Number(service.price_paise ?? 0))}</b></article>)}</div>}</section>
+      {!services.length ? <StateCard title="Services are being updated" text="Please check back soon." /> : <div className="service-grid">{services.map((service, index) => <article className="service-card" key={String(service.id ?? index)}><div><h3>{String(service.name ?? "Salon service")}</h3><p>{String(service.description ?? "Professional salon service")}</p><small>{Number(service.duration_minutes ?? 0)} minutes</small></div><div><b>{money(Number(service.price_paise ?? 0))}</b><button className="text-button" onClick={() => startBooking(String(service.name ?? ""))}>Book</button></div></article>)}</div>}</section>
       <section className="section salon-info"><div><span className="eyebrow">Visit</span><h2>{item.name}</h2><p>{item.address}, {item.city}</p>{openingHours && <p>Open {String(openingHours.opens ?? "—")}–{String(openingHours.closes ?? "—")}</p>}</div><button className="secondary" onClick={() => navigate("/cancellation-refund")}>Cancellation policy</button></section>
+    </main>
+  );
+}
+
+function bookingIdFrom(result: BookingResult | BookingResult[] | null): string | null {
+  const value = Array.isArray(result) ? result[0] : result;
+  if (typeof value === "string") return value;
+  return value?.booking_id ?? value?.id ?? null;
+}
+
+async function loadRazorpayCheckout() {
+  if ("Razorpay" in window) return;
+  await new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Payment checkout could not be loaded.")), { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Payment checkout could not be loaded."));
+    document.head.appendChild(script);
+  });
+}
+
+function BookingPage({
+  slug,
+  navigate,
+  online,
+  authState,
+  signOut,
+}: {
+  slug: string;
+  navigate: (path: string) => void;
+  online: boolean;
+  authState: AuthState;
+  signOut: (destination?: string) => Promise<void>;
+}) {
+  const [salon, setSalon] = useState<CatalogItem | null>(null);
+  const [services, setServices] = useState<BookableService[]>([]);
+  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
+  const [note, setNote] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [switchingAccount, setSwitchingAccount] = useState(false);
+  const bookingPath = `/booking/${encodeURIComponent(slug)}`;
+  const customerLoginPath = `/login?role=customer&returnTo=${encodeURIComponent(bookingPath)}`;
+
+  const load = useCallback(async () => {
+    if (authState.loading) return;
+    if (!authState.session) {
+      navigate(customerLoginPath);
+      return;
+    }
+    if (authState.role !== "customer") {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setMessage("");
+    try {
+      const client = getClient();
+      if (!client) throw new Error("Staging connection is not configured.");
+      const match = (await fetchCatalog()).find((entry) => entry.website.slug === slug);
+      if (!match) throw new Error("This salon website is not published or is unavailable.");
+      const { data, error } = await client
+        .from("services")
+        .select("id,salon_id,name,description,duration_minutes,price_paise")
+        .eq("salon_id", match.id)
+        .eq("is_active", true)
+        .eq("is_bookable_online", true)
+        .order("name");
+      if (error) throw error;
+      const available = (data ?? []) as BookableService[];
+      setSalon(match);
+      setServices(available);
+      const requested = new URLSearchParams(window.location.search).get("service");
+      const requestedService = available.find((service) => service.name === requested);
+      if (requestedService) setSelectedServiceIds([requestedService.id]);
+    } catch (cause) {
+      setMessage(friendlyError(cause));
+    } finally {
+      setLoading(false);
+    }
+  }, [authState.loading, authState.role, authState.session, customerLoginPath, navigate, slug]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (online) void load();
+      else {
+        setLoading(false);
+        setMessage("You are offline. Reconnect and retry.");
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load, online]);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!salon || !selectedServiceIds.length || !date || !time) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const client = getClient();
+      if (!client) throw new Error("Staging connection is not configured.");
+      const appointmentStart = new Date(`${date}T${time}:00`);
+      if (Number.isNaN(appointmentStart.valueOf()) || appointmentStart <= new Date()) {
+        throw new Error("Choose a future appointment date and time.");
+      }
+      const { data, error } = await client.rpc("create_customer_booking", {
+        p_salon_id: salon.id,
+        p_service_ids: selectedServiceIds,
+        p_staff_id: null,
+        p_appointment_start: appointmentStart.toISOString(),
+        p_customer_note: note.trim() || null,
+        p_idempotency_key: crypto.randomUUID(),
+      });
+      if (error) throw error;
+      const bookingId = bookingIdFrom(data as BookingResult | BookingResult[] | null);
+      if (!bookingId) throw new Error("Booking was created, but its payment reference was not returned.");
+
+      const { data: orderData, error: orderError } = await client.functions.invoke<RazorpayOrder>("razorpay-create-order", {
+        body: { booking_id: bookingId },
+      });
+      if (orderError) throw orderError;
+      const order = orderData ?? {};
+      const key = order.key_id ?? order.key;
+      const orderId = order.order_id ?? order.id;
+      if (!key || !orderId || !order.amount) throw new Error("The secure advance checkout could not be prepared.");
+      await loadRazorpayCheckout();
+      const Razorpay = (window as typeof window & { Razorpay?: new (options: Record<string, unknown>) => { open: () => void } }).Razorpay;
+      if (!Razorpay) throw new Error("Payment checkout could not be loaded.");
+      new Razorpay({
+        key,
+        order_id: orderId,
+        amount: order.amount,
+        currency: order.currency ?? "INR",
+        name: order.name ?? salon.name,
+        description: order.description ?? "25% booking advance",
+        prefill: { email: authState.session?.user.email ?? "" },
+        theme: { color: "#2f6fed" },
+      }).open();
+      setMessage("Booking created. Complete the 25% advance in the secure checkout.");
+    } catch (cause) {
+      setMessage(friendlyError(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (authState.loading || loading) return <main className="center-page"><div className="loader" aria-label="Loading booking" /></main>;
+  if (authState.session && authState.role !== "customer") {
+    return <main className="center-page"><section className="role-mismatch-card" role="alert"><span className="eyebrow">Switch account</span><h1>Customer account required</h1><p>Booking is only available for Customer accounts. Please sign out and log in with a Customer account.</p><div className="button-row"><button className="primary" disabled={switchingAccount} onClick={() => { setSwitchingAccount(true); void signOut(customerLoginPath); }}>{switchingAccount ? "Signing out…" : "Sign out and continue as Customer"}</button><button className="secondary" onClick={() => navigate(`/salons/${encodeURIComponent(slug)}`)}>Back to salon</button><button className="text-button" onClick={() => navigate(authState.role ? `/dashboard/${authState.role}` : "/dashboard")}>Go to my dashboard</button></div></section></main>;
+  }
+  if (message && !salon) return <main className="center-page"><StateCard title="Booking unavailable" text={message} action="Back to salon" onAction={() => navigate(`/salons/${encodeURIComponent(slug)}`)} /></main>;
+  if (!salon) return null;
+
+  return (
+    <main className="section page-top booking-page">
+      <div className="section-heading"><span className="eyebrow">Customer booking</span><h1>Book {salon.name}</h1><p>Select services and a preferred appointment time. Nexora collects the server-calculated 25% advance in Razorpay TEST checkout.</p></div>
+      <form className="booking-card" onSubmit={submit}>
+        <fieldset><legend>1. Choose services</legend><div className="booking-services">{services.map((service) => <label key={service.id} className={selectedServiceIds.includes(service.id) ? "selected" : ""}><input type="checkbox" checked={selectedServiceIds.includes(service.id)} onChange={() => setSelectedServiceIds((current) => current.includes(service.id) ? current.filter((id) => id !== service.id) : [...current, service.id])} /><span><b>{service.name}</b><small>{service.duration_minutes} minutes</small></span><strong>{money(service.price_paise)}</strong></label>)}</div>{!services.length && <p>No online services are currently available.</p>}</fieldset>
+        <fieldset><legend>2. Choose date and time</legend><div className="form-grid"><label>Date<input required type="date" min={new Date().toISOString().slice(0, 10)} value={date} onChange={(event) => setDate(event.target.value)} /></label><label>Time<input required type="time" value={time} onChange={(event) => setTime(event.target.value)} /></label><label className="wide-field">Note for salon (optional)<textarea rows={3} value={note} onChange={(event) => setNote(event.target.value)} /></label></div></fieldset>
+        {message && <div className="form-message" role="status">{message}</div>}
+        <div className="button-row"><button className="primary" disabled={busy || !selectedServiceIds.length}>{busy ? "Preparing secure checkout…" : "Create booking & pay 25% advance"}</button><button type="button" className="secondary" onClick={() => navigate(`/salons/${encodeURIComponent(slug)}`)}>Back to salon</button></div>
+      </form>
     </main>
   );
 }
