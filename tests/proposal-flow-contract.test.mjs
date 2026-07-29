@@ -7,6 +7,10 @@ const migration = await readFile(
   new URL("../supabase/migrations/20260729_complete_salon_proposal_publish.sql", import.meta.url),
   "utf8",
 );
+const ownerResolutionMigration = await readFile(
+  new URL("../supabase/migrations/20260729_fix_proposal_owner_resolution.sql", import.meta.url),
+  "utf8",
+);
 
 test("Growth Partner proposal form persists through the existing RLS-backed contract", () => {
   for (const field of [
@@ -52,4 +56,13 @@ test("publish keeps attribution and enables only the owner-published storefront"
 
 test("frontend contains no privileged Supabase credential", () => {
   assert.doesNotMatch(app, /service_role|SUPABASE_SERVICE/i);
+});
+
+test("submitted proposals resolve an exact active Owner before workspace bootstrap", () => {
+  assert.match(ownerResolutionMigration, /p\.platform_role = 'business_user'/);
+  assert.match(ownerResolutionMigration, /p\.is_active/);
+  assert.match(ownerResolutionMigration, /lower\(trim\(u\.email\)\) = lower/);
+  assert.match(ownerResolutionMigration, /select r\.owner_user_id, r\.salon_id/);
+  assert.match(ownerResolutionMigration, /No active Shop Owner account matches this email/);
+  assert.match(ownerResolutionMigration, /if p_submit then[\s\S]*?recipient_user_id/);
 });
