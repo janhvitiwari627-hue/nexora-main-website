@@ -83,6 +83,28 @@ function money(paise: number | null | undefined) {
   }).format((paise ?? 0) / 100);
 }
 
+// crypto.randomUUID is only available in secure contexts (HTTPS/localhost).
+// Fall back to a random id so plain-HTTP previews never crash with
+// "crypto.randomUUID is not a function".
+function randomId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}${Math.random()
+    .toString(16)
+    .slice(2)}`;
+}
+
+// decodeURIComponent throws on malformed URLs (e.g. /salons/%zz) and would
+// otherwise crash the page render; fall back to the raw segment instead.
+function safeDecodePathSegment(segment: string) {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
 function friendlyError(error: unknown) {
   if (!navigator.onLine) return "You appear to be offline. Reconnect and try again.";
   const message = error instanceof Error ? error.message : "Something went wrong.";
@@ -172,9 +194,9 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   let content: React.ReactNode;
   if (path === "/salons") content = <CatalogPage navigate={navigate} online={online} />;
   else if (path.startsWith("/salons/"))
-    content = <SalonPage slug={decodeURIComponent(path.slice(8))} navigate={navigate} online={online} authState={authState} signOut={signOut} />;
+    content = <SalonPage slug={safeDecodePathSegment(path.slice(8))} navigate={navigate} online={online} authState={authState} signOut={signOut} />;
   else if (path.startsWith("/booking/"))
-    content = <BookingPage slug={decodeURIComponent(path.slice(9))} navigate={navigate} online={online} authState={authState} signOut={signOut} />;
+    content = <BookingPage slug={safeDecodePathSegment(path.slice(9))} navigate={navigate} online={online} authState={authState} signOut={signOut} />;
   else if (path === "/terms") content = <LegalPage type="terms" />;
   else if (path === "/privacy") content = <LegalPage type="privacy" />;
   else if (path === "/cancellation-refund") content = <LegalPage type="refund" />;
@@ -186,12 +208,15 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
     content = <RoleEntry path={path} navigate={navigate} />;
   else content = <HomePage navigate={navigate} online={online} />;
 
+  const portal = portalFromContext(authState.role, path);
+
   return (
     <div className="site-shell">
       {!online && <div className="offline-banner">Offline — live salon and account data may be unavailable.</div>}
       <Header navigate={navigate} authState={authState} signOut={signOut} />
       {content}
       <Footer navigate={navigate} />
+      <PwaInstallPrompt portal={portal} />
     </div>
   );
 }
@@ -573,7 +598,7 @@ function BookingPage({
         p_staff_id: null,
         p_appointment_start: appointmentStart.toISOString(),
         p_customer_note: note.trim() || null,
-        p_idempotency_key: crypto.randomUUID(),
+        p_idempotency_key: randomId(),
       });
       if (error) throw error;
       const bookingId = bookingIdFrom(data as BookingResult | BookingResult[] | null);
@@ -629,18 +654,43 @@ function BookingPage({
   );
 }
 
-function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (path: string) => void }) {
-  const params = typeof window === "undefined" ? new URLSearchParams() : new URLSearchParams(window.location.search);
-  const requested = params.get("role");
+function readAuthQueryParams() {
+  if (typeof window === "undefined") {
+    return { requested: null, returnTo: null, reason: null } as const;
+  }
+  const params = new URLSearchParams(window.location.search);
   const requestedReturnTo = params.get("returnTo");
-  const reason = params.get("reason");
-  const returnTo = requestedReturnTo?.startsWith("/") && !requestedReturnTo.startsWith("//") ? requestedReturnTo : null;
-  const [role, setRole] = useState<Role>(requested === "owner" ? "business_user" : requested === "growth-partner" ? "growth_partner" : "customer");
+  return {
+    requested: params.get("role"),
+    returnTo:
+      requestedReturnTo?.startsWith("/") && !requestedReturnTo.startsWith("//")
+        ? requestedReturnTo
+        : null,
+    reason: params.get("reason"),
+  } as const;
+}
+
+function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (path: string) => void }) {
+  // Keep the first render identical on server and client (hydration-safe);
+  // query params are applied only after mount.
+  const [role, setRole] = useState<Role>("customer");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState(reason === "session-expired" ? "Your Customer session expired. Log in again to continue booking." : "");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const { requested, reason } = readAuthQueryParams();
+      if (requested === "owner") setRole("business_user");
+      else if (requested === "growth-partner") setRole("growth_partner");
+      if (reason === "session-expired") {
+        setMessage("Your Customer session expired. Log in again to continue booking.");
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
   const submit = async (event: FormEvent) => {
     event.preventDefault(); setBusy(true); setMessage("");
     try {
@@ -659,6 +709,7 @@ function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (pat
       const { data: profile, error: profileError } = await client.from("profiles").select("platform_role,is_active").eq("id", user.id).single();
       if (profileError) throw profileError;
       if (!profile.is_active) { await client.auth.signOut(); throw new Error("This account is inactive. Contact Nexora support."); }
+      const { returnTo } = readAuthQueryParams();
       navigate(profile.platform_role === "customer" && returnTo ? returnTo : `/dashboard/${profile.platform_role}`);
     } catch (cause) { setMessage(friendlyError(cause)); } finally { setBusy(false); }
   };
@@ -733,7 +784,7 @@ type PartnerState = {
 };
 
 const emptyService = (): ServiceDraft => ({
-  key: crypto.randomUUID(),
+  key: randomId(),
   name: "",
   description: "",
   price: "",
@@ -766,7 +817,7 @@ function GrowthPartnerProposalForm({ onSubmitted }: { onSubmitted: () => Promise
     if (readError) throw readError;
     if (existing) return existing as PartnerState;
 
-    const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
+    const suffix = randomId().replaceAll("-", "").slice(0, 12).toUpperCase();
     const { data: created, error: createError } = await client
       .from("growth_partners")
       .insert({
@@ -1057,4 +1108,196 @@ function SalonSkeletons({ count }: { count: number }) {
 
 function Footer({ navigate }: { navigate: (path: string) => void }) {
   return <footer><div><div className="brand"><span className="brand-mark">N</span><span>Nexora</span></div><p>One connected platform for salons, customers, owners, and growth partners.</p></div><div><b>Explore</b><button onClick={() => navigate("/salons")}>Published salons</button><button onClick={() => navigate("/login")}>Log in</button></div><div><b>Legal</b><button onClick={() => navigate("/terms")}>Terms & Conditions</button><button onClick={() => navigate("/privacy")}>Privacy Policy</button><button onClick={() => navigate("/cancellation-refund")}>Cancellation & Refund</button></div></footer>;
+}
+
+type PortalKey = "customer" | "owner" | "growth-partner";
+
+type PwaInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+};
+
+const PWA_APPS: Record<PortalKey, { name: string; manifest: string; theme: string; icon: string; blurb: string }> = {
+  customer: {
+    name: "Nexora Customer",
+    manifest: "/manifest-customer.webmanifest",
+    theme: "#e6007e",
+    icon: "/icons/customer-192.png",
+    blurb: "Book salons faster, track payments, and reopen your bookings in one tap.",
+  },
+  owner: {
+    name: "Nexora Shop Owner",
+    manifest: "/manifest-owner.webmanifest",
+    theme: "#6d28d9",
+    icon: "/icons/owner-192.png",
+    blurb: "Review proposals, publish your storefront, and manage bookings anywhere.",
+  },
+  "growth-partner": {
+    name: "Nexora Growth Partner",
+    manifest: "/manifest-growth-partner.webmanifest",
+    theme: "#16845b",
+    icon: "/icons/growth-partner-192.png",
+    blurb: "Submit salon websites and follow approval and commission status on the go.",
+  },
+};
+
+const PWA_DISMISS_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Web storage APIs are unavailable in sandboxed embeds, so dismissal is
+// remembered with a short-lived cookie plus an in-memory fallback.
+const pwaDismissedInMemory = new Set<string>();
+
+function pwaDismissCookieKey(portal: PortalKey) {
+  return `nexora-pwa-dismissed-${portal}`;
+}
+
+function isPwaDismissed(portal: PortalKey) {
+  const key = pwaDismissCookieKey(portal);
+  if (pwaDismissedInMemory.has(key)) return true;
+  const prefix = `${key}=`;
+  return document.cookie.split(";").some((entry) => entry.trim().startsWith(prefix));
+}
+
+function rememberPwaDismissed(portal: PortalKey) {
+  const key = pwaDismissCookieKey(portal);
+  pwaDismissedInMemory.add(key);
+  try {
+    document.cookie = `${key}=1; max-age=${Math.floor(PWA_DISMISS_COOLDOWN_MS / 1000)}; path=/; samesite=lax`;
+  } catch {
+    // Cookie writes can be blocked in sandboxed contexts; in-memory fallback covers the session.
+  }
+}
+
+function portalFromContext(role: Role | undefined, path: string): PortalKey {
+  if (role === "business_user") return "owner";
+  if (role === "growth_partner") return "growth-partner";
+  if (role === "customer") return "customer";
+  if (path === "/owner" || path.startsWith("/dashboard/business_user")) return "owner";
+  if (path === "/growth-partner" || path.startsWith("/dashboard/growth_partner")) return "growth-partner";
+  return "customer";
+}
+
+function setHeadLink(rel: string, href: string) {
+  let link = document.querySelector<HTMLLinkElement>(`link[rel="${rel}"]`);
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = rel;
+    document.head.appendChild(link);
+  }
+  link.href = href;
+}
+
+// Swaps the web app manifest to the role-specific Nexora app so the browser
+// install prompt installs the correct PWA for the signed-in (or browsing) role.
+function useRolePwaManifest(app: (typeof PWA_APPS)[PortalKey]) {
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setHeadLink("manifest", app.manifest);
+      setHeadLink("apple-touch-icon", app.icon);
+      let theme = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+      if (!theme) {
+        theme = document.createElement("meta");
+        theme.name = "theme-color";
+        document.head.appendChild(theme);
+      }
+      theme.content = app.theme;
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [app]);
+}
+
+function PwaInstallPrompt({ portal }: { portal: PortalKey }) {
+  const app = PWA_APPS[portal];
+  const [mounted, setMounted] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<PwaInstallPromptEvent | null>(null);
+  const [installed, setInstalled] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useRolePwaManifest(app);
+
+  useEffect(() => {
+    const isStandalone =
+      window.matchMedia?.("(display-mode: standalone)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true;
+    const timer = window.setTimeout(() => {
+      if (isStandalone) {
+        setInstalled(true);
+      } else if (isPwaDismissed(portal)) {
+        setDismissed(true);
+      }
+      setMounted(true);
+    }, 0);
+    const onBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setDeferredPrompt(event as PwaInstallPromptEvent);
+    };
+    const onAppInstalled = () => {
+      setInstalled(true);
+      setDeferredPrompt(null);
+    };
+    window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+    window.addEventListener("appinstalled", onAppInstalled);
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    }
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", onAppInstalled);
+    };
+  }, [portal]);
+
+  const isIos =
+    typeof navigator !== "undefined" &&
+    /iphone|ipad|ipod/i.test(navigator.userAgent) &&
+    !(navigator as Navigator & { standalone?: boolean }).standalone;
+
+  if (!mounted || installed || dismissed || (!deferredPrompt && !isIos)) return null;
+
+  const dismiss = () => {
+    rememberPwaDismissed(portal);
+    setDismissed(true);
+  };
+  const install = async () => {
+    if (!deferredPrompt || busy) return;
+    setBusy(true);
+    try {
+      await deferredPrompt.prompt();
+      const choice = await deferredPrompt.userChoice;
+      if (choice.outcome === "accepted") {
+        setInstalled(true);
+        return;
+      }
+      dismiss();
+    } catch {
+      dismiss();
+    } finally {
+      setBusy(false);
+      setDeferredPrompt(null);
+    }
+  };
+
+  return (
+    <aside className="pwa-install" role="dialog" aria-label={`Install ${app.name} app`}>
+      {/* 46px local PWA icon — next/image optimization adds no value here */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img className="pwa-install-icon" src={app.icon} alt="" width={46} height={46} />
+      <div className="pwa-install-copy">
+        <b>Install {app.name}</b>
+        <p>{app.blurb}</p>
+        {isIos && !deferredPrompt && (
+          <p className="pwa-install-hint">Tap Share, then “Add to Home Screen”.</p>
+        )}
+      </div>
+      <div className="pwa-install-actions">
+        {deferredPrompt && (
+          <button className="primary compact" disabled={busy} onClick={() => void install()}>
+            {busy ? "Opening…" : "Install app"}
+          </button>
+        )}
+        <button className="text-button" onClick={dismiss}>Not now</button>
+      </div>
+    </aside>
+  );
 }

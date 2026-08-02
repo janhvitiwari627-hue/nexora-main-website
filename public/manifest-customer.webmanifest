@@ -1,0 +1,18 @@
+{
+  "name": "Nexora Customer",
+  "short_name": "NX Customer",
+  "description": "Discover verified salons, book services, and follow payments with your Nexora Customer account.",
+  "id": "/customer",
+  "start_url": "/salons?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#e6007e",
+  "background_color": "#fff8fb",
+  "categories": ["lifestyle", "beauty", "shopping"],
+  "icons": [
+    { "src": "/icons/customer-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/customer-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/customer-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
