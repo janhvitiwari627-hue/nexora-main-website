@@ -7,21 +7,23 @@ if [[ "${SITES_ENV_READY:-}" != "1" ]]; then
   exec "${script_dir}/sites-env.sh" -- "$0" "$@"
 fi
 
-supabase_url="${NEXT_PUBLIC_SUPABASE_URL:-${VITE_SUPABASE_URL:-}}"
-supabase_anon_key="${NEXT_PUBLIC_SUPABASE_ANON_KEY:-${VITE_SUPABASE_ANON_KEY:-}}"
+supabase_url="${NEXT_PUBLIC_SUPABASE_URL:-${VITE_PUBLIC_SUPABASE_URL:-${VITE_SUPABASE_URL:-}}}"
+supabase_anon_key="${NEXT_PUBLIC_SUPABASE_ANON_KEY:-${VITE_PUBLIC_SUPABASE_ANON_KEY:-${VITE_SUPABASE_ANON_KEY:-}}}"
 
 if [[ -z "${supabase_url}" ]]; then
-  echo "Set NEXT_PUBLIC_SUPABASE_URL or VITE_SUPABASE_URL for the production client build." >&2
+  echo "Set NEXT_PUBLIC_SUPABASE_URL or VITE_PUBLIC_SUPABASE_URL or VITE_SUPABASE_URL for the production client build." >&2
   exit 78
 fi
 
 if [[ -z "${supabase_anon_key}" ]]; then
-  echo "Set NEXT_PUBLIC_SUPABASE_ANON_KEY or VITE_SUPABASE_ANON_KEY for the production client build." >&2
+  echo "Set NEXT_PUBLIC_SUPABASE_ANON_KEY or VITE_PUBLIC_SUPABASE_ANON_KEY or VITE_SUPABASE_ANON_KEY for the production client build." >&2
   exit 78
 fi
 
 export NEXT_PUBLIC_SUPABASE_URL="${supabase_url}"
 export NEXT_PUBLIC_SUPABASE_ANON_KEY="${supabase_anon_key}"
+export VITE_PUBLIC_SUPABASE_URL="${supabase_url}"
+export VITE_PUBLIC_SUPABASE_ANON_KEY="${supabase_anon_key}"
 
 command -v timeout >/dev/null || {
   echo "build-verified.sh requires GNU timeout." >&2
