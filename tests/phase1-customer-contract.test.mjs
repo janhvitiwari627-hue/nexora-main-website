@@ -191,3 +191,19 @@ test("app-side patch routes redemption through the server RPC", () => {
     }
   }
 });
+
+// The dashboard runner is a verbatim concatenation of both migrations plus
+// the final self test — it can never drift from the source files.
+test("dashboard runner contains both migrations verbatim, in order", async () => {
+  const runner = await readFile(
+    new URL("../docs/phase1-customer-pwa/PHASE1_BACKEND_RUN_THIS.sql", import.meta.url),
+    "utf8",
+  );
+  const part1 = runner.indexOf(phase1Schema.slice(0, 200));
+  const part2 = runner.indexOf(completion.slice(0, 200));
+  assert.ok(part1 > 0, "PART 1 (20260802 schema) missing verbatim from the runner");
+  assert.ok(part2 > part1, "PART 2 (20260803 completion) must follow PART 1 verbatim");
+  assert.ok(runner.includes(phase1Schema.trim().slice(-400)), "PART 1 truncated in the runner");
+  assert.ok(runner.includes(completion.trim().slice(-400)), "PART 2 truncated in the runner");
+  assert.match(runner, /select \* from public\.verify_customer_phase1_backend\(\);\s*$/);
+});
