@@ -179,6 +179,13 @@ test("20260803 ships a runnable self test covering every Phase-1 object", () => 
 // Documentation contract — the status report records all 7 tasks with
 // evidence, and the app-side patch uses the server RPC.
 // ---------------------------------------------------------------------------
+// Catalog identifiers used in guards must be real Postgres columns.
+test("no catalog column typos in guarded role checks", () => {
+  assert.doesNotMatch(completion, /pg_roles where rolename/); // column is rolname
+  assert.match(completion, /pg_roles where rolname = 'anon'/);
+  assert.match(completion, /pg_roles where rolname = 'authenticated'/);
+});
+
 test("status report covers all 7 Phase-1 tasks with verdicts", () => {
   for (let i = 1; i <= 7; i += 1) {
     assert.match(statusDoc, new RegExp(`## Task ${i} —`));

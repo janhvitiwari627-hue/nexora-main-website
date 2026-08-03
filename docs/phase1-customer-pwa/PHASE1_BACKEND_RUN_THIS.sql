@@ -570,11 +570,11 @@ $fn$;
 --     Guarded in case a role is named differently on a non-Supabase host.
 do $x$
 begin
-  if exists (select 1 from pg_roles where rolename = 'anon') then
+  if exists (select 1 from pg_roles where rolname = 'anon') then
     revoke all on function public.credit_wallet(uuid, bigint, text, text, uuid) from anon;
     revoke all on function public.credit_reward_points(uuid, integer, text, text) from anon;
   end if;
-  if exists (select 1 from pg_roles where rolename = 'authenticated') then
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
     revoke all on function public.credit_wallet(uuid, bigint, text, text, uuid) from authenticated;
     revoke all on function public.credit_reward_points(uuid, integer, text, text) from authenticated;
   end if;
@@ -670,7 +670,7 @@ revoke all on function public.redeem_loyalty_points(integer, bigint, text)
   from public;
 do $x$
 begin
-  if exists (select 1 from pg_roles where rolename = 'anon') then
+  if exists (select 1 from pg_roles where rolname = 'anon') then
     revoke all on function public.redeem_loyalty_points(integer, bigint, text) from anon;
   end if;
 end
@@ -789,7 +789,7 @@ revoke all on function public.verify_customer_phase1_backend()
   from public;
 do $x$
 begin
-  if exists (select 1 from pg_roles where rolename = 'anon') then
+  if exists (select 1 from pg_roles where rolname = 'anon') then
     revoke all on function public.verify_customer_phase1_backend() from anon;
   end if;
 end
