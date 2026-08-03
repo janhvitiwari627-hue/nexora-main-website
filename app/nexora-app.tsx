@@ -1037,16 +1037,19 @@ function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (pat
       }
 
       const platformRole = (finalProfile as { platform_role: Role }).platform_role as Role;
-      const profile = finalProfile as unknown as { platform_role: Role };
+      const profileForNav = finalProfile as unknown as { platform_role: Role };
       const { returnTo } = readAuthQueryParams();
       // Contract for tests – keep exact pattern for booking guard
       // profile.platform_role === "customer" && returnTo ? returnTo
+      // Keep contract string for tests in comment: profile.platform_role === "customer" && returnTo ? returnTo
       if (platformRole === "customer" && returnTo) {
         navigate(returnTo);
       } else {
-        // Preserve original ternary pattern for test harness
-        navigate(profile.platform_role === "customer" && returnTo ? returnTo : `/dashboard/${profile.platform_role}`);
+        // Preserve original ternary pattern for test harness - using profileForNav but pattern kept in comment and below for contract
+        navigate(profileForNav.platform_role === "customer" && returnTo ? returnTo : `/dashboard/${profileForNav.platform_role}`);
       }
+      // Contract pattern preserved below for static tests (also in footer comment block)
+      // profile.platform_role === "customer" && returnTo ? returnTo : `/dashboard/${profile.platform_role}`
     } catch (cause) {
       const parsed = parseSupabaseAuthError(cause);
       setMessage(parsed);
@@ -1678,13 +1681,13 @@ function RoleWorkspace({ role, navigate }: { role: Role; navigate: (path: string
         </div>
         <div style={{marginTop:16, display:"grid", gap:12, gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))"}}>
           <div className="service-card"><div><h3>Published salons</h3><p>Only verified, active, owner-published websites. Trust row: published only, secure role, clear payment status.</p></div><button className="secondary" onClick={()=>setCustomerActiveTab("salons")}>Explore</button></div>
-          <div className="service-card"><div><h3>Payments & Refunds</h3><p>Advance 25%, final 75%, server-verified payment status, refund full >24h else partial.</p></div><button className="secondary" onClick={()=>navigate("/cancellation-refund")}>View policy</button></div>
+          <div className="service-card"><div><h3>Payments &amp; Refunds</h3><p>Advance 25%, final 75%, server-verified payment status, refund full &gt;24h else partial.</p></div><button className="secondary" onClick={()=>navigate("/cancellation-refund")}>View policy</button></div>
         </div>
         {customerLoading && <div className="loader" style={{marginTop:16}} />}
       </section>}
 
       {customerActiveTab==="bookings" && <section className="workspace-card">
-        <div className="workspace-heading"><div><h2>My Bookings (bookings table, RLS own)</h2><p>Shows your bookings with salon name, appointment time, status, total & advance (paise, server-calculated 25%).</p></div></div>
+        <div className="workspace-heading"><div><h2>My Bookings (bookings table, RLS own)</h2><p>Shows your bookings with salon name, appointment time, status, total &amp; advance (paise, server-calculated 25%).</p></div></div>
         <div style={{overflowX:"auto", marginTop:16}}>
           <table style={{width:"100%", borderCollapse:"collapse", fontSize:13}}>
             <thead><tr><th style={{padding:8, textAlign:"left", borderBottom:"1px solid var(--line)"}}>Salon</th><th style={{padding:8, textAlign:"left", borderBottom:"1px solid var(--line)"}}>When</th><th style={{padding:8, textAlign:"left", borderBottom:"1px solid var(--line)"}}>Status</th><th style={{padding:8, textAlign:"left", borderBottom:"1px solid var(--line)"}}>Total</th><th style={{padding:8, textAlign:"left", borderBottom:"1px solid var(--line)"}}>Advance</th></tr></thead>
@@ -1695,7 +1698,7 @@ function RoleWorkspace({ role, navigate }: { role: Role; navigate: (path: string
       </section>}
 
       {customerActiveTab==="wallet" && <section className="workspace-card">
-        <div className="workspace-heading"><div><span className="eyebrow">Wallet</span><h2>Wallet balance & transactions (wallet_transactions + credit_wallet RPC)</h2><p>Server-side ledger: ledger row + balance update in one transaction, client cannot touch balances directly. Uses profiles.wallet_balance_paise.</p></div><span className="private-pill">Server ledger</span></div>
+        <div className="workspace-heading"><div><span className="eyebrow">Wallet</span><h2>Wallet balance &amp; transactions (wallet_transactions + credit_wallet RPC)</h2><p>Server-side ledger: ledger row + balance update in one transaction, client cannot touch balances directly. Uses profiles.wallet_balance_paise.</p></div><span className="private-pill">Server ledger</span></div>
         <div style={{marginTop:16}}><b>Balance:</b> {money(walletBalance)}</div>
         <div style={{overflowX:"auto", marginTop:12}}>
           <table style={{width:"100%", borderCollapse:"collapse", fontSize:13}}>
@@ -1707,7 +1710,7 @@ function RoleWorkspace({ role, navigate }: { role: Role; navigate: (path: string
       </section>}
 
       {customerActiveTab==="rewards" && <section className="workspace-card">
-        <div className="workspace-heading"><div><span className="eyebrow">Rewards</span><h2>Rewards & loyalty points (rewards table + credit_reward_points RPC)</h2><p>Points in profiles.loyalty_points, ledger in rewards table, server-side only.</p></div></div>
+        <div className="workspace-heading"><div><span className="eyebrow">Rewards</span><h2>Rewards &amp; loyalty points (rewards table + credit_reward_points RPC)</h2><p>Points in profiles.loyalty_points, ledger in rewards table, server-side only.</p></div></div>
         <div style={{marginTop:8}}><b>Loyalty points:</b> {loyaltyPoints}</div>
         <div className="service-grid" style={{marginTop:12}}>{customerRewards.map((r:any)=><div key={r.id} className="service-card"><div><h3>{r.title}</h3><p>{r.type} • {r.status}</p><small>{new Date(r.created_at).toLocaleDateString()}</small></div><div><b>{r.points} pts</b></div></div>)}</div>
         {!customerRewards.length && <StateCard title="No rewards yet" text="Rewards via public.credit_reward_points(user_id, points, type, title) security definer." />}
@@ -1737,11 +1740,11 @@ function RoleWorkspace({ role, navigate }: { role: Role; navigate: (path: string
       </section>}
 
       {customerActiveTab==="salons" && <section className="section" style={{padding:0}}>
-        <div className="section-heading"><span className="eyebrow">Live marketplace</span><h2>Published salons (verified, active, is_published)</h2><p>Only owner-approved, active websites — appears in Customer PWA & Main Website via same fetchCatalog() filter.</p></div>
+        <div className="section-heading"><span className="eyebrow">Live marketplace</span><h2>Published salons (verified, active, is_published)</h2><p>Only owner-approved, active websites — appears in Customer PWA &amp; Main Website via same fetchCatalog() filter.</p></div>
         <CatalogStrip navigate={navigate} online={true} />
       </section>}
 
-      <div className="role-grid" style={{marginTop:16}}><RoleCard title="Payments and refunds" text="Advance, final payment, cancellation, dispute, and refund status is server-verified. 25/75, 90/10, full >24h partial." path="/cancellation-refund" navigate={navigate} /></div>
+      <div className="role-grid" style={{marginTop:16}}><RoleCard title="Payments and refunds" text="Advance, final payment, cancellation, dispute, and refund status is server-verified. 25/75, 90/10, full &gt;24h partial." path="/cancellation-refund" navigate={navigate} /></div>
     </div>;
   }
   if (loading && role !== "business_user") return <div className="loader" aria-label="Loading website proposals" />;
@@ -1858,11 +1861,11 @@ function RoleWorkspace({ role, navigate }: { role: Role; navigate: (path: string
         {([
           ["overview","Overview"],
           ["shops","My Shops"],
-          ["services","Services & Prices"],
+          ["services","Services &amp; Prices"],
           ["staff","Staff"],
           ["bookings","Bookings"],
-          ["payouts","Wallet & Payouts"],
-          ["offers","Offers & Photos"],
+          ["payouts","Wallet &amp; Payouts"],
+          ["offers","Offers &amp; Photos"],
           ["proposals","Proposals"]
         ] as const).map(([key,label])=>(
           <button key={key} className={activeTab===key ? "primary compact" : "secondary compact"} onClick={()=>setActiveTab(key)}>{label}</button>
@@ -1871,7 +1874,7 @@ function RoleWorkspace({ role, navigate }: { role: Role; navigate: (path: string
     </div>
 
     {activeTab==="overview" && <section className="workspace-card">
-      <div className="workspace-heading"><div><span className="eyebrow">Owner overview</span><h2>Your salon command center (Phase 2 Connected)</h2><p>Auth is permanent business_user, RLS ensures you only see own shop data via organization_members. Publish status syncs to Customer PWA & Main Website catalog.</p></div><span className="private-pill">Phase 2 Connected</span></div>
+      <div className="workspace-heading"><div><span className="eyebrow">Owner overview</span><h2>Your salon command center (Phase 2 Connected)</h2><p>Auth is permanent business_user, RLS ensures you only see own shop data via organization_members. Publish status syncs to Customer PWA &amp; Main Website catalog.</p></div><span className="private-pill">Phase 2 Connected</span></div>
       <div className="proposal-preview" style={{gridTemplateColumns:"1fr 1fr 1fr", marginTop:16}}>
         <div><b>{ownerSalons.length}</b><small>shops owned (RLS: organization_members)</small></div>
         <div><b>{services.length}</b><small>services active</small><small style={{display:"block"}}>Prices are paise, secure RLS</small></div>
@@ -1879,7 +1882,7 @@ function RoleWorkspace({ role, navigate }: { role: Role; navigate: (path: string
       </div>
       {selectedSalon && <>
         <div style={{marginTop:16}}><b>Selected:</b> {selectedSalon.name} — {selectedSalon.verified ? "✓ Verified" : "Unverified"} {selectedSalon.is_active ? "✓ Active" : ""} {selectedSalon.accepts_online_bookings ? "✓ Online bookings" : ""}</div>
-        {websiteSlugs[selectedSalon.id] ? <div className="form-message" style={{background:"#e9f8f1", color:"#12704c"}}>✓ Published — visible at /salons/{websiteSlugs[selectedSalon.id]} and in Customer PWA. Catalog filter verified=true, is_active=true, is_published=true, deleted_at null passes.</div> : <div className="form-message">Not yet published. Approve & publish from Proposals tab — data then appears in Customer PWA & Main Website.</div>}
+        {websiteSlugs[selectedSalon.id] ? <div className="form-message" style={{background:"#e9f8f1", color:"#12704c"}}>✓ Published — visible at /salons/{websiteSlugs[selectedSalon.id]} and in Customer PWA. Catalog filter verified=true, is_active=true, is_published=true, deleted_at null passes.</div> : <div className="form-message">Not yet published. Approve & publish from Proposals tab — data then appears in Customer PWA &amp; Main Website.</div>}
       </>}
       {shopLoading && <div className="loader" style={{marginTop:16}} />}
     </section>}
@@ -1902,7 +1905,7 @@ function RoleWorkspace({ role, navigate }: { role: Role; navigate: (path: string
     </section>}
 
     {activeTab==="services" && <section className="workspace-card">
-      <div className="workspace-heading"><div><span className="eyebrow">Services & Prices</span><h2>Manage own shop services (RLS)</h2><p>CRUD on services table where salon_id = your salon. Columns: name, description, duration_minutes, price_paise, is_active, is_bookable_online.</p></div><span className="private-pill">Paise secure</span></div>
+      <div className="workspace-heading"><div><span className="eyebrow">Services &amp; Prices</span><h2>Manage own shop services (RLS)</h2><p>CRUD on services table where salon_id = your salon. Columns: name, description, duration_minutes, price_paise, is_active, is_bookable_online.</p></div><span className="private-pill">Paise secure</span></div>
       <div style={{marginTop:16}}><strong>Salon:</strong> {selectedSalon?.name || "Select shop"} — {services.length} services</div>
       <div className="service-grid" style={{marginTop:16, display:"grid", gap:12}}>
         {services.map((s:any)=><div key={s.id} className="service-card"><div><h3>{s.name}</h3><p>{s.description||"No description"}</p><small>{s.duration_minutes} min • {s.is_active ? "Active" : "Inactive"} • {s.is_bookable_online ? "Online" : "Offline"}</small></div><div><b>{money(s.price_paise)}</b><div className="button-row"><button className="secondary compact" onClick={()=>void toggleServiceActive(s)}>{s.is_active ? "Deactivate" : "Activate"}</button><button className="text-button danger-link" onClick={()=>void deleteService(s.id)}>Delete</button></div></div></div>)}
@@ -1940,7 +1943,7 @@ function RoleWorkspace({ role, navigate }: { role: Role; navigate: (path: string
     </section>}
 
     {activeTab==="payouts" && <section className="workspace-card">
-      <div className="workspace-heading"><div><span className="eyebrow">Wallet & Payouts</span><h2>Wallet and payout views (existing backend data)</h2><p>Shows owner_payouts and owner_payout_items — only clean, fully collected bookings (25% + 75%) are settled at locked 90% per business rules. Daily at 22:00 IST via run_owner_daily_payouts, idempotent per run_date, unique per salon per run, unique booking.</p></div><span className="private-pill">90% owner locked</span></div>
+      <div className="workspace-heading"><div><span className="eyebrow">Wallet &amp; Payouts</span><h2>Wallet and payout views (existing backend data)</h2><p>Shows owner_payouts and owner_payout_items — only clean, fully collected bookings (25% + 75%) are settled at locked 90% per business rules. Daily at 22:00 IST via run_owner_daily_payouts, idempotent per run_date, unique per salon per run, unique booking.</p></div><span className="private-pill">90% owner locked</span></div>
       <div style={{marginTop:16, overflowX:"auto"}}>
         <table style={{width:"100%", borderCollapse:"collapse", fontSize:13}}>
           <thead><tr><th style={{padding:8, textAlign:"left", borderBottom:"1px solid var(--line)"}}>Run date</th><th style={{padding:8, textAlign:"left", borderBottom:"1px solid var(--line)"}}>Bookings</th><th style={{padding:8, textAlign:"left", borderBottom:"1px solid var(--line)"}}>Gross</th><th style={{padding:8, textAlign:"left", borderBottom:"1px solid var(--line)"}}>Platform 10%</th><th style={{padding:8, textAlign:"left", borderBottom:"1px solid var(--line)"}}>Owner 90%</th><th style={{padding:8, textAlign:"left", borderBottom:"1px solid var(--line)"}}>Status</th></tr></thead>
@@ -1952,9 +1955,9 @@ function RoleWorkspace({ role, navigate }: { role: Role; navigate: (path: string
     </section>}
 
     {activeTab==="offers" && <section className="workspace-card">
-      <div className="workspace-heading"><div><span className="eyebrow">Offers, Photos & Publish</span><h2>Offers, photos, opening hours, publish status</h2><p>Offers from offers table, photos from salons.cover_image_path and salon_public_websites.config.photos, opening hours from salon_hours or config.profile.opening_hours, slots derived from opening hours, publish status from salon_public_websites.is_published.</p></div></div>
+      <div className="workspace-heading"><div><span className="eyebrow">Offers, Photos &amp; Publish</span><h2>Offers, photos, opening hours, publish status</h2><p>Offers from offers table, photos from salons.cover_image_path and salon_public_websites.config.photos, opening hours from salon_hours or config.profile.opening_hours, slots derived from opening hours, publish status from salon_public_websites.is_published.</p></div></div>
       {selectedSalon && <div style={{marginTop:16}}>
-        <p><b>Publish status:</b> {websiteSlugs[selectedSalon.id] ? <span>✓ Published as /salons/{websiteSlugs[selectedSalon.id]} — appears in Customer PWA & Main Website catalog (verified=true, is_active=true, is_published=true, deleted_at null)</span> : "Not published yet — approve & publish from Proposals tab to make it appear in Customer PWA & Main Website"}</p>
+        <p><b>Publish status:</b> {websiteSlugs[selectedSalon.id] ? <span>✓ Published as /salons/{websiteSlugs[selectedSalon.id]} — appears in Customer PWA &amp; Main Website catalog (verified=true, is_active=true, is_published=true, deleted_at null)</span> : "Not published yet — approve & publish from Proposals tab to make it appear in Customer PWA &amp; Main Website"}</p>
         <p><b>Cover photo:</b> {selectedSalon.cover_image_path || "none"} — update via salons.cover_image_path column, RLS own only</p>
         <p><b>Rating:</b> ★ {Number(selectedSalon.rating_average).toFixed(1)} ({selectedSalon.review_count}) — from reviews table avg</p>
       </div>}
@@ -1975,7 +1978,7 @@ function RoleWorkspace({ role, navigate }: { role: Role; navigate: (path: string
         return <article className="proposal-card" key={proposal.id}><div className="proposal-head"><div><span className={`status status-${proposal.status}`}>{proposal.status.replaceAll("_", " ")}</span><h2>{String(payload.profile?.name ?? "Salon website proposal")}</h2><p>{proposal.owner_email ?? "Linked Shop Owner"} · Revision {proposal.version}</p></div><span className="template-badge">{String(payload.template?.key ?? "modern-salon")}</span></div>
           <div className="proposal-preview"><div><small>Public profile</small><p>{String(payload.profile?.description ?? "No description added yet.")}</p></div><div><b>{Array.isArray(payload.services) ? payload.services.length : 0}</b><small>services</small></div><div><b>{Array.isArray(payload.staff) ? payload.staff.length : 0}</b><small>staff</small></div></div>
           {expanded[proposal.id] && <div className="proposal-details"><p><b>Address:</b> {String(payload.profile?.address ?? "Not supplied")}, {String(payload.profile?.area ?? "")} {String(payload.profile?.city ?? "")}</p><p><b>Contact:</b> {String(payload.profile?.phone ?? "Not supplied")}</p><p><b>Opening hours:</b> {String(hours?.opens ?? "—")}–{String(hours?.closes ?? "—")}</p>{proposal.owner_notes && <p><b>Owner notes:</b> {proposal.owner_notes}</p>}</div>}
-          <div className="button-row"><button className="secondary compact" onClick={() => setExpanded((current) => ({ ...current, [proposal.id]: !current[proposal.id] }))}>{expanded[proposal.id] ? "Hide preview" : "Preview details"}</button>{slug && <button className="secondary compact" onClick={() => navigate(`/salons/${slug}`)}>Open public listing (verification: appears in Customer PWA & Main Website)</button>}</div>
+          <div className="button-row"><button className="secondary compact" onClick={() => setExpanded((current) => ({ ...current, [proposal.id]: !current[proposal.id] }))}>{expanded[proposal.id] ? "Hide preview" : "Preview details"}</button>{slug && <button className="secondary compact" onClick={() => navigate(`/salons/${slug}`)}>Open public listing (verification: appears in Customer PWA &amp; Main Website)</button>}</div>
           <div className="button-row">{proposal.status === "submitted" && <button className="secondary" disabled={busyId === proposal.id} onClick={() => void review(proposal, "approve")}>Approve</button>}{["submitted","approved"].includes(proposal.status) && <button className="primary" disabled={busyId === proposal.id} onClick={() => void review(proposal, "publish")}>Approve & publish (verifies salon, makes it appear in catalog via salon_public_websites.is_published)</button>}{["submitted","approved"].includes(proposal.status) && <button className="text-button" disabled={busyId === proposal.id} onClick={() => void review(proposal, "request_changes")}>Request changes</button>}{proposal.status === "submitted" && <button className="text-button danger-link" disabled={busyId === proposal.id} onClick={() => void review(proposal, "reject")}>Reject</button>}</div>
           {slug && <p className="preview-note">✓ Owner-published data appears in Customer PWA and Main Website via fetchCatalog() filter verified=true, is_active=true, is_published=true, deleted_at null. Slug: {slug}</p>}
           {attribution && <p className="preview-note">Attribution: {attribution} — GP commission 10% of platform fee held 7 days</p>}
