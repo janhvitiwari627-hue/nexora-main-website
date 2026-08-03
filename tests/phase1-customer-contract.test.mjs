@@ -1,0 +1,193 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import test from "node:test";
+
+const phase1Schema = await readFile(
+  new URL("../supabase/migrations/20260802_customer_phase1_schema.sql", import.meta.url),
+  "utf8",
+);
+const completion = await readFile(
+  new URL("../supabase/migrations/20260803_customer_phase1_completion.sql", import.meta.url),
+  "utf8",
+);
+const mainApp = await readFile(
+  new URL("../app/nexora-app.tsx", import.meta.url),
+  "utf8",
+);
+const statusDoc = await readFile(
+  new URL("../docs/PHASE1_CUSTOMER_PWA_COMPLETION_STATUS.md", import.meta.url),
+  "utf8",
+);
+const patchDoc = await readFile(
+  new URL("../docs/phase1-customer-pwa/APPLY_AND_PATCH.md", import.meta.url),
+  "utf8",
+);
+
+// ---------------------------------------------------------------------------
+// Task 6 — the tested booking/payment contract stays exactly as proven.
+// ---------------------------------------------------------------------------
+test("main website keeps the proven booking pipeline contract", () => {
+  assert.match(mainApp, /rpc\("create_customer_booking", \{/);
+  assert.match(mainApp, /p_idempotency_key: randomId\(\)/);
+  assert.match(mainApp, /functions\.invoke<RazorpayOrder>\("razorpay-create-order", \{/);
+  assert.match(mainApp, /body: \{ booking_id: bookingId, stage: "advance" \}/);
+  assert.match(mainApp, /Authorization: `Bearer \$\{session\.access_token\}`/);
+  // The frontend must never create schema or hold payment secrets.
+  assert.doesNotMatch(mainApp, /create table/i);
+  assert.doesNotMatch(mainApp, /service_role|RAZORPAY_KEY_SECRET/);
+});
+
+test("main website uses only the shared Supabase env variables", () => {
+  assert.match(mainApp, /process\.env\.NEXT_PUBLIC_SUPABASE_URL \?\?/);
+  assert.match(mainApp, /viteEnv\.VITE_SUPABASE_URL \?\?/);
+  assert.match(mainApp, /process\.env\.NEXT_PUBLIC_SUPABASE_ANON_KEY/);
+  assert.match(mainApp, /viteEnv\.VITE_SUPABASE_ANON_KEY/);
+  assert.doesNotMatch(mainApp, /VITE_PUBLIC_SUPABASE|SUPABASE_URLS|SECONDARY_SUPABASE/);
+});
+
+// ---------------------------------------------------------------------------
+// Phase-1 base schema (20260802) stays in place — the completion migration
+// builds on it, it does not replace it.
+// ---------------------------------------------------------------------------
+test("20260802 base schema still provides ledger tables and mint RPCs", () => {
+  assert.match(phase1Schema, /create table if not exists public\.customer_settings/);
+  assert.match(phase1Schema, /create table if not exists public\.saved_payment_methods/);
+  assert.match(phase1Schema, /create table if not exists public\.customer_feedback/);
+  assert.match(phase1Schema, /alter table public\.reviews\s+add column if not exists salon_id uuid/);
+  assert.match(phase1Schema, /create table if not exists public\.rewards/);
+  assert.match(phase1Schema, /create table if not exists public\.wallet_transactions/);
+  assert.match(phase1Schema, /alter table public\.profiles\s+add column if not exists loyalty_points/);
+  assert.match(phase1Schema, /alter table public\.profiles\s+add column if not exists wallet_balance_paise/);
+  assert.match(phase1Schema, /create or replace function public\.credit_wallet\(/);
+  assert.match(phase1Schema, /create or replace function public\.credit_reward_points\(/);
+});
+
+// ---------------------------------------------------------------------------
+// Task 7 (reviews) — the app-contract table is provisioned in the shared
+// schema with owner RLS and multi-device realtime.
+// ---------------------------------------------------------------------------
+test("20260803 provisions customer_reviews exactly as the app contract expects", () => {
+  assert.match(completion, /create table if not exists public\.customer_reviews \(/);
+  assert.match(completion, /id text primary key,/);
+  assert.match(completion, /user_id uuid not null references auth\.users \(id\) on delete cascade,/);
+  assert.match(completion, /salon_id text not null,/);
+  assert.match(completion, /service_name text not null,/);
+  assert.match(completion, /rating smallint not null check \(rating between 1 and 5\),/);
+  assert.match(completion, /verified_booking boolean not null default false,/);
+  assert.match(completion, /alter table public\.customer_reviews enable row level security;/);
+  for (const action of ["select", "insert", "update", "delete"]) {
+    assert.match(
+      completion,
+      new RegExp(`create policy "customer_reviews_${action}_own"[\\s\\S]*?auth\\.uid\\(\\) = user_id`),
+    );
+  }
+  // Realtime publication is guarded so re-applying the migration never errors.
+  assert.match(completion, /if exists \(select 1 from pg_publication where pubname = 'supabase_realtime'\)/);
+  assert.match(completion, /alter publication supabase_realtime add table public\.customer_reviews;/);
+});
+
+// ---------------------------------------------------------------------------
+// Task 7 (rewards/wallet) — balances become server-managed money.
+// ---------------------------------------------------------------------------
+test("20260803 guards profile balance columns against direct client writes", () => {
+  assert.match(completion, /create or replace function public\.guard_profile_balance_columns\(\)/);
+  assert.match(completion, /before update on public\.profiles/);
+  assert.match(completion, /execute function public\.guard_profile_balance_columns\(\)/);
+  assert.match(completion, /new\.loyalty_points is not distinct from old\.loyalty_points/);
+  assert.match(completion, /new\.wallet_balance_paise is not distinct from old\.wallet_balance_paise/);
+  // Only marked server RPCs, service_role, or dashboard owner roles may pass.
+  assert.match(completion, /current_setting\('nexora\.balance_writer', true\)/);
+  assert.match(completion, /v_marker <> 'nexora-server-rpc' and v_role <> 'service_role'/);
+  assert.match(completion, /session_user in \('postgres', 'supabase_admin'\)/);
+});
+
+test("20260803 re-issues mint RPCs with the marker and locks them to service_role", () => {
+  const [, creditWalletBody] = completion.split(/create or replace function public\.credit_wallet\(/)[1].split(/\$fn\$;/);
+  assert.match(creditWalletBody, /perform set_config\('nexora\.balance_writer', 'nexora-server-rpc', true\);/);
+  assert.match(
+    completion,
+    /revoke all on function public\.credit_wallet\(uuid, bigint, text, text, uuid\)\s+from public, anon, authenticated;/,
+  );
+  assert.match(
+    completion,
+    /grant execute on function public\.credit_wallet\(uuid, bigint, text, text, uuid\)\s+to service_role;/,
+  );
+  assert.match(
+    completion,
+    /revoke all on function public\.credit_reward_points\(uuid, integer, text, text\)\s+from public, anon, authenticated;/,
+  );
+  assert.match(
+    completion,
+    /grant execute on function public\.credit_reward_points\(uuid, integer, text, text\)\s+to service_role;/,
+  );
+});
+
+test("20260803 redeem RPC is self-service, balance-checked and tier-locked", () => {
+  assert.match(completion, /create or replace function public\.redeem_loyalty_points\(/);
+  assert.match(completion, /v_user uuid := auth\.uid\(\);/);
+  assert.match(completion, /if v_user is null then[\s\S]*?raise exception 'not authenticated';/);
+  // Conversion rate can never be set by the caller.
+  assert.match(completion, /if not \(p_points = 500 and p_wallet_credit_paise = 10000\)/);
+  assert.match(completion, /and not \(p_points = 1000 and p_wallet_credit_paise = 25000\) then/);
+  assert.match(completion, /raise exception 'invalid redemption tier';/);
+  // Balance is re-read under a row lock before any money moves.
+  assert.match(completion, /select loyalty_points into v_current[\s\S]*?for update;/);
+  assert.match(completion, /raise exception 'insufficient points';/);
+  // Both ledgers are written server-side.
+  assert.match(completion, /insert into public\.rewards \(user_id, type, title, points, status, redeemed_at\)/);
+  assert.match(completion, /insert into public\.wallet_transactions \(user_id, amount_paise, tx_type, reason, ref_type\)/);
+  assert.match(completion, /revoke all on function public\.redeem_loyalty_points\(integer, bigint, text\)\s+from public, anon;/);
+  assert.match(completion, /grant execute on function public\.redeem_loyalty_points\(integer, bigint, text\)\s+to authenticated, service_role;/);
+});
+
+test("20260803 ships a runnable self test covering every Phase-1 object", () => {
+  assert.match(completion, /create or replace function public\.verify_customer_phase1_backend\(\)/);
+  assert.match(completion, /returns table \(\s*check_no integer,\s*check_id text,\s*check_name text,\s*status text,\s*detail text\s*\)/);
+  for (const id of [
+    "customer_settings",
+    "saved_payment_methods",
+    "customer_feedback",
+    "support_tickets.created_by",
+    "reviews.salon_id",
+    "customer_reviews",
+    "rewards",
+    "wallet_transactions",
+    "profiles.loyalty_points",
+    "profiles.wallet_balance_paise",
+    "credit_wallet",
+    "credit_reward_points",
+    "balance_guard",
+    "mint_lockdown",
+    "redeem_loyalty_points",
+  ]) {
+    assert.ok(completion.includes(`'${id}'`), `verify row missing for ${id}`);
+  }
+  // No new booking/payment objects are invented anywhere in this migration.
+  assert.doesNotMatch(completion, /create table if not exists public\.bookings|alter table public\.bookings|alter table public\.payments/);
+});
+
+// ---------------------------------------------------------------------------
+// Documentation contract — the status report records all 7 tasks with
+// evidence, and the app-side patch uses the server RPC.
+// ---------------------------------------------------------------------------
+test("status report covers all 7 Phase-1 tasks with verdicts", () => {
+  for (let i = 1; i <= 7; i += 1) {
+    assert.match(statusDoc, new RegExp(`## Task ${i} —`));
+  }
+  assert.match(statusDoc, /4eff314/); // inspected Customer PWA revision
+  assert.match(statusDoc, /customer_reviews/);
+  assert.match(statusDoc, /verify_customer_phase1_backend/);
+  assert.match(statusDoc, /20260803_customer_phase1_completion\.sql/);
+});
+
+test("app-side patch routes redemption through the server RPC", () => {
+  assert.match(patchDoc, /supabase\.rpc\('redeem_loyalty_points', \{/);
+  assert.match(patchDoc, /p_wallet_credit_paise: opt\.discount \* 100/);
+  // The patch must not duck around the guard with direct balance writes.
+  const codeBlocks = patchDoc.split("```");
+  for (const block of codeBlocks) {
+    if (block.startsWith("tsx")) {
+      assert.doesNotMatch(block, /\.update\(\{\s*loyalty_points|wallet_balance_paise:\s*current/);
+    }
+  }
+});
