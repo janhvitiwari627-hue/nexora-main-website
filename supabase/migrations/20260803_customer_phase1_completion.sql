@@ -143,11 +143,18 @@ begin
 end
 $fn$;
 
-drop trigger if exists trg_nexora_guard_profile_balance_columns on public.profiles;
-create trigger trg_nexora_guard_profile_balance_columns
-  before update on public.profiles
-  for each row
-  execute function public.guard_profile_balance_columns();
+do $x$
+begin
+  if to_regclass('public.profiles') is null then
+    raise exception 'profiles table not found — the shared auth schema is incomplete; stop and investigate';
+  end if;
+  execute 'drop trigger if exists trg_nexora_guard_profile_balance_columns on public.profiles';
+  execute 'create trigger trg_nexora_guard_profile_balance_columns
+    before update on public.profiles
+    for each row
+    execute function public.guard_profile_balance_columns()';
+end
+$x$;
 
 -- ---------------------------------------------------------------------------
 -- 3a. Re-issue the mint RPCs with the balance-writer marker. Signatures are
@@ -214,13 +221,25 @@ $fn$;
 -- 3b. Mint lockdown — these take an arbitrary p_user_id, so they are
 --     service_role-only. Revoking the default PUBLIC grant requires an
 --     explicit grant back to service_role (server Edge Functions keep working).
+--     Guarded in case a role is named differently on a non-Supabase host.
+do $x$
+begin
+  if exists (select 1 from pg_roles where rolename = 'anon') then
+    revoke all on function public.credit_wallet(uuid, bigint, text, text, uuid) from anon;
+    revoke all on function public.credit_reward_points(uuid, integer, text, text) from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolename = 'authenticated') then
+    revoke all on function public.credit_wallet(uuid, bigint, text, text, uuid) from authenticated;
+    revoke all on function public.credit_reward_points(uuid, integer, text, text) from authenticated;
+  end if;
+end
+$x$;
 revoke all on function public.credit_wallet(uuid, bigint, text, text, uuid)
-  from public, anon, authenticated;
+  from public;
 grant execute on function public.credit_wallet(uuid, bigint, text, text, uuid)
   to service_role;
-
 revoke all on function public.credit_reward_points(uuid, integer, text, text)
-  from public, anon, authenticated;
+  from public;
 grant execute on function public.credit_reward_points(uuid, integer, text, text)
   to service_role;
 
@@ -302,7 +321,14 @@ end
 $fn$;
 
 revoke all on function public.redeem_loyalty_points(integer, bigint, text)
-  from public, anon;
+  from public;
+do $x$
+begin
+  if exists (select 1 from pg_roles where rolename = 'anon') then
+    revoke all on function public.redeem_loyalty_points(integer, bigint, text) from anon;
+  end if;
+end
+$x$;
 grant execute on function public.redeem_loyalty_points(integer, bigint, text)
   to authenticated, service_role;
 
@@ -414,6 +440,13 @@ end
 $fn$;
 
 revoke all on function public.verify_customer_phase1_backend()
-  from public, anon;
+  from public;
+do $x$
+begin
+  if exists (select 1 from pg_roles where rolename = 'anon') then
+    revoke all on function public.verify_customer_phase1_backend() from anon;
+  end if;
+end
+$x$;
 grant execute on function public.verify_customer_phase1_backend()
   to authenticated, service_role;

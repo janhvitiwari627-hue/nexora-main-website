@@ -1,18 +1,8 @@
--- ============================================================================
--- NEXORA — PHASE 1 CUSTOMER BACKEND (RUN THIS FILE ONCE IN SUPABASE)
--- ----------------------------------------------------------------------------
--- Kaise run karein:
---   1. Supabase Dashboard kholo -> apna project (qwaehqsmodekbgvnaavz)
---   2. Left menu -> SQL Editor -> "New query"
---   3. Ye PURA file copy karke paste karo -> "Run" dabao
---   4. Aakhir me results table aayega — har row "COMPLETE" honi chahiye.
---
--- Ye file sirf ek convenience runner hai: isme neeche dono migrations
--- pehle se shaamil hain, sahi order me:
---   PART 1: supabase/migrations/20260802_customer_phase1_schema.sql
---   PART 2: supabase/migrations/20260803_customer_phase1_completion.sql
--- Dono idempotent hain — dobara Run karna safe hai, kuch duplicate nahi hoga.
--- ============================================================================
+-- Nexora Phase 1 customer backend — run this whole file once in Supabase:
+-- SQL Editor -> paste -> Run. Idempotent: re-running is safe.
+-- Yellow NOTICEs (e.g. "table not found - skipping") are informational,
+-- not errors. The final query must show COMPLETE in every row.
+-- Parts: 20260802_customer_phase1_schema.sql + 20260803_customer_phase1_completion.sql
 
 -- ============================================================================
 -- Nexora — Customer PWA Phase 1 schema (shared project qwaehqsmodekbgvnaavz)
@@ -124,24 +114,34 @@ $x$;
 
 -- ---------------------------------------------------------------------------
 -- 4. support_tickets — ensure the customer-facing columns exist.
+--    Guarded: if the table is not present in this project yet, skip with a
+--    notice instead of raising an error.
 -- ---------------------------------------------------------------------------
-alter table public.support_tickets
-  add column if not exists created_by uuid;
-alter table public.support_tickets
-  add column if not exists subject text;
-alter table public.support_tickets
-  add column if not exists category text not null default 'general';
-alter table public.support_tickets
-  add column if not exists description text;
-alter table public.support_tickets
-  add column if not exists status text not null default 'open';
-alter table public.support_tickets
-  add column if not exists priority text not null default 'normal';
-
--- Customers create + read their own tickets.
-alter table public.support_tickets enable row level security;
 do $x$
 begin
+  if not exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'support_tickets'
+  ) then
+    raise notice 'support_tickets table not found — skipping section 4';
+    return;
+  end if;
+
+  alter table public.support_tickets
+    add column if not exists created_by uuid;
+  alter table public.support_tickets
+    add column if not exists subject text;
+  alter table public.support_tickets
+    add column if not exists category text not null default 'general';
+  alter table public.support_tickets
+    add column if not exists description text;
+  alter table public.support_tickets
+    add column if not exists status text not null default 'open';
+  alter table public.support_tickets
+    add column if not exists priority text not null default 'normal';
+
+  -- Customers create + read their own tickets.
+  alter table public.support_tickets enable row level security;
   if not exists (
     select 1 from pg_policies
     where schemaname = 'public' and tablename = 'support_tickets'
@@ -169,26 +169,49 @@ $x$;
 -- 5. reviews — the live `reviews` table is anon-readable but the customer PWA
 --    only kept reviews in session memory. Ensure the columns the PWA needs
 --    exist WITHOUT re-creating the table (no duplicate).
+--    Guarded: missing table/columns skip with a notice instead of an error.
 -- ---------------------------------------------------------------------------
-alter table public.reviews
-  add column if not exists salon_id uuid;
-alter table public.reviews
-  add column if not exists service_id uuid;
-alter table public.reviews
-  add column if not exists service_name text;
-alter table public.reviews
-  add column if not exists user_id uuid;
-alter table public.reviews
-  add column if not exists author text;
-alter table public.reviews
-  add column if not exists rating smallint check (rating between 1 and 5);
-alter table public.reviews
-  add column if not exists comment text;
-alter table public.reviews
-  add column if not exists verified boolean not null default false;
+do $x$
+begin
+  if not exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'reviews'
+  ) then
+    raise notice 'reviews table not found — skipping section 5';
+    return;
+  end if;
 
-create index if not exists reviews_salon_idx on public.reviews (salon_id, created_at desc);
-create index if not exists reviews_user_idx on public.reviews (user_id);
+  alter table public.reviews
+    add column if not exists salon_id uuid;
+  alter table public.reviews
+    add column if not exists service_id uuid;
+  alter table public.reviews
+    add column if not exists service_name text;
+  alter table public.reviews
+    add column if not exists user_id uuid;
+  alter table public.reviews
+    add column if not exists author text;
+  alter table public.reviews
+    add column if not exists rating smallint check (rating between 1 and 5);
+  alter table public.reviews
+    add column if not exists comment text;
+  alter table public.reviews
+    add column if not exists verified boolean not null default false;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'reviews'
+      and column_name = 'created_at'
+  ) then
+    create index if not exists reviews_salon_idx
+      on public.reviews (salon_id, created_at desc);
+  else
+    create index if not exists reviews_salon_idx
+      on public.reviews (salon_id);
+  end if;
+  create index if not exists reviews_user_idx on public.reviews (user_id);
+end
+$x$;
 
 -- ---------------------------------------------------------------------------
 -- 6. Rewards / Wallet — make it server-side proper.
@@ -196,10 +219,20 @@ create index if not exists reviews_user_idx on public.reviews (user_id);
 --    money only ever changes through security-definer RPCs (never direct
 --    client writes).
 -- ---------------------------------------------------------------------------
-alter table public.profiles
-  add column if not exists loyalty_points integer not null default 0;
-alter table public.profiles
-  add column if not exists wallet_balance_paise bigint not null default 0;
+do $x$
+begin
+  if not exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'profiles'
+  ) then
+    raise exception 'profiles table not found — the shared auth schema is incomplete; stop and investigate';
+  end if;
+  alter table public.profiles
+    add column if not exists loyalty_points integer not null default 0;
+  alter table public.profiles
+    add column if not exists wallet_balance_paise bigint not null default 0;
+end
+$x$;
 
 create table if not exists public.rewards (
   id          uuid primary key default gen_random_uuid(),
@@ -310,10 +343,6 @@ begin
   end if;
 end
 $fn$;
-
--- ============================================================================
--- ========================  PART 2 STARTS HERE  ==============================
--- ============================================================================
 
 -- ============================================================================
 -- Nexora — Customer PWA Phase 1 COMPLETION (shared project qwaehqsmodekbgvnaavz)
@@ -460,11 +489,18 @@ begin
 end
 $fn$;
 
-drop trigger if exists trg_nexora_guard_profile_balance_columns on public.profiles;
-create trigger trg_nexora_guard_profile_balance_columns
-  before update on public.profiles
-  for each row
-  execute function public.guard_profile_balance_columns();
+do $x$
+begin
+  if to_regclass('public.profiles') is null then
+    raise exception 'profiles table not found — the shared auth schema is incomplete; stop and investigate';
+  end if;
+  execute 'drop trigger if exists trg_nexora_guard_profile_balance_columns on public.profiles';
+  execute 'create trigger trg_nexora_guard_profile_balance_columns
+    before update on public.profiles
+    for each row
+    execute function public.guard_profile_balance_columns()';
+end
+$x$;
 
 -- ---------------------------------------------------------------------------
 -- 3a. Re-issue the mint RPCs with the balance-writer marker. Signatures are
@@ -531,13 +567,25 @@ $fn$;
 -- 3b. Mint lockdown — these take an arbitrary p_user_id, so they are
 --     service_role-only. Revoking the default PUBLIC grant requires an
 --     explicit grant back to service_role (server Edge Functions keep working).
+--     Guarded in case a role is named differently on a non-Supabase host.
+do $x$
+begin
+  if exists (select 1 from pg_roles where rolename = 'anon') then
+    revoke all on function public.credit_wallet(uuid, bigint, text, text, uuid) from anon;
+    revoke all on function public.credit_reward_points(uuid, integer, text, text) from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolename = 'authenticated') then
+    revoke all on function public.credit_wallet(uuid, bigint, text, text, uuid) from authenticated;
+    revoke all on function public.credit_reward_points(uuid, integer, text, text) from authenticated;
+  end if;
+end
+$x$;
 revoke all on function public.credit_wallet(uuid, bigint, text, text, uuid)
-  from public, anon, authenticated;
+  from public;
 grant execute on function public.credit_wallet(uuid, bigint, text, text, uuid)
   to service_role;
-
 revoke all on function public.credit_reward_points(uuid, integer, text, text)
-  from public, anon, authenticated;
+  from public;
 grant execute on function public.credit_reward_points(uuid, integer, text, text)
   to service_role;
 
@@ -619,7 +667,14 @@ end
 $fn$;
 
 revoke all on function public.redeem_loyalty_points(integer, bigint, text)
-  from public, anon;
+  from public;
+do $x$
+begin
+  if exists (select 1 from pg_roles where rolename = 'anon') then
+    revoke all on function public.redeem_loyalty_points(integer, bigint, text) from anon;
+  end if;
+end
+$x$;
 grant execute on function public.redeem_loyalty_points(integer, bigint, text)
   to authenticated, service_role;
 
@@ -731,12 +786,16 @@ end
 $fn$;
 
 revoke all on function public.verify_customer_phase1_backend()
-  from public, anon;
+  from public;
+do $x$
+begin
+  if exists (select 1 from pg_roles where rolename = 'anon') then
+    revoke all on function public.verify_customer_phase1_backend() from anon;
+  end if;
+end
+$x$;
 grant execute on function public.verify_customer_phase1_backend()
   to authenticated, service_role;
 
--- ============================================================================
--- FINAL CHECK — is query ke results me har row ka status "COMPLETE" hona
--- chahiye. Koi bhi "MISSING" row aaye to us row ka fix_hint dekho.
--- ============================================================================
+-- Final check — every row below must read COMPLETE.
 select * from public.verify_customer_phase1_backend();

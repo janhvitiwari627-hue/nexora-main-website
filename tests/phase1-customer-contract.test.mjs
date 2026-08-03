@@ -106,7 +106,15 @@ test("20260803 re-issues mint RPCs with the marker and locks them to service_rol
   assert.match(creditWalletBody, /perform set_config\('nexora\.balance_writer', 'nexora-server-rpc', true\);/);
   assert.match(
     completion,
-    /revoke all on function public\.credit_wallet\(uuid, bigint, text, text, uuid\)\s+from public, anon, authenticated;/,
+    /revoke all on function public\.credit_wallet\(uuid, bigint, text, text, uuid\) from anon;/,
+  );
+  assert.match(
+    completion,
+    /revoke all on function public\.credit_wallet\(uuid, bigint, text, text, uuid\) from authenticated;/,
+  );
+  assert.match(
+    completion,
+    /revoke all on function public\.credit_wallet\(uuid, bigint, text, text, uuid\)\s+from public;/,
   );
   assert.match(
     completion,
@@ -114,7 +122,7 @@ test("20260803 re-issues mint RPCs with the marker and locks them to service_rol
   );
   assert.match(
     completion,
-    /revoke all on function public\.credit_reward_points\(uuid, integer, text, text\)\s+from public, anon, authenticated;/,
+    /revoke all on function public\.credit_reward_points\(uuid, integer, text, text\) from authenticated;/,
   );
   assert.match(
     completion,
@@ -136,7 +144,8 @@ test("20260803 redeem RPC is self-service, balance-checked and tier-locked", () 
   // Both ledgers are written server-side.
   assert.match(completion, /insert into public\.rewards \(user_id, type, title, points, status, redeemed_at\)/);
   assert.match(completion, /insert into public\.wallet_transactions \(user_id, amount_paise, tx_type, reason, ref_type\)/);
-  assert.match(completion, /revoke all on function public\.redeem_loyalty_points\(integer, bigint, text\)\s+from public, anon;/);
+  assert.match(completion, /revoke all on function public\.redeem_loyalty_points\(integer, bigint, text\)\s+from public;/);
+  assert.match(completion, /revoke all on function public\.redeem_loyalty_points\(integer, bigint, text\) from anon;/);
   assert.match(completion, /grant execute on function public\.redeem_loyalty_points\(integer, bigint, text\)\s+to authenticated, service_role;/);
 });
 

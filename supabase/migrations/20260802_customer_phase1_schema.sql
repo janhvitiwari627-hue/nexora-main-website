@@ -108,24 +108,34 @@ $x$;
 
 -- ---------------------------------------------------------------------------
 -- 4. support_tickets — ensure the customer-facing columns exist.
+--    Guarded: if the table is not present in this project yet, skip with a
+--    notice instead of raising an error.
 -- ---------------------------------------------------------------------------
-alter table public.support_tickets
-  add column if not exists created_by uuid;
-alter table public.support_tickets
-  add column if not exists subject text;
-alter table public.support_tickets
-  add column if not exists category text not null default 'general';
-alter table public.support_tickets
-  add column if not exists description text;
-alter table public.support_tickets
-  add column if not exists status text not null default 'open';
-alter table public.support_tickets
-  add column if not exists priority text not null default 'normal';
-
--- Customers create + read their own tickets.
-alter table public.support_tickets enable row level security;
 do $x$
 begin
+  if not exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'support_tickets'
+  ) then
+    raise notice 'support_tickets table not found — skipping section 4';
+    return;
+  end if;
+
+  alter table public.support_tickets
+    add column if not exists created_by uuid;
+  alter table public.support_tickets
+    add column if not exists subject text;
+  alter table public.support_tickets
+    add column if not exists category text not null default 'general';
+  alter table public.support_tickets
+    add column if not exists description text;
+  alter table public.support_tickets
+    add column if not exists status text not null default 'open';
+  alter table public.support_tickets
+    add column if not exists priority text not null default 'normal';
+
+  -- Customers create + read their own tickets.
+  alter table public.support_tickets enable row level security;
   if not exists (
     select 1 from pg_policies
     where schemaname = 'public' and tablename = 'support_tickets'
@@ -153,26 +163,49 @@ $x$;
 -- 5. reviews — the live `reviews` table is anon-readable but the customer PWA
 --    only kept reviews in session memory. Ensure the columns the PWA needs
 --    exist WITHOUT re-creating the table (no duplicate).
+--    Guarded: missing table/columns skip with a notice instead of an error.
 -- ---------------------------------------------------------------------------
-alter table public.reviews
-  add column if not exists salon_id uuid;
-alter table public.reviews
-  add column if not exists service_id uuid;
-alter table public.reviews
-  add column if not exists service_name text;
-alter table public.reviews
-  add column if not exists user_id uuid;
-alter table public.reviews
-  add column if not exists author text;
-alter table public.reviews
-  add column if not exists rating smallint check (rating between 1 and 5);
-alter table public.reviews
-  add column if not exists comment text;
-alter table public.reviews
-  add column if not exists verified boolean not null default false;
+do $x$
+begin
+  if not exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'reviews'
+  ) then
+    raise notice 'reviews table not found — skipping section 5';
+    return;
+  end if;
 
-create index if not exists reviews_salon_idx on public.reviews (salon_id, created_at desc);
-create index if not exists reviews_user_idx on public.reviews (user_id);
+  alter table public.reviews
+    add column if not exists salon_id uuid;
+  alter table public.reviews
+    add column if not exists service_id uuid;
+  alter table public.reviews
+    add column if not exists service_name text;
+  alter table public.reviews
+    add column if not exists user_id uuid;
+  alter table public.reviews
+    add column if not exists author text;
+  alter table public.reviews
+    add column if not exists rating smallint check (rating between 1 and 5);
+  alter table public.reviews
+    add column if not exists comment text;
+  alter table public.reviews
+    add column if not exists verified boolean not null default false;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'reviews'
+      and column_name = 'created_at'
+  ) then
+    create index if not exists reviews_salon_idx
+      on public.reviews (salon_id, created_at desc);
+  else
+    create index if not exists reviews_salon_idx
+      on public.reviews (salon_id);
+  end if;
+  create index if not exists reviews_user_idx on public.reviews (user_id);
+end
+$x$;
 
 -- ---------------------------------------------------------------------------
 -- 6. Rewards / Wallet — make it server-side proper.
@@ -180,10 +213,20 @@ create index if not exists reviews_user_idx on public.reviews (user_id);
 --    money only ever changes through security-definer RPCs (never direct
 --    client writes).
 -- ---------------------------------------------------------------------------
-alter table public.profiles
-  add column if not exists loyalty_points integer not null default 0;
-alter table public.profiles
-  add column if not exists wallet_balance_paise bigint not null default 0;
+do $x$
+begin
+  if not exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'profiles'
+  ) then
+    raise exception 'profiles table not found — the shared auth schema is incomplete; stop and investigate';
+  end if;
+  alter table public.profiles
+    add column if not exists loyalty_points integer not null default 0;
+  alter table public.profiles
+    add column if not exists wallet_balance_paise bigint not null default 0;
+end
+$x$;
 
 create table if not exists public.rewards (
   id          uuid primary key default gen_random_uuid(),
