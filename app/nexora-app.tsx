@@ -17,6 +17,10 @@ type Salon = {
   starting_price_paise: number | null;
   cover_image_path: string | null;
   business_category: string | null;
+  verified?: boolean;
+  is_active?: boolean;
+  accepts_online_bookings?: boolean;
+  organization_id?: string | null;
 };
 type Website = {
   salon_id: string;
@@ -1166,10 +1170,11 @@ function DashboardPage({
       const { data: { user } } = await client.auth.getUser();
       if (!user) { navigate("/login"); return; }
       // Try maybeSingle first, then attempt auto-creation if missing
-      let profile: { platform_role: Role; full_name: string; is_active: boolean } | null = null;
+      type ProfileRow = { platform_role: Role; full_name: string; is_active: boolean };
+      let profile: ProfileRow | null = null;
       const { data, error } = await client.from("profiles").select("platform_role,full_name,is_active").eq("id", user.id).maybeSingle();
       if (!error && data) {
-        profile = data as typeof profile;
+        profile = data as unknown as ProfileRow;
       } else if (error) {
         // If row not found, attempt to create from user_metadata
         const metaRole = (user.user_metadata?.signup_role as Role) || "customer";
@@ -1180,7 +1185,7 @@ function DashboardPage({
           .select("platform_role,full_name,is_active")
           .maybeSingle();
         if (createErr) throw createErr;
-        profile = created as typeof profile;
+        profile = created as unknown as ProfileRow;
       }
       if (!profile) throw new Error("Profile missing for this account. Please recreate or contact support.");
       if (!profile.is_active) throw new Error("This account is inactive.");
@@ -1852,7 +1857,7 @@ function RoleWorkspace({ role, navigate }: { role: Role; navigate: (path: string
   const selectedSalon = ownerSalons.find(s=>s.id===selectedSalonId);
 
   return <div className="workspace-stack">
-    {role === "business_user" && !ownerReady && <OwnerBusinessSetup onReady={()=>{ void load(); void loadOwnerShops(); }} />}
+    {role === "business_user" && !ownerReady && <OwnerBusinessSetup onReady={async ()=>{ void load(); void loadOwnerShops(); }} />}
     {shopError && <StateCard title="Shop load error" text={shopError} action="Retry" onAction={loadOwnerShops} />}
     {error && <StateCard title="Could not load website data" text={error} action="Retry" onAction={load} />}
 
