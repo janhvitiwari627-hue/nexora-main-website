@@ -1,41 +1,51 @@
-From 2f25c05e7a1c7b766855bebc18f562199a007f8a Mon Sep 17 00:00:00 2001
+From 12277f7d25d6e32c210f1de18015b8afef5af713 Mon Sep 17 00:00:00 2001
 From: Arena Integration Bot <arena-bot@users.noreply.github.com>
 Date: Tue, 4 Aug 2026 13:10:12 +0000
 Subject: [PATCH] feat: complete Owner PWA same-origin Supabase integration
 
 ---
- .env.example                     |    5 +
- api/auth/login.ts                |    7 +-
- api/auth/signup.ts               |    7 +-
- index.html                       |    4 +-
- src/App.tsx                      |   71 +-
- src/lib/ownerRepository.ts       |  519 ++++++++++++
- src/lib/supabase.ts              |   18 +-
- src/lib/useOwnerContext.ts       |   55 ++
- src/main.tsx                     |    8 +
- src/screens/Bookings.tsx         |  162 ++--
- src/screens/CustomerProfile.tsx  |  850 ++------------------
- src/screens/Customers.tsx        |  216 ++---
- src/screens/Dashboard.tsx        |  194 ++---
- src/screens/Marketing.tsx        | 1281 ++----------------------------
- src/screens/NewAppointment.tsx   |  351 +-------
- src/screens/NewService.tsx       |   67 +-
- src/screens/NewStaff.tsx         |   45 +-
- src/screens/Profile.tsx          |  237 +++---
- src/screens/ProposalReview.tsx   |  303 +++++++
- src/screens/RevenueAnalytics.tsx |  780 +++---------------
- src/screens/Reviews.tsx          |  110 +--
- src/screens/RoleConflict.tsx     |   13 +-
- src/screens/ServiceDetail.tsx    |  209 +++--
- src/screens/ServicesList.tsx     |  134 ++--
- src/screens/StaffDetail.tsx      |   79 +-
- src/screens/StaffManagement.tsx  |  126 ++-
- src/screens/Wallet.tsx           |  197 ++---
- src/screens/WebsiteDashboard.tsx |  340 +-------
- src/screens/WebsiteGallery.tsx   |  720 +----------------
- src/types.ts                     |    5 +-
- vite.config.ts                   |   10 +
- 31 files changed, 2061 insertions(+), 5062 deletions(-)
+ .env.example                                  |    5 +
+ api/auth/login.ts                             |    7 +-
+ api/auth/signup.ts                            |    7 +-
+ index.html                                    |    4 +-
+ src/App.tsx                                   |   71 +-
+ src/components/marketing/AutoReminder.tsx     |  551 -------
+ src/components/marketing/CampaignHistory.tsx  | 1152 ---------------
+ .../marketing/FestivalTemplates.tsx           |  299 ----
+ src/components/marketing/PosterCreator.tsx    |  343 -----
+ src/components/marketing/WhatsAppCampaign.tsx |  352 -----
+ src/lib/ownerRepository.ts                    |  519 +++++++
+ src/lib/supabase.ts                           |   18 +-
+ src/lib/useOwnerContext.ts                    |   55 +
+ src/main.tsx                                  |    8 +
+ src/screens/Bookings.tsx                      |  162 +--
+ src/screens/CustomerProfile.tsx               |  850 +----------
+ src/screens/Customers.tsx                     |  216 +--
+ src/screens/Dashboard.tsx                     |  194 +--
+ src/screens/Marketing.tsx                     | 1281 +----------------
+ src/screens/NewAppointment.tsx                |  351 +----
+ src/screens/NewService.tsx                    |   67 +-
+ src/screens/NewStaff.tsx                      |   45 +-
+ src/screens/Profile.tsx                       |  237 ++-
+ src/screens/ProposalReview.tsx                |  303 ++++
+ src/screens/RevenueAnalytics.tsx              |  780 ++--------
+ src/screens/Reviews.tsx                       |  110 +-
+ src/screens/RoleConflict.tsx                  |   13 +-
+ src/screens/ServiceDetail.tsx                 |  209 ++-
+ src/screens/ServicesList.tsx                  |  134 +-
+ src/screens/StaffDetail.tsx                   |   79 +-
+ src/screens/StaffManagement.tsx               |  126 +-
+ src/screens/Wallet.tsx                        |  197 +--
+ src/screens/WebsiteDashboard.tsx              |  340 +----
+ src/screens/WebsiteGallery.tsx                |  720 +--------
+ src/types.ts                                  |    5 +-
+ vite.config.ts                                |   10 +
+ 36 files changed, 2061 insertions(+), 7759 deletions(-)
+ delete mode 100644 src/components/marketing/AutoReminder.tsx
+ delete mode 100644 src/components/marketing/CampaignHistory.tsx
+ delete mode 100644 src/components/marketing/FestivalTemplates.tsx
+ delete mode 100644 src/components/marketing/PosterCreator.tsx
+ delete mode 100644 src/components/marketing/WhatsAppCampaign.tsx
  create mode 100644 src/lib/ownerRepository.ts
  create mode 100644 src/lib/useOwnerContext.ts
  create mode 100644 src/screens/ProposalReview.tsx
@@ -242,6 +252,2733 @@ index fcb8916..6362d95 100644
        default:
          return <Dashboard navigate={navigate} />;
      }
+diff --git a/src/components/marketing/AutoReminder.tsx b/src/components/marketing/AutoReminder.tsx
+deleted file mode 100644
+index 6d0b06d..0000000
+--- a/src/components/marketing/AutoReminder.tsx
++++ /dev/null
+@@ -1,551 +0,0 @@
+-import React, { useState } from 'react';
+-import { 
+-  ArrowLeft, 
+-  Calendar, 
+-  Clock, 
+-  Users, 
+-  Tag, 
+-  MessageSquare, 
+-  Bell, 
+-  ShieldAlert, 
+-  Play, 
+-  Pause, 
+-  Send,
+-  Square, 
+-  Eye, 
+-  Search,
+-  CheckCircle2, 
+-  AlertCircle,
+-  History,
+-  Info
+-} from 'lucide-react';
+-import { motion, AnimatePresence } from 'motion/react';
+-
+-interface AutoReminderProps {
+-  onBack: () => void;
+-}
+-
+-type CampaignStatus = 'Idle' | 'Running' | 'Paused' | 'Stopped';
+-
+-export default function AutoReminder({ onBack }: AutoReminderProps) {
+-  const [isEnabled, setIsEnabled] = useState(true);
+-  const [status, setStatus] = useState<CampaignStatus>('Idle');
+-  
+-  // Configuration States
+-  const [customerGroup, setCustomerGroup] = useState('Inactive Customers');
+-  const [selectedOffer, setSelectedOffer] = useState('Summer Festival 20% Off');
+-  const [frequency, setFrequency] = useState('Every 2 days');
+-  const [startDate, setStartDate] = useState('');
+-  const [endDate, setEndDate] = useState('');
+-  const [sendTime, setSendTime] = useState('10:00');
+-  const [maxReminders, setMaxReminders] = useState(3);
+-  const [selectedTemplate, setSelectedTemplate] = useState('Friendly Nudge');
+-  
+-  const [isSelectingClients, setIsSelectingClients] = useState(false);
+-  const [selectedClients, setSelectedClients] = useState<string[]>([]);
+-  const [searchQuery, setSearchQuery] = useState('');
+-
+-  const sampleClients = [
+-    { id: '1', name: 'Ananya Sharma', phone: '+91 98765 43210' },
+-    { id: '2', name: 'Priya Kapoor', phone: '+91 98765 87654' },
+-    { id: '3', name: 'Rohan Verma', phone: '+91 98765 32109' },
+-    { id: '4', name: 'Amit Patel', phone: '+91 98765 65432' },
+-  ];
+-
+-  const filteredClients = sampleClients.filter(c => 
+-    c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+-    c.phone.includes(searchQuery)
+-  );
+-
+-  const toggleClient = (id: string) => {
+-    setSelectedClients(prev => 
+-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+-    );
+-  };
+-  
+-  // Safeguard Toggles
+-  const [stopAfterBooking, setStopAfterBooking] = useState(true);
+-  const [stopAfterExpiry, setStopAfterExpiry] = useState(true);
+-  const [skipRecentlyContacted, setSkipRecentlyContacted] = useState(true);
+-  const [excludeUnsubscribed, setExcludeUnsubscribed] = useState(true);
+-
+-  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+-  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+-  const [showToast, setShowToast] = useState(false);
+-
+-  const handleActivate = () => {
+-    setStatus('Running');
+-    setIsConfirmModalOpen(false);
+-    setShowToast(true);
+-    setTimeout(() => setShowToast(false), 3000);
+-  };
+-
+-  const handlePause = () => {
+-    setStatus('Paused');
+-  };
+-
+-  const handleStop = () => {
+-    if (confirm('Are you sure you want to stop this campaign? This will end all scheduled reminders.')) {
+-      setStatus('Stopped');
+-    }
+-  };
+-
+-  const previewSteps = [
+-    { day: 'Day 1', time: '10:00 AM', message: `Hey there! 👋 Enjoy ${selectedOffer} this week! We'd love to see you back at the salon.` },
+-    { day: 'Day 3', time: '10:15 AM', message: `Quick reminder! 🌸 Your ${selectedOffer} is still waiting for you. Don't let your self-care slide!` },
+-    { day: 'Day 5', time: '09:45 AM', message: `We miss your glow! ✨ Just a few days left to use your special offer. Book your spot today!` },
+-    { day: 'Day 7', time: '11:00 AM', message: `Final call! ⏰ Your exclusive ${selectedOffer} expires tonight. We've saved a slot for you!` },
+-  ].slice(0, maxReminders + 1);
+-
+-  return (
+-    <div className="flex flex-col min-h-screen bg-[#f7f9fb] font-['Inter']">
+-      {/* Top App Bar */}
+-      <header className="bg-white sticky top-0 w-full z-50 border-b border-[#e2bdc7] shrink-0">
+-        <div className="flex items-center justify-between px-4 md:px-10 h-16 w-full max-w-7xl mx-auto">
+-          <button 
+-            onClick={onBack}
+-            className="text-[#b90064] hover:bg-[#eceef0] transition-colors active:scale-95 duration-100 p-2 rounded-full flex items-center justify-center"
+-          >
+-            <ArrowLeft className="w-6 h-6" />
+-          </button>
+-          <h1 className="text-xl md:text-2xl font-['Hanken_Grotesk'] font-bold text-[#b90064] truncate flex-1 text-center">Auto Reminders</h1>
+-          <button className="text-[#b90064] hover:bg-[#eceef0] transition-colors active:scale-95 duration-100 p-2 rounded-full flex items-center justify-center">
+-            <Search className="w-6 h-6" />
+-          </button>
+-        </div>
+-      </header>
+-
+-      <main className="flex-1 w-full max-w-7xl mx-auto p-4 md:p-10 space-y-6 pb-32">
+-        {/* Main Toggle Card */}
+-        <div className="bg-white border border-[#e2bdc7] rounded-xl p-6 shadow-sm flex items-center justify-between">
+-          <div>
+-            <h2 className="text-xl md:text-2xl font-['Hanken_Grotesk'] font-bold text-[#191c1e]">Enable Automatic Reminders</h2>
+-            <p className="text-sm text-[#5a3f47] mt-1">Send scheduled follow-ups to maximize engagement.</p>
+-          </div>
+-          <label className="relative inline-flex items-center cursor-pointer">
+-            <input 
+-              type="checkbox" 
+-              className="sr-only peer" 
+-              checked={isEnabled}
+-              onChange={() => setIsEnabled(!isEnabled)}
+-            />
+-            <div className="w-14 h-7 bg-[#e0e3e5] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-[#e6007e]"></div>
+-          </label>
+-        </div>
+-
+-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+-          {/* Left Column: Configuration */}
+-          <div className="lg:col-span-7 space-y-6">
+-            <section className="bg-white border border-[#e2bdc7] rounded-[24px] p-8 shadow-sm space-y-8">
+-              <h3 className="text-xl font-['Hanken_Grotesk'] font-semibold text-[#191c1e]">Configuration</h3>
+-              
+-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+-                {/* Customer Group */}
+-                <div className="space-y-2">
+-                  <label className="block text-xs font-semibold tracking-wider text-[#5a3f47] uppercase">Target Group</label>
+-                  <div className="flex flex-col gap-3">
+-                    <div className="relative">
+-                      <select 
+-                        value={customerGroup}
+-                        onChange={(e) => {
+-                          setCustomerGroup(e.target.value);
+-                          if (e.target.value === 'Individual Selection') {
+-                            setIsSelectingClients(true);
+-                          } else {
+-                            setIsSelectingClients(false);
+-                          }
+-                        }}
+-                        className="w-full bg-[#f7f9fb] border border-[#e2bdc7] text-[#191c1e] text-sm rounded-lg focus:ring-[#b90064] focus:border-[#b90064] block p-3 outline-none appearance-none font-medium"
+-                      >
+-                        <option>Inactive Customers</option>
+-                        <option>VIP Members</option>
+-                        <option>Recent Purchasers</option>
+-                        <option>Individual Selection</option>
+-                      </select>
+-                      <Users className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#b90064] pointer-events-none" />
+-                    </div>
+-
+-                    {isSelectingClients && (
+-                      <motion.div 
+-                        initial={{ opacity: 0, y: -10 }}
+-                        animate={{ opacity: 1, y: 0 }}
+-                        className="space-y-3 p-4 bg-white border border-[#e2bdc7] rounded-xl shadow-sm"
+-                      >
+-                        <div className="relative">
+-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5a3f47]/50" />
+-                          <input 
+-                            type="text"
+-                            placeholder="Search clients..."
+-                            value={searchQuery}
+-                            onChange={(e) => setSearchQuery(e.target.value)}
+-                            className="w-full h-10 pl-10 pr-3 bg-[#f7f9fb] border border-[#e2bdc7] rounded-lg text-sm outline-none focus:border-[#b90064]"
+-                          />
+-                        </div>
+-                        <div className="max-h-40 overflow-y-auto space-y-2 pr-1">
+-                          {filteredClients.map(client => (
+-                            <button
+-                              key={client.id}
+-                              onClick={() => toggleClient(client.id)}
+-                              className={`w-full flex items-center justify-between p-3 rounded-lg border transition-all ${
+-                                selectedClients.includes(client.id)
+-                                  ? 'bg-[#b90064]/5 border-[#b90064]/30 text-[#b90064]'
+-                                  : 'bg-white border-[#e2bdc7] text-[#5a3f47] hover:bg-[#f7f9fb]'
+-                              }`}
+-                            >
+-                              <div className="text-left">
+-                                <p className="text-sm font-bold">{client.name}</p>
+-                                <p className="text-xs opacity-70">{client.phone}</p>
+-                              </div>
+-                              {selectedClients.includes(client.id) && <CheckCircle2 className="w-4 h-4" />}
+-                            </button>
+-                          ))}
+-                        </div>
+-                        <div className="pt-2 border-t border-[#eceef0] flex justify-between items-center">
+-                          <p className="text-xs font-bold text-[#5a3f47]">
+-                            {selectedClients.length} Selected
+-                          </p>
+-                          <button 
+-                            onClick={() => setIsSelectingClients(false)}
+-                            className="text-xs font-black text-[#b90064] uppercase tracking-widest"
+-                          >
+-                            Done
+-                          </button>
+-                        </div>
+-                      </motion.div>
+-                    )}
+-                  </div>
+-                </div>
+-
+-                {/* Selected Offer */}
+-                <div className="space-y-2">
+-                  <label className="block text-xs font-semibold tracking-wider text-[#5a3f47] uppercase">Selected Offer</label>
+-                  <select 
+-                    value={selectedOffer}
+-                    onChange={(e) => setSelectedOffer(e.target.value)}
+-                    className="w-full bg-[#f7f9fb] border border-[#e2bdc7] text-[#191c1e] text-sm rounded-lg focus:ring-[#b90064] focus:border-[#b90064] block p-3 outline-none appearance-none font-medium"
+-                  >
+-                    <option>Summer Festival 20% Off</option>
+-                    <option>Buy 1 Get 1 Free Promo</option>
+-                  </select>
+-                </div>
+-
+-                {/* Frequency */}
+-                <div className="space-y-2">
+-                  <label className="block text-xs font-semibold tracking-wider text-[#5a3f47] uppercase">Frequency</label>
+-                  <select 
+-                    value={frequency}
+-                    onChange={(e) => setFrequency(e.target.value)}
+-                    className="w-full bg-[#f7f9fb] border border-[#e2bdc7] text-[#191c1e] text-sm rounded-lg focus:ring-[#b90064] focus:border-[#b90064] block p-3 outline-none appearance-none font-medium"
+-                  >
+-                    <option>Every 2 days</option>
+-                    <option>Every 3 days</option>
+-                    <option>Weekly</option>
+-                    <option>Custom</option>
+-                  </select>
+-                </div>
+-
+-                {/* Max Reminders */}
+-                <div className="space-y-2">
+-                  <label className="block text-xs font-semibold tracking-wider text-[#5a3f47] uppercase">Max Reminders</label>
+-                  <input 
+-                    type="number"
+-                    max={5}
+-                    min={1}
+-                    value={maxReminders}
+-                    onChange={(e) => setMaxReminders(parseInt(e.target.value))}
+-                    className="w-full bg-[#f7f9fb] border border-[#e2bdc7] text-[#191c1e] text-sm rounded-lg focus:ring-[#b90064] focus:border-[#b90064] block p-3 outline-none font-medium"
+-                  />
+-                </div>
+-              </div>
+-
+-              {/* Message Template Chips */}
+-              <div className="space-y-3">
+-                <label className="block text-xs font-semibold tracking-wider text-[#5a3f47] uppercase">Message Template</label>
+-                <div className="flex flex-wrap gap-2">
+-                  {['Friendly Nudge', 'Urgent Reminder', 'Last Chance'].map((t) => (
+-                    <button
+-                      key={t}
+-                      onClick={() => setSelectedTemplate(t)}
+-                      className={`px-5 py-2.5 rounded-full text-xs font-bold transition-all border ${
+-                        selectedTemplate === t 
+-                          ? 'bg-[#e6007e] text-white border-[#e6007e]' 
+-                          : 'bg-white text-[#191c1e] border-[#e2bdc7] hover:bg-[#eceef0]'
+-                      }`}
+-                    >
+-                      {t}
+-                    </button>
+-                  ))}
+-                </div>
+-              </div>
+-
+-              {/* Safeguards */}
+-              <div className="space-y-4 pt-4 border-t border-[#eceef0]">
+-                <h4 className="text-xs font-black uppercase tracking-widest text-[#5a3f47]">Safety Safeguards</h4>
+-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+-                  {[
+-                    { label: 'Stop after booking', state: stopAfterBooking, setter: setStopAfterBooking },
+-                    { label: 'Stop after offer expiry', state: stopAfterExpiry, setter: setStopAfterExpiry },
+-                    { label: 'Skip recently contacted', state: skipRecentlyContacted, setter: setSkipRecentlyContacted },
+-                    { label: 'Exclude unsubscribed', state: excludeUnsubscribed, setter: setExcludeUnsubscribed },
+-                  ].map((item) => (
+-                    <button 
+-                      key={item.label}
+-                      onClick={() => item.setter(!item.state)}
+-                      className={`flex items-center justify-between p-4 rounded-xl border transition-all ${
+-                        item.state ? 'bg-[#b90064]/5 border-[#b90064]/20' : 'bg-white border-[#e2bdc7]'
+-                      }`}
+-                    >
+-                      <span className={`text-xs font-bold ${item.state ? 'text-[#b90064]' : 'text-[#5a3f47]'}`}>{item.label}</span>
+-                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
+-                        item.state ? 'bg-[#b90064] border-[#b90064]' : 'border-[#e2bdc7]'
+-                      }`}>
+-                        {item.state && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+-                      </div>
+-                    </button>
+-                  ))}
+-                </div>
+-              </div>
+-            </section>
+-
+-            {/* Warning Card */}
+-            <section className="bg-[#fff9fa] rounded-2xl p-6 border border-[#e2bdc7] flex gap-4">
+-              <div className="w-12 h-12 rounded-xl bg-[#ffd9e2] flex items-center justify-center text-[#b90064] shrink-0">
+-                <ShieldAlert className="w-6 h-6" />
+-              </div>
+-              <div className="space-y-1">
+-                <h4 className="text-sm font-['Hanken_Grotesk'] font-bold text-[#3e001e] uppercase tracking-tight">Important Policy Notice</h4>
+-                <p className="text-xs font-medium text-[#5a3f47] leading-relaxed">
+-                  Frequent promotional messages may annoy customers. Send only to customers who have agreed to receive marketing messages.
+-                </p>
+-              </div>
+-            </section>
+-          </div>
+-
+-          {/* Right Column: Timeline & Actions */}
+-          <div className="lg:col-span-5 space-y-6">
+-            {/* Timeline */}
+-            <section className="bg-white rounded-[24px] p-8 border border-[#e2bdc7] shadow-sm space-y-6">
+-              <h3 className="text-xs font-bold text-[#191c1e] uppercase tracking-widest flex items-center gap-2">
+-                <Clock className="w-4 h-4 text-[#b90064]" /> Campaign Sequence
+-              </h3>
+-              
+-              <div className="space-y-0 relative">
+-                <div className="absolute left-6 top-6 bottom-6 w-0.5 bg-[#eceef0] z-0" />
+-                
+-                {[
+-                  { day: 'Day 1', label: 'First Contact', icon: Send, color: 'bg-[#b90064]', desc: 'Initial invitation message' },
+-                  { day: 'Day 3', label: 'Reminder 1', icon: Bell, color: 'bg-[#b90064]/70', desc: 'Gentle follow-up nudge' },
+-                  { day: 'Day 5', label: 'Reminder 2', icon: Bell, color: 'bg-[#b90064]/40', desc: 'Value-focused reminder' },
+-                  { day: 'Day 7', label: 'Final Call', icon: AlertCircle, color: 'bg-[#ba1a1a]', desc: 'Last chance before expiry' },
+-                ].map((step) => (
+-                  <div key={step.day} className="flex gap-6 relative z-10 pb-8 last:pb-0">
+-                    <div className={`w-12 h-12 rounded-xl ${step.color} flex items-center justify-center text-white shadow-md shrink-0`}>
+-                      <step.icon className="w-5 h-5" />
+-                    </div>
+-                    <div className="space-y-0.5">
+-                      <div className="flex items-center gap-2">
+-                        <span className="text-[10px] font-black text-[#5a3f47] uppercase tracking-widest">{step.day}</span>
+-                        <span className="w-1 h-1 bg-[#8e6f77] rounded-full" />
+-                        <span className="text-sm font-bold text-[#b90064]">{step.label}</span>
+-                      </div>
+-                      <p className="text-xs font-medium text-[#5a3f47]">{step.desc}</p>
+-                    </div>
+-                  </div>
+-                ))}
+-              </div>
+-            </section>
+-
+-            {/* Action Card */}
+-            <div className="bg-white rounded-[24px] p-8 border border-[#e2bdc7] shadow-sm space-y-4">
+-              <button 
+-                onClick={() => setIsPreviewModalOpen(true)}
+-                className="w-full py-4 border-2 border-[#b90064] text-[#b90064] rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-[#b90064]/5 transition-all flex items-center justify-center gap-2"
+-              >
+-                <Eye className="w-4 h-4" /> Preview Sequence
+-              </button>
+-              
+-              {status === 'Idle' || status === 'Stopped' ? (
+-                <button 
+-                  onClick={() => setIsConfirmModalOpen(true)}
+-                  disabled={!isEnabled}
+-                  className="w-full py-4 bg-[#b90064] text-white rounded-xl text-xs font-bold uppercase tracking-widest shadow-lg shadow-[#b90064]/20 hover:brightness-110 transition-all disabled:grayscale disabled:opacity-50 flex items-center justify-center gap-2"
+-                >
+-                  <Play className="w-4 h-4" /> Activate Reminder
+-                </button>
+-              ) : status === 'Running' ? (
+-                <div className="flex gap-4">
+-                  <button 
+-                    onClick={handlePause}
+-                    className="flex-1 py-4 bg-amber-500 text-white rounded-xl text-xs font-bold uppercase tracking-widest shadow-lg shadow-amber-500/20 hover:brightness-110 transition-all flex items-center justify-center gap-2"
+-                  >
+-                    <Pause className="w-4 h-4" /> Pause
+-                  </button>
+-                  <button 
+-                    onClick={handleStop}
+-                    className="flex-1 py-4 bg-rose-600 text-white rounded-xl text-xs font-bold uppercase tracking-widest shadow-lg shadow-rose-600/20 hover:brightness-110 transition-all flex items-center justify-center gap-2"
+-                  >
+-                    <Square className="w-4 h-4" /> Stop
+-                  </button>
+-                </div>
+-              ) : (
+-                <button 
+-                  onClick={() => setStatus('Running')}
+-                  className="w-full py-4 bg-[#b90064] text-white rounded-xl text-xs font-bold uppercase tracking-widest shadow-lg shadow-[#b90064]/20 hover:brightness-110 transition-all flex items-center justify-center gap-2"
+-                >
+-                  <Play className="w-4 h-4" /> Resume Campaign
+-                </button>
+-              )}
+-
+-              <p className="text-[10px] text-center font-bold text-[#5a3f47]/60 pt-2 px-4 italic">
+-                Automated reminders only send between selected business hours.
+-              </p>
+-            </div>
+-          </div>
+-        </div>
+-      </main>
+-
+-      {/* Preview Sequence Modal */}
+-      <AnimatePresence>
+-        {isPreviewModalOpen && (
+-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+-            <motion.div 
+-              initial={{ opacity: 0 }}
+-              animate={{ opacity: 1 }}
+-              exit={{ opacity: 0 }}
+-              onClick={() => setIsPreviewModalOpen(false)}
+-              className="absolute inset-0 bg-black/80 backdrop-blur-md cursor-pointer"
+-            />
+-            <motion.div 
+-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+-              animate={{ opacity: 1, scale: 1, y: 0 }}
+-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+-              className="relative bg-[#E5DDD5] rounded-[32px] w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[85vh]"
+-            >
+-              <div className="bg-[#075E54] p-6 pt-10 flex items-center gap-4 shrink-0">
+-                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center text-white">
+-                  <MessageSquare className="w-5 h-5" />
+-                </div>
+-                <div className="flex-1">
+-                  <h3 className="text-white font-bold text-sm font-['Hanken_Grotesk']">Campaign Preview</h3>
+-                  <p className="text-[10px] text-emerald-100/70 font-bold uppercase tracking-widest">Automation Sequence</p>
+-                </div>
+-                <button onClick={() => setIsPreviewModalOpen(false)} className="text-white p-2">
+-                   <span className="text-2xl">✕</span>
+-                </button>
+-              </div>
+-
+-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+-                {previewSteps.map((step, idx) => (
+-                  <motion.div 
+-                    key={step.day}
+-                    initial={{ opacity: 0, y: 10 }}
+-                    animate={{ opacity: 1, y: 0 }}
+-                    transition={{ delay: idx * 0.1 }}
+-                    className="space-y-2"
+-                  >
+-                    <div className="flex justify-center">
+-                      <span className="bg-white/60 backdrop-blur-md px-3 py-1 rounded-lg text-[10px] font-bold text-[#5a3f47] uppercase tracking-widest shadow-sm">
+-                        {step.day}
+-                      </span>
+-                    </div>
+-                    <div className="flex justify-end">
+-                      <div className="bg-[#DCF8C6] p-4 rounded-xl rounded-tr-none shadow-sm max-w-[85%] border border-emerald-900/5">
+-                        <p className="text-xs font-medium text-zinc-800 leading-relaxed">{step.message}</p>
+-                        <div className="flex justify-end items-center gap-1 mt-1">
+-                          <span className="text-[9px] text-emerald-800/60 font-bold">{step.time}</span>
+-                          <CheckCircle2 className="w-3 h-3 text-blue-500" />
+-                        </div>
+-                      </div>
+-                    </div>
+-                  </motion.div>
+-                ))}
+-              </div>
+-
+-              <div className="p-6 bg-white border-t border-[#eceef0] shrink-0">
+-                <button 
+-                  onClick={() => setIsPreviewModalOpen(false)}
+-                  className="w-full py-4 bg-[#b90064] text-white rounded-xl text-xs font-bold uppercase tracking-widest hover:brightness-110 transition-all shadow-lg shadow-[#b90064]/20"
+-                >
+-                  Close Preview
+-                </button>
+-              </div>
+-            </motion.div>
+-          </div>
+-        )}
+-      </AnimatePresence>
+-
+-      {/* Confirmation Modal */}
+-      <AnimatePresence>
+-        {isConfirmModalOpen && (
+-          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+-            <motion.div 
+-              initial={{ opacity: 0 }}
+-              animate={{ opacity: 1 }}
+-              exit={{ opacity: 0 }}
+-              onClick={() => setIsConfirmModalOpen(false)}
+-              className="absolute inset-0 bg-black/60 backdrop-blur-sm cursor-pointer"
+-            />
+-            <motion.div 
+-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+-              animate={{ opacity: 1, scale: 1, y: 0 }}
+-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+-              className="relative bg-white rounded-[32px] w-full max-w-md p-8 shadow-2xl space-y-6"
+-            >
+-              <div className="w-16 h-16 rounded-[24px] bg-[#b90064]/10 flex items-center justify-center text-[#b90064] mx-auto">
+-                <Play className="w-8 h-8 fill-current" />
+-              </div>
+-              
+-              <div className="text-center space-y-2">
+-                <h3 className="text-2xl font-['Hanken_Grotesk'] font-bold text-[#191c1e] tracking-tight">Confirm Activation</h3>
+-                <p className="text-sm font-medium text-[#5a3f47] px-4">
+-                  Launch automated campaign targeting <span className="font-bold text-[#191c1e]">~{customerGroup === 'Individual Selection' ? selectedClients.length : '1,240'} clients</span>?
+-                </p>
+-              </div>
+-
+-              <div className="space-y-3 bg-[#f7f9fb] p-4 rounded-xl border border-[#e2bdc7]">
+-                <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest">
+-                  <span className="text-[#5a3f47]">Frequency</span>
+-                  <span className="text-[#b90064]">{frequency}</span>
+-                </div>
+-                <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest">
+-                  <span className="text-[#5a3f47]">Max Messages</span>
+-                  <span className="text-[#b90064]">{maxReminders} per user</span>
+-                </div>
+-              </div>
+-
+-              <div className="flex gap-4">
+-                <button 
+-                  onClick={() => setIsConfirmModalOpen(false)}
+-                  className="flex-1 py-4 bg-[#eceef0] rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-[#e0e3e5] transition-all"
+-                >
+-                  Cancel
+-                </button>
+-                <button 
+-                  onClick={handleActivate}
+-                  className="flex-1 py-4 bg-[#b90064] text-white rounded-xl text-xs font-bold uppercase tracking-widest shadow-lg shadow-[#b90064]/20 hover:brightness-110 transition-all"
+-                >
+-                  Activate
+-                </button>
+-              </div>
+-            </motion.div>
+-          </div>
+-        )}
+-      </AnimatePresence>
+-
+-      {/* Success Toast */}
+-      <AnimatePresence>
+-        {showToast && (
+-          <motion.div 
+-            initial={{ opacity: 0, y: -20, x: '-50%' }}
+-            animate={{ opacity: 1, y: 0, x: '-50%' }}
+-            exit={{ opacity: 0, y: -20, x: '-50%' }}
+-            className="fixed top-24 left-1/2 z-[100] bg-emerald-600 text-white px-8 py-4 rounded-full shadow-2xl flex items-center gap-4 pointer-events-none"
+-          >
+-            <CheckCircle2 className="w-5 h-5" />
+-            <span className="text-sm font-bold tracking-tight">Campaign is now live!</span>
+-          </motion.div>
+-        )}
+-      </AnimatePresence>
+-    </div>
+-  );
+-}
+diff --git a/src/components/marketing/CampaignHistory.tsx b/src/components/marketing/CampaignHistory.tsx
+deleted file mode 100644
+index 1b9a7b9..0000000
+--- a/src/components/marketing/CampaignHistory.tsx
++++ /dev/null
+@@ -1,1152 +0,0 @@
+-import React, { useState } from 'react';
+-import { 
+-  ArrowLeft, 
+-  Search, 
+-  Calendar, 
+-  Filter, 
+-  MoreVertical, 
+-  Send, 
+-  CheckCircle2, 
+-  Eye, 
+-  MousePointer2, 
+-  CalendarCheck, 
+-  BarChart3,
+-  Layers,
+-  Clock,
+-  AlertCircle,
+-  MessageSquare,
+-  ChevronRight,
+-  Home,
+-  Menu,
+-  Settings,
+-  Bell,
+-  Sliders,
+-  MoreHorizontal,
+-  Tag,
+-  Info,
+-  TrendingUp,
+-  Users,
+-  Target,
+-  X
+-} from 'lucide-react';
+-import { motion, AnimatePresence } from 'motion/react';
+-import { 
+-  LineChart, 
+-  Line, 
+-  AreaChart, 
+-  Area, 
+-  XAxis, 
+-  YAxis, 
+-  CartesianGrid, 
+-  Tooltip, 
+-  ResponsiveContainer,
+-  BarChart,
+-  Bar,
+-  Cell
+-} from 'recharts';
+-
+-// Custom icons to match mockup better
+-const TuneIcon = ({ className }: { className?: string }) => (
+-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+-    <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
+-    <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
+-    <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
+-    <line x1="2" y1="14" x2="6" y2="14" /><line x1="10" y1="8" x2="14" y2="8" /><line x1="18" y1="16" x2="22" y2="16" />
+-  </svg>
+-);
+-
+-interface CampaignHistoryProps {
+-  onBack: () => void;
+-}
+-
+-const historyData = [
+-  {
+-    id: '1',
+-    name: 'Diwali Glow Offer',
+-    type: 'WhatsApp',
+-    offer: 'GLOW20',
+-    offerDesc: '20% Off Facials',
+-    date: 'Oct 24, 2024',
+-    audience: 'VIP Customers',
+-    recipients: 1240,
+-    delivered: 1190,
+-    opened: 940,
+-    clicked: 310,
+-    bookings: 45,
+-    status: 'Running',
+-    color: 'emerald'
+-  },
+-  {
+-    id: '2',
+-    name: 'Re-engagement Blast',
+-    type: 'SMS',
+-    offer: 'FREE_CONSULT',
+-    offerDesc: 'Free Consultation',
+-    date: 'Oct 15, 2024',
+-    audience: 'Inactive Customers',
+-    recipients: 3500,
+-    delivered: 3420,
+-    opened: 1200,
+-    clicked: 450,
+-    bookings: 12,
+-    status: 'Completed',
+-    color: 'zinc'
+-  },
+-  {
+-    id: '3',
+-    name: 'Weekend Special',
+-    type: 'Push',
+-    offer: 'BOGO',
+-    offerDesc: 'BOGO Services',
+-    date: 'Oct 05, 2024',
+-    audience: 'All Active',
+-    recipients: 2100,
+-    delivered: 2050,
+-    opened: 1800,
+-    clicked: 900,
+-    bookings: 86,
+-    status: 'Completed',
+-    color: 'zinc'
+-  },
+-  {
+-    id: '4',
+-    name: 'Monsoon Hair Care',
+-    type: 'Email',
+-    offer: 'HAIR30',
+-    offerDesc: '30% Off Hair Spa',
+-    date: 'Sep 28, 2024',
+-    audience: 'All Customers',
+-    recipients: 5000,
+-    delivered: 4800,
+-    opened: 1500,
+-    clicked: 200,
+-    bookings: 0,
+-    status: 'Scheduled',
+-    color: 'purple'
+-  }
+-];
+-
+-const chartData = [
+-  { name: 'Mon', bookings: 12, reach: 400 },
+-  { name: 'Tue', bookings: 19, reach: 700 },
+-  { name: 'Wed', bookings: 15, reach: 600 },
+-  { name: 'Thu', bookings: 22, reach: 800 },
+-  { name: 'Fri', bookings: 30, reach: 1100 },
+-  { name: 'Sat', bookings: 38, reach: 1400 },
+-  { name: 'Sun', bookings: 20, reach: 900 },
+-];
+-
+-const performanceData = [
+-  { name: 'Email', value: 45 },
+-  { name: 'WhatsApp', value: 30 },
+-  { name: 'SMS', value: 15 },
+-  { name: 'Push', value: 10 },
+-];
+-
+-export default function CampaignHistory({ onBack }: CampaignHistoryProps) {
+-  const [selectedCampaign, setSelectedCampaign] = useState<typeof historyData[0] | null>(historyData[0]);
+-  const [searchQuery, setSearchQuery] = useState('');
+-  const [activeTab, setActiveTab] = useState('All');
+-  const [activeView, setActiveView] = useState('dashboard');
+-  const [showToast, setShowToast] = useState(false);
+-  const [showNotifications, setShowNotifications] = useState(false);
+-  const [showSettings, setShowSettings] = useState(false);
+-  const [language, setLanguage] = useState<'EN' | 'HI'>('EN');
+-
+-  const t = {
+-    EN: {
+-      dashboard: 'Dashboard',
+-      campaigns: 'Campaigns',
+-      analytics: 'Analytics',
+-      audiences: 'Audiences',
+-      automation: 'Automation',
+-      history: 'History',
+-      overview: 'Overview',
+-      create: 'Create Campaign',
+-      search: 'Search campaigns...',
+-      total_sent: 'Total Sent',
+-      delivered: 'Delivered',
+-      opened: 'Opened',
+-      clicked: 'Clicked',
+-      bookings: 'Bookings',
+-      conv_rate: 'Conv. Rate',
+-      running: 'Running',
+-      scheduled: 'Scheduled',
+-      completed: 'Completed',
+-      draft: 'Draft',
+-      settings: 'Settings',
+-      lang: 'Language',
+-      select_lang: 'Select Language',
+-      select_client: 'Select Client'
+-    },
+-    HI: {
+-      dashboard: 'डैशबोर्ड',
+-      campaigns: 'अभियान',
+-      analytics: 'एनालिटिक्स',
+-      audiences: 'दर्शक',
+-      automation: 'ऑटोमेशन',
+-      history: 'इतिहास',
+-      overview: 'अवलोकन',
+-      create: 'अभियान बनाएं',
+-      search: 'अभियान खोजें...',
+-      total_sent: 'कुल भेजे गए',
+-      delivered: 'वितरित',
+-      opened: 'खोले गए',
+-      clicked: 'क्लिक किए गए',
+-      bookings: 'बुकिंग',
+-      conv_rate: 'कन्वर्जन दर',
+-      running: 'चल रहा है',
+-      scheduled: 'निर्धारित',
+-      completed: 'पूरा हुआ',
+-      draft: 'ड्राफ्ट',
+-      settings: 'सेटिंग्स',
+-      lang: 'भाषा',
+-      select_lang: 'भाषा चुनें',
+-      select_client: 'क्लाइंट चुनें'
+-    }
+-  }[language];
+-
+-  const tabs = ['All', 'Draft', 'Scheduled', 'Running', 'Completed', 'Paused'];
+-
+-  const notifications = [
+-    { id: 1, title: 'Campaign Milestone', desc: 'Diwali Glow Offer reached 1,000 opens!', time: '2m ago', unread: true },
+-    { id: 2, title: 'New Audience Segment', desc: 'VIP Skincare segment is ready for use.', time: '1h ago', unread: true },
+-    { id: 3, title: 'System Update', desc: 'Performance analytics now include ROI tracking.', time: '5h ago', unread: false },
+-  ];
+-
+-  const handleSidebarClick = (view: string) => {
+-    setActiveView(view);
+-    // Removed toast as these views are now functional
+-  };
+-
+-  const [showClientPicker, setShowClientPicker] = useState(false);
+-  const [selectedClients, setSelectedClients] = useState<string[]>([]);
+-  
+-  const sampleClients = [
+-    { id: '1', name: 'Ananya Sharma', type: 'VIP', spend: '₹1,25,000' },
+-    { id: '2', name: 'Priya Kapoor', type: 'Gold', spend: '₹34,000' },
+-    { id: '3', name: 'Rohan Verma', type: 'Standard', spend: '₹12,000' },
+-    { id: '4', name: 'Amit Patel', type: 'New', spend: '₹0' },
+-  ];
+-
+-  const toggleClient = (id: string) => {
+-    setSelectedClients(prev => 
+-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+-    );
+-  };
+-
+-  const renderClientPicker = () => {
+-    return (
+-      <AnimatePresence>
+-        {showClientPicker && (
+-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+-            <motion.div 
+-              initial={{ opacity: 0 }}
+-              animate={{ opacity: 1 }}
+-              exit={{ opacity: 0 }}
+-              onClick={() => setShowClientPicker(false)}
+-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+-            />
+-            <motion.div 
+-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+-              animate={{ opacity: 1, scale: 1, y: 0 }}
+-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+-              className="relative bg-white rounded-[32px] w-full max-w-md p-8 shadow-2xl space-y-6"
+-            >
+-              <div className="flex justify-between items-center">
+-                <h3 className="text-xl font-black text-[#191c1e]">{t.select_client}</h3>
+-                <button onClick={() => setShowClientPicker(false)} className="text-[#5f5e5e]">
+-                  <X className="w-5 h-5" />
+-                </button>
+-              </div>
+-              
+-              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+-                {sampleClients.map(client => (
+-                  <button 
+-                    key={client.id}
+-                    onClick={() => toggleClient(client.id)}
+-                    className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all ${
+-                      selectedClients.includes(client.id)
+-                        ? 'bg-[#ffd9e2] border-[#e6007e] text-[#3e001e]'
+-                        : 'bg-white border-[#e2bdc7] text-[#191c1e] hover:bg-[#f7f9fb]'
+-                    }`}
+-                  >
+-                    <div className="text-left">
+-                      <p className="font-bold">{client.name}</p>
+-                      <p className="text-[10px] font-bold text-[#5f5e5e] uppercase tracking-widest">{client.type} • {client.spend}</p>
+-                    </div>
+-                    {selectedClients.includes(client.id) ? (
+-                      <CheckCircle2 className="w-5 h-5 text-[#e6007e]" />
+-                    ) : (
+-                      <div className="w-5 h-5 rounded-full border border-[#e2bdc7]" />
+-                    )}
+-                  </button>
+-                ))}
+-              </div>
+-
+-              <button 
+-                onClick={() => setShowClientPicker(false)}
+-                className="w-full py-4 bg-[#e6007e] text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg hover:brightness-110 transition-all"
+-              >
+-                Done ({selectedClients.length} Selected)
+-              </button>
+-            </motion.div>
+-          </div>
+-        )}
+-      </AnimatePresence>
+-    );
+-  };
+-
+-  const renderDashboard = () => {
+-    return (
+-      <div className="space-y-8 pb-10">
+-        {/* Top KPI Cards */}
+-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+-          {[
+-            { label: 'Revenue Growth', value: '+24.5%', sub: 'vs last month', icon: TrendingUp, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+-            { label: t.audiences, value: '12.4k', sub: 'across 4 channels', icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
+-            { label: 'Avg. Conv. Rate', value: '3.8%', sub: 'industry avg 2.1%', icon: Target, color: 'text-purple-600', bg: 'bg-purple-50' },
+-            { label: 'Campaign ROI', value: '4.2x', sub: 'direct attribution', icon: BarChart3, color: 'text-[#e6007e]', bg: 'bg-[#ffd9e2]' },
+-          ].map((kpi) => (
+-            <div key={kpi.label} className="bg-white p-6 rounded-2xl border border-[#e2bdc7] shadow-sm flex items-start justify-between">
+-              <div>
+-                <p className="text-[10px] font-black text-[#5f5e5e] uppercase tracking-widest mb-1">{kpi.label}</p>
+-                <p className="text-2xl font-black text-[#191c1e]">{kpi.value}</p>
+-                <p className="text-[10px] text-[#5f5e5e] font-medium mt-1">{kpi.sub}</p>
+-              </div>
+-              <div className={`p-3 rounded-xl ${kpi.bg}`}>
+-                <kpi.icon className={`w-6 h-6 ${kpi.color}`} />
+-              </div>
+-            </div>
+-          ))}
+-        </div>
+-
+-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+-          {/* Main Chart Area */}
+-          <div className="lg:col-span-2 bg-white rounded-3xl border border-[#e2bdc7] p-6 shadow-sm">
+-            <div className="flex items-center justify-between mb-8">
+-              <div>
+-                <h3 className="text-lg font-black text-[#191c1e]">Performance Overview</h3>
+-                <p className="text-xs text-[#5f5e5e]">Tracking weekly reach and booking attribution</p>
+-              </div>
+-              <div className="flex items-center gap-2">
+-                <div className="flex items-center gap-1.5">
+-                  <div className="w-2 h-2 rounded-full bg-[#e6007e]"></div>
+-                  <span className="text-[10px] font-bold text-[#5f5e5e]">Bookings</span>
+-                </div>
+-                <div className="flex items-center gap-1.5 ml-4">
+-                  <div className="w-2 h-2 rounded-full bg-blue-400"></div>
+-                  <span className="text-[10px] font-bold text-[#5f5e5e]">Reach</span>
+-                </div>
+-              </div>
+-            </div>
+-            
+-            <div className="h-[300px] w-full">
+-              <ResponsiveContainer width="100%" height="100%">
+-                <AreaChart data={chartData}>
+-                  <defs>
+-                    <linearGradient id="colorBookings" x1="0" y1="0" x2="0" y2="1">
+-                      <stop offset="5%" stopColor="#e6007e" stopOpacity={0.3}/>
+-                      <stop offset="95%" stopColor="#e6007e" stopOpacity={0}/>
+-                    </linearGradient>
+-                  </defs>
+-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f2f4f6" />
+-                  <XAxis 
+-                    dataKey="name" 
+-                    axisLine={false} 
+-                    tickLine={false} 
+-                    tick={{ fontSize: 10, fontWeight: 600, fill: '#8e6f77' }}
+-                    dy={10}
+-                  />
+-                  <YAxis 
+-                    axisLine={false} 
+-                    tickLine={false} 
+-                    tick={{ fontSize: 10, fontWeight: 600, fill: '#8e6f77' }}
+-                  />
+-                  <Tooltip 
+-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
+-                  />
+-                  <Area 
+-                    type="monotone" 
+-                    dataKey="bookings" 
+-                    stroke="#e6007e" 
+-                    strokeWidth={3} 
+-                    fillOpacity={1} 
+-                    fill="url(#colorBookings)" 
+-                  />
+-                  <Area 
+-                    type="monotone" 
+-                    dataKey="reach" 
+-                    stroke="#60a5fa" 
+-                    strokeWidth={2} 
+-                    strokeDasharray="5 5"
+-                    fill="transparent"
+-                  />
+-                </AreaChart>
+-              </ResponsiveContainer>
+-            </div>
+-          </div>
+-
+-          {/* Side Module: Top Campaigns */}
+-          <div className="bg-white rounded-3xl border border-[#e2bdc7] p-6 shadow-sm">
+-            <h3 className="text-lg font-black text-[#191c1e] mb-6">Active Campaigns</h3>
+-            <div className="space-y-4">
+-              {historyData.slice(0, 3).map((campaign) => (
+-                <div key={campaign.id} className="flex items-center gap-4 p-3 hover:bg-[#f7f9fb] rounded-2xl transition-colors group cursor-pointer border border-transparent hover:border-[#e2bdc7]">
+-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+-                    campaign.status === 'Running' ? 'bg-[#ffd9e2] text-[#e6007e]' : 'bg-[#e0e3e5] text-[#5f5e5e]'
+-                  }`}>
+-                    <Target className="w-5 h-5" />
+-                  </div>
+-                  <div className="flex-1 min-w-0">
+-                    <p className="text-sm font-bold text-[#191c1e] truncate">{campaign.name}</p>
+-                    <p className="text-[10px] text-[#5f5e5e] font-medium">{campaign.bookings} bookings so far</p>
+-                  </div>
+-                  <ChevronRight className="w-4 h-4 text-[#e2bdc7] group-hover:text-[#e6007e] transition-colors" />
+-                </div>
+-              ))}
+-            </div>
+-            <button 
+-              onClick={() => setActiveView('campaigns')}
+-              className="w-full mt-6 py-3 border border-[#e2bdc7] text-[#5f5e5e] rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#f7f9fb] transition-all"
+-            >
+-              View All History
+-            </button>
+-          </div>
+-        </div>
+-
+-        {/* Secondary Insights */}
+-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+-          <div className="bg-white rounded-3xl border border-[#e2bdc7] p-6 shadow-sm">
+-            <div className="flex items-center justify-between mb-6">
+-              <h3 className="text-sm font-black text-[#191c1e] uppercase tracking-widest">Channel Efficiency</h3>
+-              <Info className="w-4 h-4 text-[#e2bdc7]" />
+-            </div>
+-            <div className="h-[200px] w-full">
+-              <ResponsiveContainer width="100%" height="100%">
+-                <BarChart data={performanceData} layout="vertical" margin={{ left: -20 }}>
+-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f2f4f6" />
+-                  <XAxis type="number" hide />
+-                  <YAxis 
+-                    dataKey="name" 
+-                    type="category" 
+-                    axisLine={false} 
+-                    tickLine={false} 
+-                    tick={{ fontSize: 10, fontWeight: 700, fill: '#191c1e' }}
+-                  />
+-                  <Tooltip cursor={{ fill: '#f7f9fb' }} />
+-                  <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={24}>
+-                    {performanceData.map((entry, index) => (
+-                      <Cell key={`cell-${index}`} fill={index === 0 ? '#e6007e' : index === 1 ? '#6265f0' : '#484ad6'} />
+-                    ))}
+-                  </Bar>
+-                </BarChart>
+-              </ResponsiveContainer>
+-            </div>
+-          </div>
+-
+-          <div className="bg-white rounded-3xl border border-[#e2bdc7] p-8 flex flex-col items-center justify-center text-center shadow-sm relative overflow-hidden">
+-            <div className="absolute top-0 right-0 w-32 h-32 bg-[#e6007e]/5 rounded-full -mr-16 -mt-16"></div>
+-            <div className="w-16 h-16 bg-[#e6007e]/10 rounded-2xl flex items-center justify-center mb-4">
+-              <Tag className="w-8 h-8 text-[#e6007e]" />
+-            </div>
+-            <h3 className="text-xl font-black text-[#191c1e] mb-2">Automate Your Offers</h3>
+-            <p className="text-xs text-[#5f5e5e] max-w-[240px] mb-6">AI-powered scheduling can increase your conversion rates by up to 14% based on peak traffic times.</p>
+-            <button className="px-8 py-3 bg-[#e6007e] text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-[#e6007e]/20 hover:scale-105 active:scale-95 transition-all">
+-              Launch AI Planner
+-            </button>
+-          </div>
+-        </div>
+-      </div>
+-    );
+-  };
+-
+-  const renderAnalytics = () => {
+-    return (
+-      <div className="space-y-8 pb-10">
+-        {/* Analytics Hero Stats */}
+-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+-          <div className="bg-[#191c1e] p-8 rounded-3xl text-white shadow-xl relative overflow-hidden group">
+-            <div className="absolute top-0 right-0 w-32 h-32 bg-[#e6007e]/20 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-150 duration-700"></div>
+-            <p className="text-[10px] font-black uppercase tracking-widest text-[#e6007e] mb-2">Total Reach</p>
+-            <h3 className="text-4xl font-black mb-1">1.2M+</h3>
+-            <p className="text-xs text-[#5f5e5e] font-medium">Across all marketing channels</p>
+-            <div className="mt-6 flex items-center gap-2 text-[#e6007e]">
+-              <TrendingUp className="w-4 h-4" />
+-              <span className="text-xs font-bold">+12% from last month</span>
+-            </div>
+-          </div>
+-          
+-          <div className="md:col-span-2 bg-white p-6 rounded-3xl border border-[#e2bdc7] shadow-sm flex flex-col md:flex-row gap-8">
+-            <div className="flex-1 space-y-4">
+-              <h3 className="text-sm font-black text-[#191c1e] uppercase tracking-widest">Conversion Funnel</h3>
+-              {[
+-                { label: 'Delivered', value: '98%', width: 'w-full', color: 'bg-[#191c1e]' },
+-                { label: 'Opened', value: '42%', width: 'w-[42%]', color: 'bg-[#6265f0]' },
+-                { label: 'Clicked', value: '18%', width: 'w-[18%]', color: 'bg-[#e6007e]' },
+-                { label: 'Booked', value: '4.5%', width: 'w-[4.5%]', color: 'bg-[#b90064]' },
+-              ].map((step) => (
+-                <div key={step.label} className="space-y-1.5">
+-                  <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-tighter">
+-                    <span className="text-[#5f5e5e]">{step.label}</span>
+-                    <span className="text-[#191c1e]">{step.value}</span>
+-                  </div>
+-                  <div className="h-1.5 w-full bg-[#f2f4f6] rounded-full overflow-hidden">
+-                    <motion.div 
+-                      initial={{ width: 0 }}
+-                      animate={{ width: step.width }}
+-                      transition={{ duration: 1, delay: 0.2 }}
+-                      className={`h-full rounded-full ${step.color}`}
+-                    />
+-                  </div>
+-                </div>
+-              ))}
+-            </div>
+-            <div className="hidden md:block w-px bg-[#f2f4f6]"></div>
+-            <div className="flex-1 flex flex-col justify-center text-center space-y-2">
+-              <div className="w-16 h-16 rounded-full bg-[#ffd9e2] flex items-center justify-center mx-auto text-[#e6007e]">
+-                <Target className="w-8 h-8" />
+-              </div>
+-              <h4 className="text-2xl font-black text-[#191c1e]">$12.4k</h4>
+-              <p className="text-[10px] font-black text-[#5f5e5e] uppercase tracking-widest">Campaign Revenue</p>
+-              <p className="text-[10px] text-[#e6007e] font-bold">This Month</p>
+-            </div>
+-          </div>
+-        </div>
+-
+-        {/* Audience Growth & ROI */}
+-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+-          <div className="bg-white rounded-3xl border border-[#e2bdc7] p-6 shadow-sm">
+-            <h3 className="text-lg font-black text-[#191c1e] mb-8">Audience Growth</h3>
+-            <div className="h-[280px] w-full">
+-              <ResponsiveContainer width="100%" height="100%">
+-                <LineChart data={chartData}>
+-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f2f4f6" />
+-                  <XAxis 
+-                    dataKey="name" 
+-                    axisLine={false} 
+-                    tickLine={false} 
+-                    tick={{ fontSize: 10, fontWeight: 600, fill: '#8e6f77' }}
+-                    dy={10}
+-                  />
+-                  <YAxis 
+-                    axisLine={false} 
+-                    tickLine={false} 
+-                    tick={{ fontSize: 10, fontWeight: 600, fill: '#8e6f77' }}
+-                  />
+-                  <Tooltip 
+-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
+-                  />
+-                  <Line 
+-                    type="monotone" 
+-                    dataKey="reach" 
+-                    stroke="#e6007e" 
+-                    strokeWidth={4} 
+-                    dot={{ r: 4, fill: '#e6007e', strokeWidth: 2, stroke: '#fff' }}
+-                    activeDot={{ r: 6, strokeWidth: 0 }}
+-                  />
+-                </LineChart>
+-              </ResponsiveContainer>
+-            </div>
+-          </div>
+-
+-          <div className="bg-white rounded-3xl border border-[#e2bdc7] p-6 shadow-sm">
+-            <h3 className="text-lg font-black text-[#191c1e] mb-8">Campaign ROI by Channel</h3>
+-            <div className="h-[280px] w-full">
+-              <ResponsiveContainer width="100%" height="100%">
+-                <BarChart data={performanceData}>
+-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f2f4f6" />
+-                  <XAxis 
+-                    dataKey="name" 
+-                    axisLine={false} 
+-                    tickLine={false} 
+-                    tick={{ fontSize: 10, fontWeight: 600, fill: '#8e6f77' }}
+-                    dy={10}
+-                  />
+-                  <YAxis 
+-                    axisLine={false} 
+-                    tickLine={false} 
+-                    tick={{ fontSize: 10, fontWeight: 600, fill: '#8e6f77' }}
+-                  />
+-                  <Tooltip 
+-                    cursor={{ fill: '#f7f9fb' }}
+-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
+-                  />
+-                  <Bar dataKey="value" radius={[8, 8, 0, 0]} barSize={40}>
+-                    {performanceData.map((entry, index) => (
+-                      <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#e6007e' : '#191c1e'} />
+-                    ))}
+-                  </Bar>
+-                </BarChart>
+-              </ResponsiveContainer>
+-            </div>
+-          </div>
+-        </div>
+-
+-        {/* Detailed Metrics Table */}
+-        <div className="bg-white rounded-3xl border border-[#e2bdc7] overflow-hidden shadow-sm">
+-          <div className="p-6 border-b border-[#e2bdc7]">
+-            <h3 className="text-lg font-black text-[#191c1e]">Top Performing Offers</h3>
+-          </div>
+-          <div className="overflow-x-auto">
+-            <table className="w-full text-left border-collapse">
+-              <thead>
+-                <tr className="bg-[#f7f9fb]">
+-                  <th className="px-6 py-4 text-[10px] font-black text-[#5f5e5e] uppercase tracking-widest">Offer Code</th>
+-                  <th className="px-6 py-4 text-[10px] font-black text-[#5f5e5e] uppercase tracking-widest">Revenue</th>
+-                  <th className="px-6 py-4 text-[10px] font-black text-[#5f5e5e] uppercase tracking-widest">Bookings</th>
+-                  <th className="px-6 py-4 text-[10px] font-black text-[#5f5e5e] uppercase tracking-widest">ROI</th>
+-                  <th className="px-6 py-4 text-[10px] font-black text-[#5f5e5e] uppercase tracking-widest">Status</th>
+-                </tr>
+-              </thead>
+-              <tbody className="divide-y divide-[#f2f4f6]">
+-                {[
+-                  { code: 'GLOW20', revenue: '$4,250', bookings: 124, roi: '5.2x', status: 'High' },
+-                  { code: 'SUMMER50', revenue: '$3,100', bookings: 86, roi: '4.1x', status: 'Medium' },
+-                  { code: 'VIP_ACCESS', revenue: '$2,800', bookings: 42, roi: '6.8x', status: 'Very High' },
+-                  { code: 'RE_ENGAGE', revenue: '$1,200', bookings: 15, roi: '2.4x', status: 'Low' },
+-                ].map((row) => (
+-                  <tr key={row.code} className="hover:bg-[#f7f9fb] transition-colors">
+-                    <td className="px-6 py-4">
+-                      <div className="flex items-center gap-2">
+-                        <Tag className="w-3 h-3 text-[#e6007e]" />
+-                        <span className="text-xs font-bold text-[#191c1e]">{row.code}</span>
+-                      </div>
+-                    </td>
+-                    <td className="px-6 py-4 text-xs font-semibold text-[#191c1e]">{row.revenue}</td>
+-                    <td className="px-6 py-4 text-xs font-semibold text-[#191c1e]">{row.bookings}</td>
+-                    <td className="px-6 py-4 text-xs font-black text-[#e6007e]">{row.roi}</td>
+-                    <td className="px-6 py-4">
+-                      <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
+-                        row.status === 'Very High' ? 'bg-emerald-100 text-emerald-700' :
+-                        row.status === 'High' ? 'bg-blue-100 text-blue-700' :
+-                        row.status === 'Medium' ? 'bg-yellow-100 text-yellow-700' :
+-                        'bg-red-100 text-red-700'
+-                      }`}>
+-                        {row.status}
+-                      </span>
+-                    </td>
+-                  </tr>
+-                ))}
+-              </tbody>
+-            </table>
+-          </div>
+-        </div>
+-      </div>
+-    );
+-  };
+-
+-  const renderAudiences = () => {
+-    return (
+-      <div className="space-y-8 pb-10">
+-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+-          <div className="bg-white p-8 rounded-3xl border border-[#e2bdc7] shadow-sm">
+-            <h3 className="text-sm font-black text-[#5f5e5e] uppercase tracking-widest mb-6">Audience Distribution</h3>
+-            <div className="space-y-6">
+-              {[
+-                { label: 'VIP Members', count: '2.4k', percent: 25, color: 'bg-[#e6007e]' },
+-                { label: 'Regulars', count: '5.1k', percent: 45, color: 'bg-[#6265f0]' },
+-                { label: 'New Leads', count: '3.2k', percent: 20, color: 'bg-blue-400' },
+-                { label: 'At Risk', count: '1.7k', percent: 10, color: 'bg-[#191c1e]' },
+-              ].map((segment) => (
+-                <div key={segment.label} className="space-y-2">
+-                  <div className="flex justify-between items-end">
+-                    <span className="text-xs font-bold text-[#191c1e]">{segment.label}</span>
+-                    <span className="text-xs font-black text-[#5f5e5e]">{segment.count}</span>
+-                  </div>
+-                  <div className="h-3 w-full bg-[#f2f4f6] rounded-full overflow-hidden">
+-                    <motion.div 
+-                      initial={{ width: 0 }}
+-                      animate={{ width: `${segment.percent}%` }}
+-                      className={`h-full rounded-full ${segment.color}`}
+-                    />
+-                  </div>
+-                </div>
+-              ))}
+-            </div>
+-          </div>
+-
+-          <div className="bg-[#f7f9fb] p-8 rounded-3xl border border-[#e2bdc7] flex flex-col justify-between">
+-            <div>
+-              <h3 className="text-2xl font-black text-[#191c1e] mb-2">Build Custom Segments</h3>
+-              <p className="text-xs text-[#5f5e5e] leading-relaxed">Create hyper-targeted lists based on visit frequency, average spend, or service preferences to maximize your ROI.</p>
+-            </div>
+-            <div className="mt-8 flex flex-wrap gap-2">
+-              <span className="px-3 py-1 bg-white border border-[#e2bdc7] rounded-full text-[10px] font-bold text-[#5f5e5e]">Last visit &gt; 30 days</span>
+-              <span className="px-3 py-1 bg-white border border-[#e2bdc7] rounded-full text-[10px] font-bold text-[#5f5e5e]">Total spend &gt; ₹5000</span>
+-              <span className="px-3 py-1 bg-white border border-[#e2bdc7] rounded-full text-[10px] font-bold text-[#5f5e5e]">Preferred: Facials</span>
+-            </div>
+-            <div className="mt-8 space-y-3">
+-              <button 
+-                onClick={() => setShowClientPicker(true)}
+-                className="w-full py-4 bg-[#e6007e] text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-[#b90064] transition-all flex items-center justify-center gap-2"
+-              >
+-                <Users className="w-4 h-4" /> {t.select_client}
+-              </button>
+-              <button className="w-full py-4 bg-[#191c1e] text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl hover:bg-black transition-all">
+-                Create New Segment
+-              </button>
+-            </div>
+-          </div>
+-        </div>
+-
+-        <div className="bg-white rounded-3xl border border-[#e2bdc7] overflow-hidden shadow-sm">
+-          <div className="p-6 border-b border-[#e2bdc7] flex items-center justify-between">
+-            <h3 className="text-lg font-black text-[#191c1e]">Active Segments</h3>
+-            <button className="text-[10px] font-black text-[#e6007e] uppercase tracking-widest">Manage All</button>
+-          </div>
+-          <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-[#f2f4f6]">
+-            {[
+-              { name: 'VIP Skincare', users: 840, engagement: '72%', status: 'Active' },
+-              { name: 'Weekend Warriors', users: 1250, engagement: '45%', status: 'Active' },
+-              { name: 'Dormant (90d)', users: 2100, engagement: '12%', status: 'Draft' },
+-            ].map((item) => (
+-              <div key={item.name} className="p-6 space-y-4 hover:bg-[#f7f9fb] transition-colors group cursor-pointer">
+-                <div className="flex justify-between items-start">
+-                  <div className="w-10 h-10 rounded-xl bg-[#f2f4f6] flex items-center justify-center text-[#191c1e] group-hover:bg-[#e6007e] group-hover:text-white transition-all">
+-                    <Users className="w-5 h-5" />
+-                  </div>
+-                  <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${item.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-zinc-100 text-zinc-500'}`}>
+-                    {item.status}
+-                  </span>
+-                </div>
+-                <div>
+-                  <h4 className="text-sm font-black text-[#191c1e]">{item.name}</h4>
+-                  <p className="text-[10px] text-[#5f5e5e] font-medium">{item.users} members</p>
+-                </div>
+-                <div className="flex justify-between items-center pt-2">
+-                  <span className="text-[10px] font-bold text-[#5f5e5e]">Engagement Rate</span>
+-                  <span className="text-xs font-black text-[#e6007e]">{item.engagement}</span>
+-                </div>
+-              </div>
+-            ))}
+-          </div>
+-        </div>
+-      </div>
+-    );
+-  };
+-
+-  const renderAutomation = () => {
+-    return (
+-      <div className="space-y-8 pb-10">
+-        <div className="bg-[#e6007e] rounded-3xl p-8 text-white flex flex-col md:flex-row items-center gap-8 relative overflow-hidden">
+-          <div className="absolute bottom-0 right-0 w-64 h-64 bg-white/10 rounded-full -mb-32 -mr-32"></div>
+-          <div className="relative z-10 space-y-4 text-center md:text-left flex-1">
+-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/20 rounded-full text-[10px] font-black uppercase tracking-widest">
+-              <Clock className="w-3 h-3" />
+-              Automated Marketing
+-            </div>
+-            <h2 className="text-3xl font-black leading-tight">Put your growth on autopilot</h2>
+-            <p className="text-sm text-white/80 max-w-md">Schedule smart triggers that react to customer behavior in real-time. Never miss an opportunity to re-engage.</p>
+-            <div className="pt-2 flex flex-col sm:flex-row gap-3">
+-              <button className="px-6 py-3 bg-white text-[#e6007e] rounded-xl font-black text-xs uppercase tracking-widest shadow-xl">Get Started</button>
+-              <button className="px-6 py-3 bg-transparent border border-white/30 text-white rounded-xl font-black text-xs uppercase tracking-widest">Watch Tutorial</button>
+-            </div>
+-          </div>
+-          <div className="w-48 h-48 bg-white/10 rounded-3xl backdrop-blur-md flex items-center justify-center border border-white/20 relative z-10 shrink-0">
+-            <Clock className="w-24 h-24 text-white/30" />
+-          </div>
+-        </div>
+-
+-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+-          <div className="lg:col-span-2 space-y-4">
+-            <div className="flex items-center justify-between mb-2">
+-              <h3 className="text-sm font-black text-[#191c1e] uppercase tracking-widest">Active Workflows</h3>
+-              <button className="text-[10px] font-black text-[#e6007e] uppercase tracking-widest">+ New Workflow</button>
+-            </div>
+-            {[
+-              { name: 'Welcome Series', trigger: 'New Customer Sign-up', steps: 3, active: true, success: '84%' },
+-              { name: 'Birthday Surprise', trigger: 'Customer Birthday', steps: 1, active: true, success: '92%' },
+-              { name: 'Abandoned Cart', trigger: 'No booking for 7 days', steps: 2, active: false, success: '34%' },
+-            ].map((flow) => (
+-              <div key={flow.name} className="bg-white p-6 rounded-2xl border border-[#e2bdc7] shadow-sm flex items-center gap-6 group hover:border-[#e6007e] transition-all">
+-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${flow.active ? 'bg-[#ffd9e2] text-[#e6007e]' : 'bg-[#f2f4f6] text-[#5f5e5e]'}`}>
+-                  <Clock className="w-6 h-6" />
+-                </div>
+-                <div className="flex-1 min-w-0">
+-                  <h4 className="text-sm font-black text-[#191c1e]">{flow.name}</h4>
+-                  <p className="text-[10px] text-[#5f5e5e] font-medium">Trigger: {flow.trigger}</p>
+-                </div>
+-                <div className="text-right hidden sm:block">
+-                  <p className="text-xs font-black text-[#191c1e]">{flow.success}</p>
+-                  <p className="text-[9px] text-[#5f5e5e] font-bold uppercase tracking-tighter">Success</p>
+-                </div>
+-                <div className="flex items-center gap-4">
+-                  <div className={`w-10 h-5 rounded-full relative transition-colors ${flow.active ? 'bg-[#e6007e]' : 'bg-[#e2bdc7]'}`}>
+-                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${flow.active ? 'right-1' : 'left-1'}`}></div>
+-                  </div>
+-                  <ChevronRight className="w-5 h-5 text-[#e2bdc7] group-hover:text-[#e6007e]" />
+-                </div>
+-              </div>
+-            ))}
+-          </div>
+-
+-          <div className="bg-white rounded-3xl border border-[#e2bdc7] p-6 shadow-sm">
+-            <h3 className="text-sm font-black text-[#191c1e] uppercase tracking-widest mb-6">Automation Health</h3>
+-            <div className="space-y-6">
+-              <div className="text-center p-6 bg-[#f7f9fb] rounded-2xl border border-[#e2bdc7]">
+-                <p className="text-3xl font-black text-[#191c1e]">94.2%</p>
+-                <p className="text-[10px] font-black text-[#5f5e5e] uppercase tracking-widest mt-1">Delivery Success Rate</p>
+-              </div>
+-              <div className="grid grid-cols-2 gap-4">
+-                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+-                  <p className="text-lg font-black text-emerald-700">1,240</p>
+-                  <p className="text-[8px] font-black text-emerald-600 uppercase tracking-widest">Triggers Hit</p>
+-                </div>
+-                <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100">
+-                  <p className="text-lg font-black text-blue-700">458</p>
+-                  <p className="text-[8px] font-black text-blue-600 uppercase tracking-widest">Conversions</p>
+-                </div>
+-              </div>
+-              <div className="pt-4 border-t border-[#f2f4f6]">
+-                <p className="text-[10px] text-[#5f5e5e] leading-relaxed">Your automations have saved you approximately <span className="font-bold text-[#191c1e]">24 hours</span> of manual work this week.</p>
+-              </div>
+-            </div>
+-          </div>
+-        </div>
+-      </div>
+-    );
+-  };
+-
+-  const renderViewContent = () => {
+-    if (activeView === 'dashboard') {
+-      return renderDashboard();
+-    }
+-
+-    if (activeView === 'analytics') {
+-      return renderAnalytics();
+-    }
+-
+-    if (activeView === 'audiences') {
+-      return renderAudiences();
+-    }
+-
+-    if (activeView === 'automation') {
+-      return renderAutomation();
+-    }
+-
+-    if (activeView === 'campaigns') {
+-      return (
+-        <>
+-          {/* Analytics Quick View */}
+-          <div className="flex overflow-x-auto gap-4 pb-2 no-scrollbar">
+-            {[
+-              { label: t.campaigns, value: '124', color: 'text-[#e6007e]' },
+-              { label: t.audiences, value: '8.4k', color: 'text-[#6265f0]' },
+-              { label: 'Avg. Open Rate', value: '24%', color: 'text-[#191c1e]' },
+-              { label: t.bookings, value: '156', color: 'text-[#b90064]' },
+-            ].map((stat) => (
+-              <div key={stat.label} className="min-w-[180px] bg-white p-5 rounded-2xl border border-[#e2bdc7] shadow-sm flex-shrink-0">
+-                <p className="text-[10px] font-black text-[#5f5e5e] mb-1 uppercase tracking-widest">{stat.label}</p>
+-                <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
+-              </div>
+-            ))}
+-          </div>
+-
+-          {/* Campaign Cards List */}
+-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+-            {historyData.filter(c => activeTab === 'All' || c.status === activeTab).map((campaign) => (
+-              <motion.div 
+-                layout
+-                key={campaign.id}
+-                className="bg-white rounded-2xl border border-[#e2bdc7] p-5 space-y-4 shadow-sm relative overflow-hidden group hover:border-[#b90064]/40 transition-colors"
+-              >
+-                <div className="flex justify-between items-start">
+-                  <div>
+-                    <h3 className="text-lg font-bold text-[#191c1e] mb-0.5">{campaign.name}</h3>
+-                    <p className="text-xs font-medium text-[#5f5e5e]">Target: {campaign.audience} • {campaign.type}</p>
+-                  </div>
+-                  <span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${
+-                    campaign.status === 'Running' ? 'bg-[#ffd9e2] text-[#3e001e]' :
+-                    campaign.status === 'Scheduled' ? 'bg-[#e1e0ff] text-[#07006c]' :
+-                    campaign.status === 'Completed' ? 'bg-[#e0e3e5] text-[#191c1e]' :
+-                    'bg-[#f2f4f6] text-[#5a3f47]'
+-                  }`}>
+-                    {campaign.status}
+-                  </span>
+-                </div>
+-
+-                <div className="bg-[#f2f4f6] rounded-xl p-4 border border-[#e2bdc7]/50 relative overflow-hidden">
+-                  <div className="flex items-center gap-2 mb-3 relative z-10">
+-                    <Tag className="w-4 h-4 text-[#e6007e]" />
+-                    <span className="text-xs font-black text-[#e6007e] uppercase tracking-widest">{campaign.offer}</span>
+-                    <span className="text-[10px] text-[#5a3f47] font-medium">• {campaign.offerDesc}</span>
+-                  </div>
+-                  <div className="grid grid-cols-3 gap-2 text-center relative z-10">
+-                    <div>
+-                      <p className="text-[9px] font-black text-[#5f5e5e] uppercase tracking-widest mb-1">Sent</p>
+-                      <p className="text-sm font-bold text-[#191c1e]">{campaign.status === 'Draft' ? '--' : campaign.recipients.toLocaleString()}</p>
+-                    </div>
+-                    <div>
+-                      <p className="text-[9px] font-black text-[#5f5e5e] uppercase tracking-widest mb-1">Opened</p>
+-                      <p className="text-sm font-bold text-[#191c1e]">{campaign.status === 'Draft' ? '--' : campaign.opened.toLocaleString()}</p>
+-                    </div>
+-                    <div>
+-                      <p className="text-[9px] font-black text-[#5f5e5e] uppercase tracking-widest mb-1">Bookings</p>
+-                      <p className={`text-sm font-bold ${campaign.bookings > 0 ? 'text-[#e6007e]' : 'text-[#191c1e]'}`}>
+-                        {campaign.status === 'Draft' ? '--' : campaign.bookings}
+-                      </p>
+-                    </div>
+-                  </div>
+-                </div>
+-
+-                <div className="flex justify-between items-center pt-3 border-t border-[#e2bdc7]/30">
+-                  <button className="text-[10px] font-black text-[#e6007e] uppercase tracking-widest hover:text-[#b90064] transition-colors">
+-                    {campaign.status === 'Draft' ? 'Edit Draft' : 'View Full Report'}
+-                  </button>
+-                  <div className="flex items-center gap-2">
+-                    <span className="text-[10px] text-[#5f5e5e] font-medium">{campaign.date}</span>
+-                    <button className="text-[#5f5e5e] hover:text-[#191c1e]">
+-                      <MoreVertical className="w-4 h-4" />
+-                    </button>
+-                  </div>
+-                </div>
+-              </motion.div>
+-            ))}
+-          </div>
+-        </>
+-      );
+-    }
+-
+-    return (
+-      <div className="bg-white rounded-3xl p-12 border border-dashed border-[#e2bdc7] flex flex-col items-center justify-center text-center space-y-4">
+-        <div className="w-20 h-20 rounded-full bg-[#f2f4f6] flex items-center justify-center text-[#e2bdc7]">
+-          {activeView === 'analytics' ? <BarChart3 className="w-10 h-10" /> : <Layers className="w-10 h-10" />}
+-        </div>
+-        <div>
+-          <h3 className="text-xl font-bold text-[#191c1e] capitalize">{activeView} module</h3>
+-          <p className="text-sm text-[#5f5e5e] max-w-xs mx-auto">This section is currently being processed. Full integration with live marketing data is coming in the next update.</p>
+-        </div>
+-        <button 
+-          onClick={() => setActiveView('campaigns')}
+-          className="px-6 py-2 bg-[#e6007e] text-white rounded-xl font-bold text-sm shadow-lg shadow-[#e6007e]/20"
+-        >
+-          Return to Campaigns
+-        </button>
+-      </div>
+-    );
+-  };
+-
+-  return (
+-    <div className="flex flex-col min-h-screen bg-[#f7f9fb] font-['Inter'] relative">
+-      {/* Top Navigation Bar */}
+-      <header className="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-4 md:px-10 h-16 bg-white/80 backdrop-blur-md border-b border-[#e2bdc7]">
+-        <div className="flex items-center gap-4">
+-          <button onClick={onBack} className="md:hidden text-[#b90064]">
+-            <ArrowLeft className="w-6 h-6" />
+-          </button>
+-          <span className="font-['Hanken_Grotesk'] text-2xl text-[#b90064] italic font-black">CampaignPulse</span>
+-        </div>
+-        <div className="flex items-center gap-4">
+-          <div className="relative">
+-            <button 
+-              onClick={() => setShowNotifications(!showNotifications)}
+-              className={`p-2 rounded-full transition-colors relative ${showNotifications ? 'bg-[#ffd9e2] text-[#e6007e]' : 'text-[#5f5e5e] hover:bg-[#f2f4f6]'}`}
+-            >
+-              <Bell className="w-6 h-6" />
+-              {notifications.some(n => n.unread) && (
+-                <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-[#e6007e] rounded-full border-2 border-white"></span>
+-              )}
+-            </button>
+-
+-            <AnimatePresence>
+-              {showNotifications && (
+-                <>
+-                  <div 
+-                    className="fixed inset-0 z-40" 
+-                    onClick={() => setShowNotifications(false)}
+-                  />
+-                  <motion.div 
+-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+-                    animate={{ opacity: 1, y: 0, scale: 1 }}
+-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+-                    className="absolute right-0 mt-3 w-80 bg-white rounded-3xl border border-[#e2bdc7] shadow-2xl z-50 overflow-hidden"
+-                  >
+-                    <div className="p-4 border-b border-[#f2f4f6] flex justify-between items-center">
+-                      <h3 className="text-xs font-black text-[#191c1e] uppercase tracking-widest">{(t as any).notifications || 'Notifications'}</h3>
+-                      <button className="text-[10px] font-bold text-[#e6007e]">Mark all read</button>
+-                    </div>
+-                    <div className="max-h-[320px] overflow-y-auto">
+-                      {notifications.map((n) => (
+-                        <div key={n.id} className={`p-4 border-b border-[#f2f4f6] hover:bg-[#f7f9fb] transition-colors cursor-pointer group ${n.unread ? 'bg-[#f7f9fb]/50' : ''}`}>
+-                          <div className="flex justify-between items-start mb-1">
+-                            <span className="text-xs font-bold text-[#191c1e]">{n.title}</span>
+-                            <span className="text-[9px] text-[#5f5e5e]">{n.time}</span>
+-                          </div>
+-                          <p className="text-[10px] text-[#5f5e5e] leading-relaxed">{n.desc}</p>
+-                          {n.unread && <div className="mt-2 w-1.5 h-1.5 bg-[#e6007e] rounded-full"></div>}
+-                        </div>
+-                      ))}
+-                    </div>
+-                    <button className="w-full py-3 bg-[#f7f9fb] text-[10px] font-black text-[#5f5e5e] uppercase tracking-widest hover:text-[#e6007e]">View All Alerts</button>
+-                  </motion.div>
+-                </>
+-              )}
+-            </AnimatePresence>
+-          </div>
+-          
+-          <div className="relative">
+-            <button 
+-              onClick={() => setShowSettings(!showSettings)}
+-              className={`text-[#5f5e5e] p-2 rounded-full transition-colors ${showSettings ? 'bg-[#f2f4f6]' : 'hover:bg-[#f2f4f6]'}`}
+-            >
+-              <Settings className="w-6 h-6" />
+-            </button>
+-
+-            <AnimatePresence>
+-              {showSettings && (
+-                <>
+-                  <div className="fixed inset-0 z-40" onClick={() => setShowSettings(false)} />
+-                  <motion.div 
+-                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+-                    animate={{ opacity: 1, y: 0, scale: 1 }}
+-                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+-                    className="absolute right-0 mt-3 w-64 bg-white rounded-3xl border border-[#e2bdc7] shadow-2xl z-50 overflow-hidden p-4"
+-                  >
+-                    <h3 className="text-xs font-black text-[#191c1e] uppercase tracking-widest mb-4">{t.settings}</h3>
+-                    <div className="space-y-4">
+-                      <div>
+-                        <p className="text-[10px] font-black text-[#5f5e5e] uppercase tracking-widest mb-2">{t.lang}</p>
+-                        <div className="flex gap-2">
+-                          <button 
+-                            onClick={() => setLanguage('EN')}
+-                            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all border ${language === 'EN' ? 'bg-[#e6007e] text-white border-[#e6007e]' : 'bg-[#f2f4f6] text-[#5f5e5e] border-transparent'}`}
+-                          >
+-                            English
+-                          </button>
+-                          <button 
+-                            onClick={() => setLanguage('HI')}
+-                            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all border ${language === 'HI' ? 'bg-[#e6007e] text-white border-[#e6007e]' : 'bg-[#f2f4f6] text-[#5f5e5e] border-transparent'}`}
+-                          >
+-                            हिन्दी
+-                          </button>
+-                        </div>
+-                      </div>
+-                    </div>
+-                  </motion.div>
+-                </>
+-              )}
+-            </AnimatePresence>
+-          </div>
+-        </div>
+-      </header>
+-
+-      {/* Side Navigation (Desktop Only) */}
+-      <nav className="fixed left-0 top-0 h-full z-40 pt-20 px-4 bg-white hidden md:flex flex-col w-64 border-r border-[#e2bdc7]">
+-        <div className="mb-8 px-4">
+-          <h2 className="text-xl font-['Hanken_Grotesk'] text-[#b90064] font-bold">Pulse Pro</h2>
+-          <p className="text-xs font-semibold text-[#5f5e5e] uppercase tracking-wider">Marketing Admin</p>
+-        </div>
+-        <ul className="space-y-2 flex-grow">
+-          {[
+-            { id: 'dashboard', label: t.dashboard, icon: BarChart3 },
+-            { id: 'campaigns', label: t.campaigns, icon: Send },
+-            { id: 'analytics', label: t.analytics, icon: Layers },
+-            { id: 'audiences', label: t.audiences, icon: Eye },
+-            { id: 'automation', label: t.automation, icon: Clock },
+-          ].map((item) => (
+-            <li key={item.id}>
+-              <button 
+-                onClick={() => handleSidebarClick(item.id)}
+-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 font-semibold text-sm ${
+-                  activeView === item.id 
+-                    ? 'bg-[#e6007e] text-white shadow-md' 
+-                    : 'text-[#5f5e5e] hover:bg-[#f2f4f6]'
+-                }`}
+-              >
+-                <item.icon className="w-5 h-5" />
+-                {item.label}
+-              </button>
+-            </li>
+-          ))}
+-        </ul>
+-        <div className="mt-auto pb-4">
+-          <button 
+-            onClick={onBack}
+-            className="w-full bg-[#e6007e] text-white py-3 rounded-xl font-bold uppercase tracking-wider hover:bg-[#b90064] transition-colors shadow-lg active:scale-95"
+-          >
+-            {t.create}
+-          </button>
+-        </div>
+-      </nav>
+-
+-      {/* Main Content */}
+-      <main className="pt-20 px-4 md:ml-64 md:px-10 md:pt-24 max-w-7xl mx-auto w-full space-y-6 pb-32">
+-        {/* Header Section */}
+-        <div className="flex items-center justify-between">
+-          <h1 className="text-2xl md:text-3xl font-['Hanken_Grotesk'] font-bold text-[#191c1e] capitalize">{(t as any)[activeView] || activeView} {t.overview}</h1>
+-          <button className="p-2 bg-[#eceef0] rounded-full text-[#e6007e] shadow-sm border border-[#e2bdc7] hover:bg-[#e6e8ea]">
+-            <TuneIcon className="w-6 h-6" />
+-          </button>
+-        </div>
+-
+-        {/* Filter Chips (Only show for campaigns) */}
+-        {activeView === 'campaigns' && (
+-          <div className="flex overflow-x-auto gap-3 pb-2 no-scrollbar">
+-            {tabs.map((tab) => (
+-              <button
+-                key={tab}
+-                onClick={() => setActiveTab(tab)}
+-                className={`whitespace-nowrap px-6 py-2 rounded-full font-bold text-xs transition-all border ${
+-                  activeTab === tab 
+-                    ? 'bg-[#e6007e] text-white border-[#e6007e] shadow-sm' 
+-                    : 'bg-[#eceef0] text-[#191c1e] border-[#e2bdc7] hover:bg-[#e6e8ea]'
+-                }`}
+-              >
+-                {tab}
+-              </button>
+-            ))}
+-          </div>
+-        )}
+-
+-        {renderViewContent()}
+-        {renderClientPicker()}
+-      </main>
+-
+-      {/* Floating Action Button */}
+-      <button 
+-        onClick={onBack}
+-        className="fixed bottom-24 right-6 md:bottom-10 md:right-10 w-14 h-14 bg-[#e6007e] text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform z-50 focus:outline-none ring-offset-2 ring-[#e6007e]/50 active:scale-95"
+-      >
+-        <span className="text-3xl font-bold">+</span>
+-      </button>
+-
+-      {/* Toast Notification */}
+-      <AnimatePresence>
+-        {showToast && (
+-          <motion.div 
+-            initial={{ opacity: 0, y: 50 }}
+-            animate={{ opacity: 1, y: 0 }}
+-            exit={{ opacity: 0, y: 50 }}
+-            className="fixed bottom-32 left-1/2 -translate-x-1/2 md:left-auto md:right-10 md:translate-x-0 z-[100] bg-[#191c1e] text-white px-6 py-3 rounded-full shadow-xl flex items-center gap-3"
+-          >
+-            <Info className="w-4 h-4 text-[#e6007e]" />
+-            <span className="text-xs font-bold uppercase tracking-widest">Switching to {activeView}...</span>
+-          </motion.div>
+-        )}
+-      </AnimatePresence>
+-
+-      {/* Bottom Navigation (Mobile Only) */}
+-      <nav className="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-3 pb-safe md:hidden bg-white/95 backdrop-blur-md border-t border-[#e2bdc7] rounded-t-2xl shadow-lg">
+-        {[
+-          { id: 'dashboard', label: t.dashboard, icon: Home },
+-          { id: 'campaigns', label: t.history, icon: Clock },
+-          { id: 'analytics', label: t.analytics, icon: BarChart3 },
+-          { id: 'menu', label: 'Menu', icon: Menu },
+-        ].map((item) => (
+-          <button 
+-            key={item.id}
+-            onClick={() => handleSidebarClick(item.id)}
+-            className={`flex flex-col items-center gap-1 p-2 transition-all ${
+-              activeView === item.id ? 'text-[#e6007e] scale-110' : 'text-[#5f5e5e]'
+-            }`}
+-          >
+-            <item.icon className={`w-5 h-5 ${activeView === item.id ? 'fill-current' : ''}`} />
+-            <span className="text-[8px] font-black uppercase tracking-widest">{item.label}</span>
+-          </button>
+-        ))}
+-      </nav>
+-    </div>
+-  );
+-}
+-
+diff --git a/src/components/marketing/FestivalTemplates.tsx b/src/components/marketing/FestivalTemplates.tsx
+deleted file mode 100644
+index 810d851..0000000
+--- a/src/components/marketing/FestivalTemplates.tsx
++++ /dev/null
+@@ -1,299 +0,0 @@
+-import React, { useState } from 'react';
+-import { 
+-  ArrowLeft, 
+-  ArrowRight, 
+-  Search, 
+-  SlidersHorizontal, 
+-  Eye, 
+-  X, 
+-  Star,
+-  Sparkles
+-} from 'lucide-react';
+-import { motion, AnimatePresence } from 'motion/react';
+-import { FestivalTemplate } from '../../types';
+-
+-interface FestivalTemplatesProps {
+-  onBack: () => void;
+-  onUseTemplate: (template: FestivalTemplate) => void;
+-}
+-
+-const festivalTemplates: FestivalTemplate[] = [
+-  {
+-    id: 'diwali',
+-    title: 'Diwali',
+-    tagline: 'Festival of Lights Special',
+-    description: 'Celebrate with a glow. Book any facial or styling service and receive a festive discount.',
+-    imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDux4R9jR4030BdijxFeVtA4arVWGgHWhC2lZHdtngGYfwTr0K1z2ixOHFcNcNGU3nX-3dCgUjoxh0O6dd2kPzlC8duTKG2d4ljPui1pXv9ecmAV5R1PuhaYem2e3N1yW0glk1sIFgcDauQckrz9UmNdPIQexDh1qpzk2PlTt8OmK3sIKuGI-3qemQVnsAh84NrASUF79KHReJPpIvFyztRA4hqu38PS2zFXnX93WNsZHSvjxLRSd7qiYjUQg5UIsbPy1thz3FxoRk',
+-    category: 'Upcoming',
+-    seasons: ['Winter'],
+-    discount: '25% Off',
+-    isPremium: true,
+-    suggestedMessage: 'Celebrate the Festival of Lights with a radiant glow. Book any facial or styling service this week and receive a special festive discount to shine your brightest!',
+-    targetServices: ['Facials', 'Hair Styling', 'Makeup']
+-  },
+-  {
+-    id: 'valentines',
+-    title: 'Valentine\'s Day',
+-    tagline: 'Love Yourself First',
+-    description: 'Treat yourself or a loved one to our signature couple\'s spa package. Romantic atmosphere guaranteed.',
+-    imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBHO7z6J_uG_ti48vxeQsyLd-K9Mr3_Po_m-SonWJ3fx81ZvdMqG8bEKFRlNY9ggU8rDxMKY_M4LEgwV7hKEYKOpiefuxY2FWOMxaEzXP2yUvL8p7bMyrgPI2Khh58zjIgrDwp_4AqClVoXfKaPkRPcoDuLO2jpKp4E8Kc8GOc-ELJIK2DHzBbJ1sal4nJdJiTrL6TfV_k_ucqMkQxYRwriHoSa672Iwzou4Y8Nr3Ir6oYKeeoRY6LXDU_fpTVoJjQ6GneMSipuel0',
+-    category: 'Seasonal',
+-    seasons: ['Spring'],
+-    discount: 'Couple Package',
+-    suggestedMessage: 'Treat yourself or a loved one to our signature couple\'s spa package. Romantic atmosphere guaranteed. Book your Valentine\'s pampering session today!',
+-    targetServices: ['Spa', 'Massage', 'Couples Packages']
+-  },
+-  {
+-    id: 'holi',
+-    title: 'Holi',
+-    tagline: 'Colors of Joy Package',
+-    description: 'Pre and post-Holi hair and skin care routines to protect and restore your natural vibrance.',
+-    imageUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBj4cbnqSTNIGRNHs5MrZ25OuJOf1GWvFNcpabHp-jUWdvZcCLCRMw0mIRL1qEotp3UnUMh3wfG1qGAnlBUSQHjqU_0_9uV8w4ip2jH4WTCck4iLqenCPDAyjcI86fF0g5_64w_qdbAaZkXtEskbjGOfZP3RPbabm9VJKNUM2Y5oa_flSlbThjFGD2Ui3Ff7ybF1pvWlVcZ47nM2pYTmM2hxWK-dO4GCEFF5U8Uj5DPkBohUoITrWpt-yhg3cwrkLdd0n-fRNc3CRc',
+-    category: 'Religious',
+-    seasons: ['Spring'],
+-    discount: '15% Off Packages',
+-    suggestedMessage: 'Pre and post-Holi hair and skin care routines to protect and restore your natural vibrance. Don\'t let the colors dull your glow!',
+-    targetServices: ['Hair Care', 'Skin Care', 'Restorative Facials']
+-  }
+-];
+-
+-export default function FestivalTemplates({ onBack, onUseTemplate }: FestivalTemplatesProps) {
+-  const [searchQuery, setSearchQuery] = useState('');
+-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+-  const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
+-  const [previewTemplate, setPreviewTemplate] = useState<FestivalTemplate | null>(null);
+-
+-  const filteredTemplates = festivalTemplates.filter(t => {
+-    const matchesSearch = t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+-                          t.tagline.toLowerCase().includes(searchQuery.toLowerCase());
+-    const matchesCategory = selectedCategory === 'All' || t.category === selectedCategory;
+-    const matchesSeason = !selectedSeason || t.seasons.includes(selectedSeason as any);
+-    return matchesSearch && matchesCategory && matchesSeason;
+-  });
+-
+-  return (
+-    <div className="p-5 space-y-6 pb-28 max-w-6xl mx-auto w-full">
+-      {/* Submodule Header */}
+-      <div className="flex items-center justify-between pb-4 border-b border-outline-variant/30">
+-        <div className="flex items-center gap-3">
+-          <button 
+-            onClick={onBack} 
+-            className="p-2 rounded-full text-primary hover:bg-primary/5 border border-primary/10 transition-colors"
+-          >
+-            <ArrowLeft className="w-5 h-5" />
+-          </button>
+-          <div>
+-            <h2 className="text-xl font-bold text-primary tracking-tight">Festival Templates</h2>
+-            <p className="text-xs text-on-surface-variant font-medium">Stunning celebration banners ready for your salon social media</p>
+-          </div>
+-        </div>
+-      </div>
+-
+-      {/* Search Bar */}
+-      <div className="relative group">
+-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-tertiary w-5 h-5" />
+-        <input 
+-          type="text"
+-          value={searchQuery}
+-          onChange={(e) => setSearchQuery(e.target.value)}
+-          placeholder="Search templates (Diwali, Holi, Christmas...)"
+-          className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-surface-container-lowest border border-outline-variant focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all font-body text-sm text-on-surface placeholder:text-on-surface-variant/60 shadow-xs"
+-        />
+-      </div>
+-
+-      {/* Filters */}
+-      <section className="space-y-5">
+-        <div>
+-          <h2 className="text-[10px] font-extrabold uppercase tracking-widest text-on-surface-variant mb-3">Categories</h2>
+-          <div className="flex gap-3 overflow-x-auto hide-scrollbar pb-1">
+-            {['All', 'Upcoming', 'Religious', 'Seasonal', 'Global'].map((cat) => (
+-              <button
+-                key={cat}
+-                onClick={() => setSelectedCategory(cat)}
+-                className={`shrink-0 px-6 py-2 rounded-full text-xs font-bold transition-all shadow-sm active:scale-95 border cursor-pointer ${
+-                  selectedCategory === cat 
+-                    ? 'bg-primary-container text-white border-primary' 
+-                    : 'bg-surface-container-lowest border-outline-variant/30 text-on-surface-variant hover:bg-surface-container-high'
+-                }`}
+-              >
+-                {cat}
+-              </button>
+-            ))}
+-          </div>
+-        </div>
+-
+-        {/* Season Filters */}
+-        <div className="flex items-center gap-3 overflow-x-auto hide-scrollbar">
+-          <span className="shrink-0 flex items-center justify-center p-2 text-on-surface-variant bg-surface-container rounded-lg">
+-            <SlidersHorizontal className="w-4 h-4" />
+-          </span>
+-          {['Spring', 'Summer', 'Monsoon', 'Winter'].map((season) => (
+-            <button
+-              key={season}
+-              onClick={() => setSelectedSeason(selectedSeason === season ? null : season)}
+-              className={`shrink-0 px-4 py-2 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+-                selectedSeason === season 
+-                  ? 'bg-tertiary text-white border-tertiary' 
+-                  : 'bg-surface-container-lowest border-outline-variant/30 text-on-surface-variant hover:bg-surface-container-low'
+-              }`}
+-            >
+-              {season}
+-            </button>
+-          ))}
+-        </div>
+-      </section>
+-
+-      {/* Template Grid */}
+-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+-        {filteredTemplates.map((template) => (
+-          <article 
+-            key={template.id}
+-            className="bg-surface-container-lowest border border-outline-variant/40 rounded-[28px] overflow-hidden flex flex-col hover:shadow-xl transition-all duration-300"
+-          >
+-            <div className="h-52 w-full relative group">
+-              <img 
+-                src={template.imageUrl} 
+-                alt={template.title}
+-                className="w-full h-full object-cover transition-transform duration-700"
+-                referrerPolicy="no-referrer"
+-              />
+-              {template.isPremium && (
+-                <div className="absolute top-4 right-4 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-full border border-outline-variant flex items-center gap-1.5 shadow-sm">
+-                  <Star className="w-3.5 h-3.5 text-primary fill-primary" />
+-                  <span className="text-[10px] font-extrabold text-on-surface uppercase tracking-wider">Premium</span>
+-                </div>
+-              )}
+-            </div>
+-
+-            <div className="p-6 flex flex-col flex-grow space-y-4">
+-              <div className="flex justify-between items-start">
+-                <div className="space-y-0.5">
+-                  <h3 className="text-2xl font-bold text-primary tracking-tight">{template.title}</h3>
+-                  <p className="text-[11px] font-bold text-on-surface leading-tight">"{template.tagline}"</p>
+-                </div>
+-                <span className="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-widest bg-tertiary-fixed text-on-tertiary-fixed border border-tertiary/20">
+-                  {template.category}
+-                </span>
+-              </div>
+-
+-              <p className="text-xs text-on-surface-variant line-clamp-2 leading-relaxed italic">
+-                {template.description}
+-              </p>
+-
+-              <div className="mt-auto space-y-5 pt-2">
+-                <div className="flex items-center justify-between text-xs font-bold">
+-                  <span className="text-on-surface-variant">Discount Offer:</span>
+-                  <span className="text-on-surface bg-primary-fixed text-on-primary-fixed px-3 py-1.5 rounded-lg border border-primary/10">
+-                    {template.discount}
+-                  </span>
+-                </div>
+-
+-                <div className="flex gap-3">
+-                  <button 
+-                    onClick={() => setPreviewTemplate(template)}
+-                    className="flex-1 py-3.5 px-4 border-2 border-tertiary text-tertiary rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-tertiary/5 transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+-                  >
+-                    <Eye className="w-4 h-4" /> Preview
+-                  </button>
+-                  <button 
+-                    onClick={() => onUseTemplate(template)}
+-                    className="flex-1 py-3.5 px-4 bg-primary text-white rounded-2xl text-[11px] font-black uppercase tracking-widest hover:brightness-110 shadow-lg shadow-primary/20 transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+-                  >
+-                    Use <ArrowRight className="w-4 h-4" />
+-                  </button>
+-                </div>
+-              </div>
+-            </div>
+-          </article>
+-        ))}
+-      </div>
+-
+-      {/* Preview Modal */}
+-      <AnimatePresence>
+-        {previewTemplate && (
+-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+-            <motion.div 
+-              initial={{ opacity: 0 }}
+-              animate={{ opacity: 1 }}
+-              exit={{ opacity: 0 }}
+-              onClick={() => setPreviewTemplate(null)}
+-              className="absolute inset-0 bg-black/60 backdrop-blur-md cursor-pointer"
+-            />
+-            <motion.div 
+-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+-              animate={{ opacity: 1, scale: 1, y: 0 }}
+-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+-              className="relative bg-surface rounded-[32px] w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+-            >
+-              <div className="relative h-72 w-full shrink-0">
+-                <img 
+-                  src={previewTemplate.imageUrl} 
+-                  alt={previewTemplate.title}
+-                  className="w-full h-full object-cover"
+-                  referrerPolicy="no-referrer"
+-                />
+-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
+-                <button 
+-                  onClick={() => setPreviewTemplate(null)}
+-                  className="absolute top-6 right-6 p-2.5 bg-white/20 backdrop-blur-md hover:bg-white/40 rounded-full text-white transition-all cursor-pointer"
+-                >
+-                  <X className="w-5 h-5" />
+-                </button>
+-              </div>
+-
+-              <div className="p-8 overflow-y-auto space-y-8">
+-                <div className="flex items-center gap-3">
+-                  <span className="px-3 py-1 bg-tertiary-fixed text-on-tertiary-fixed rounded-full text-[10px] font-black uppercase tracking-widest border border-tertiary/20">
+-                    {previewTemplate.category}
+-                  </span>
+-                  <h2 className="text-3xl font-black text-primary tracking-tight">{previewTemplate.title} Special</h2>
+-                </div>
+-
+-                <div className="space-y-6">
+-                  <div className="space-y-3">
+-                    <h4 className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Suggested Message</h4>
+-                    <div className="p-5 bg-surface-container rounded-2xl border border-outline-variant/30">
+-                      <p className="text-sm font-medium text-on-surface italic leading-relaxed">
+-                        "{previewTemplate.suggestedMessage}"
+-                      </p>
+-                    </div>
+-                  </div>
+-
+-                  <div className="grid grid-cols-2 gap-4">
+-                    <div className="p-5 bg-surface-container-low rounded-2xl border border-outline-variant/30 space-y-2">
+-                      <h4 className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Target Services</h4>
+-                      <p className="text-xs font-bold text-on-surface leading-tight">
+-                        {previewTemplate.targetServices.join(', ')}
+-                      </p>
+-                    </div>
+-                    <div className="p-5 bg-primary/5 rounded-2xl border border-primary/20 space-y-2 text-right">
+-                      <h4 className="text-[10px] font-black uppercase tracking-widest text-primary/70 text-right">Offer Code</h4>
+-                      <p className="text-2xl font-black text-primary">
+-                        {previewTemplate.discount}
+-                      </p>
+-                    </div>
+-                  </div>
+-                </div>
+-              </div>
+-
+-              <div className="p-6 border-t border-outline-variant/30 bg-surface flex gap-4 shrink-0">
+-                <button 
+-                  onClick={() => setPreviewTemplate(null)}
+-                  className="flex-1 py-4 px-4 border border-outline-variant text-on-surface-variant rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-surface-container transition-all cursor-pointer"
+-                >
+-                  Cancel
+-                </button>
+-                <button 
+-                  onClick={() => onUseTemplate(previewTemplate)}
+-                  className="flex-[2] py-4 px-4 bg-primary text-white rounded-2xl text-[11px] font-black uppercase tracking-widest hover:brightness-110 shadow-lg shadow-primary/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+-                >
+-                  Use Template <ArrowRight className="w-5 h-5" />
+-                </button>
+-              </div>
+-            </motion.div>
+-          </div>
+-        )}
+-      </AnimatePresence>
+-    </div>
+-  );
+-}
+diff --git a/src/components/marketing/PosterCreator.tsx b/src/components/marketing/PosterCreator.tsx
+deleted file mode 100644
+index 83ef3c8..0000000
+--- a/src/components/marketing/PosterCreator.tsx
++++ /dev/null
+@@ -1,343 +0,0 @@
+-import React, { useState } from 'react';
+-import { 
+-  ArrowLeft, 
+-  Layout as LayoutIcon, 
+-  Palette, 
+-  Type as TypeIcon, 
+-  AlignLeft, 
+-  AlignCenter, 
+-  AlignRight, 
+-  QrCode, 
+-  Save, 
+-  Download, 
+-  Share2, 
+-  Maximize2, 
+-  Sparkles,
+-  Check,
+-  Scissors,
+-  Eye,
+-  Megaphone,
+-  Tag,
+-  Diamond,
+-  MessageSquare
+-} from 'lucide-react';
+-import { motion, AnimatePresence } from 'motion/react';
+-
+-interface PosterCreatorProps {
+-  onBack: () => void;
+-}
+-
+-export default function PosterCreator({ onBack }: PosterCreatorProps) {
+-  const [view, setView] = useState<'edit' | 'preview'>('edit');
+-  const [headline, setHeadline] = useState('Glow Up This Summer!');
+-  const [discount, setDiscount] = useState('20% OFF');
+-  const [validity, setValidity] = useState('Aug 31st');
+-  const [cta, setCta] = useState('Book Now: nexora.com/glow');
+-  const [canvasSize, setCanvasSize] = useState('1:1');
+-  const [textAlign, setTextAlign] = useState<'left' | 'center' | 'right'>('center');
+-  const [showQR, setShowQR] = useState(true);
+-  const [selectedTemplate, setSelectedTemplate] = useState('festival');
+-  const [saveToast, setSaveToast] = useState(false);
+-  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+-
+-  const templates = [
+-    { id: 'festival', label: 'Festival', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCMSC0cgkvLXcZSxfxW1igbvty08JlzweKw6jvViKixs-qxfxLAUfsKc-_s38Q5xhpsV2vbOxIaQXp5zEv3676kubSV1LU4p2wKFofuxfNkp1v0jn5WAowcxUSPXJKf0lgOAwXrf7EpgHSTbz-0y4xQ6ZVtdbEF2HQmPhUsEul4-F_KpacY7xVJMQGD6tIgavp0w68bm2Wt3s910qUSAfbD9TY4xktUt5CxZChczaOnHJcA4tEbNdb4uHLHTt4nkvPeGX7hbkPcDI8' },
+-    { id: 'minimal', label: 'Minimalist', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBIMEs_TQQayMd2YzeSa8TjRUZOvShPZBoK_YqfCNS5UgLyUXC9bii7P3i7r78jntAsjXbzRqXtJhHIWxO_jqEzVCZ1sypyAvTZ_9vk1Xj9YVPddxR-9KObhFZZMku0nfJll9kpP7nNNAdqXsZPUgufyFxPowGGM311AVgJ4hKJ-SDsGy_hq_4TxcCqRfctJZMk0BkH6AAK31We071CKRBUtrnX0BMR6EEkA82VvypvHEJFUW_leb2DJ60ITnzpzache-_iWAbrNkM' },
+-    { id: 'bold', label: 'Modern Bold', image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAD0Xnvt7fGHHH_DAtZG-pAdJS8KMhMNV4MspQJQNYu6_ueHbJe6T08vseL-PMf5jO_feTFgNzflWLC3GvhRhVLeKUDdE3lIV5Ayd9zPNtxAXj258SuI-nO4sIFdqq_OLwJcocHv16XT4xNVHz7A_7ae4ii9lYBPnPk5kEEmj-lCKJIed6i7DELekBEwMv0FdgN_1hivL6mwjbmtA6uOw2CaWi64U-DSwN2LtmP48l1Dk4JY368NMAbbbNP2m5KH3EZshCtu5Qz_7Y' },
+-  ];
+-
+-  const handleSave = () => {
+-    setSaveToast(true);
+-    setTimeout(() => setSaveToast(false), 3000);
+-  };
+-
+-  return (
+-    <div className="flex flex-col h-full max-w-6xl mx-auto w-full gap-6 p-5 pb-28">
+-      {/* Header Bar with Toggle */}
+-      <div className="flex flex-col md:flex-row items-center justify-between gap-6 pb-6 border-b border-outline-variant/30">
+-        <div className="flex items-center gap-3 self-start">
+-          <button 
+-            onClick={onBack}
+-            className="p-2 rounded-full hover:bg-surface-container transition-colors text-primary border border-primary/10"
+-          >
+-            <ArrowLeft className="w-5 h-5" />
+-          </button>
+-          <div>
+-            <h2 className="text-xl font-bold text-primary tracking-tight">Poster Creator</h2>
+-            <p className="text-[10px] text-on-surface-variant font-extrabold uppercase tracking-widest">Design salon masterpieces</p>
+-          </div>
+-        </div>
+-
+-        {/* View Toggle */}
+-        <div className="flex bg-surface-container p-1 rounded-full border border-outline-variant/30 w-full md:w-80 shadow-inner">
+-          <button 
+-            onClick={() => setView('edit')}
+-            className={`flex-1 py-2.5 px-4 rounded-full text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
+-              view === 'edit' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant hover:text-primary'
+-            }`}
+-          >
+-            <Scissors className="w-3.5 h-3.5" /> Edit Details
+-          </button>
+-          <button 
+-            onClick={() => setView('preview')}
+-            className={`flex-1 py-2.5 px-4 rounded-full text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
+-              view === 'preview' ? 'bg-white text-primary shadow-sm' : 'text-on-surface-variant hover:text-primary'
+-            }`}
+-          >
+-            <Eye className="w-3.5 h-3.5" /> Preview
+-          </button>
+-        </div>
+-      </div>
+-
+-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
+-        {/* Editor Controls */}
+-        <div className={`${view === 'edit' ? 'block' : 'hidden lg:block'} lg:col-span-5 space-y-8`}>
+-          {/* Template Selection */}
+-          <section className="space-y-4">
+-            <h3 className="text-[11px] font-black uppercase tracking-widest text-on-surface-variant flex items-center justify-between">
+-              Select Template
+-              <span className="text-[10px] font-bold text-primary/60">Swipe to browse</span>
+-            </h3>
+-            <div className="flex gap-4 overflow-x-auto hide-scrollbar pb-2 snap-x">
+-              {templates.map((temp) => (
+-                <button
+-                  key={temp.id}
+-                  onClick={() => setSelectedTemplate(temp.id)}
+-                  className={`flex-none w-32 aspect-[3/4] rounded-2xl border-2 transition-all snap-start overflow-hidden relative cursor-pointer ${
+-                    selectedTemplate === temp.id ? 'border-primary shadow-lg scale-102' : 'border-outline-variant/30 opacity-70 grayscale-[20%]'
+-                  }`}
+-                >
+-                  <img src={temp.image} alt={temp.label} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end p-2.5">
+-                    <span className="text-[10px] font-black text-white uppercase tracking-wider">{temp.label}</span>
+-                  </div>
+-                  {selectedTemplate === temp.id && (
+-                    <div className="absolute top-2 right-2 bg-primary text-white rounded-full p-1 shadow-sm">
+-                      <Check className="w-3.5 h-3.5" />
+-                    </div>
+-                  )}
+-                </button>
+-              ))}
+-            </div>
+-          </section>
+-
+-          {/* Form Fields */}
+-          <div className="bg-surface-container-lowest rounded-3xl p-8 border border-outline-variant/30 shadow-sm space-y-6">
+-            <h3 className="text-base font-black text-primary tracking-tight">Poster Content</h3>
+-            
+-            <div className="space-y-5">
+-              <div className="space-y-2">
+-                <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Campaign Title</label>
+-                <div className="relative">
+-                  <Megaphone className="absolute left-4 top-1/2 -translate-y-1/2 text-tertiary w-4 h-4" />
+-                  <input 
+-                    type="text"
+-                    value={headline}
+-                    onChange={(e) => setHeadline(e.target.value)}
+-                    className="w-full h-12 pl-12 pr-4 bg-surface border border-outline-variant/30 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm font-bold text-on-surface"
+-                  />
+-                </div>
+-              </div>
+-
+-              <div className="space-y-2">
+-                <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Discount Offer</label>
+-                <div className="relative">
+-                  <Tag className="absolute left-4 top-1/2 -translate-y-1/2 text-tertiary w-4 h-4" />
+-                  <input 
+-                    type="text"
+-                    value={discount}
+-                    onChange={(e) => setDiscount(e.target.value)}
+-                    className="w-full h-12 pl-12 pr-4 bg-surface border border-outline-variant/30 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm font-black text-primary"
+-                  />
+-                </div>
+-              </div>
+-
+-              <div className="space-y-2">
+-                <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Campaign Description</label>
+-                <textarea 
+-                  value={validity}
+-                  onChange={(e) => setValidity(e.target.value)}
+-                  rows={3}
+-                  className="w-full p-4 bg-surface border border-outline-variant/30 rounded-xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm font-medium text-on-surface resize-none leading-relaxed"
+-                />
+-              </div>
+-
+-              {/* QR Code Toggle */}
+-              <div className="flex items-center justify-between p-4 bg-surface rounded-2xl border border-outline-variant/30">
+-                <div className="flex items-center gap-3">
+-                  <div className="w-10 h-10 rounded-xl bg-primary/5 flex items-center justify-center text-primary">
+-                    <QrCode className="w-5 h-5" />
+-                  </div>
+-                  <div>
+-                    <p className="text-xs font-black text-on-surface">Store QR Code</p>
+-                    <p className="text-[10px] font-bold text-on-surface-variant">Links to your booking page</p>
+-                  </div>
+-                </div>
+-                <button 
+-                  onClick={() => setShowQR(!showQR)}
+-                  className={`w-12 h-6.5 rounded-full relative transition-all ${showQR ? 'bg-primary' : 'bg-surface-variant'}`}
+-                >
+-                  <motion.div 
+-                    animate={{ x: showQR ? 24 : 4 }}
+-                    className="absolute top-1 w-4.5 h-4.5 rounded-full bg-white shadow-sm"
+-                  />
+-                </button>
+-              </div>
+-            </div>
+-          </div>
+-        </div>
+-
+-        {/* Live Preview */}
+-        <div className={`${view === 'preview' ? 'block' : 'hidden lg:block'} lg:col-span-7 flex flex-col items-center gap-8`}>
+-          <div className="relative w-full aspect-square max-w-[450px] mx-auto bg-white rounded-3xl shadow-2xl border border-outline-variant/40 overflow-hidden flex flex-col justify-between p-10 group">
+-            {/* Poster Background Image */}
+-            <div className="absolute inset-0 z-0">
+-              <img 
+-                className="w-full h-full object-cover grayscale-[10%] brightness-[0.85] group-hover:scale-105 transition-transform duration-1000" 
+-                src={
+-                  selectedTemplate === 'festival' ? 'https://lh3.googleusercontent.com/aida-public/AB6AXuBlorzn2GuXLuHq29mA37sCltf2jIGrYBo4mYd0zo6aPmD87d25OMzP1z1KUWpZtIWomFOmnOlOB20V6JaQmere15Z-HxWOMTaazdOvO0jO5OOLKEnnUtgNKPqKFCKFtgAg00onVmjLkmKr8HT3l9kKlEmWwTVRdWOIgZIBV6VQsG3Gpt-TdP2z0YJWMBs21xLFGaMWLAHoR6R756ASuIEPzQbeljrimGLwCeiO8Nmqb8OaNGelMw83pEpMj5VgoZtkXT8HRtyJHsg' :
+-                  selectedTemplate === 'minimal' ? 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?q=80&w=1200&auto=format&fit=crop' :
+-                  'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?q=80&w=1200&auto=format&fit=crop'
+-                }
+-                alt="Poster BG"
+-                referrerPolicy="no-referrer"
+-              />
+-              <div className="absolute inset-0 bg-gradient-to-br from-white/90 via-white/20 to-black/30 backdrop-blur-[1px]"></div>
+-            </div>
+-
+-            {/* Live Badge */}
+-            <div className="absolute top-6 right-6 bg-rose-600 text-white font-black text-[10px] px-3 py-1.5 rounded-full uppercase tracking-widest flex items-center shadow-lg z-20">
+-              <span className="w-1.5 h-1.5 bg-white rounded-full mr-2 animate-pulse shadow-[0_0_8px_white]"></span>
+-              Live Canvas
+-            </div>
+-
+-            {/* Poster Content Foreground */}
+-            <div className={`relative z-10 h-full w-full p-10 flex flex-col justify-between items-center text-center`}>
+-              <div className="mt-6 space-y-2">
+-                <div className="w-16 h-16 bg-white/25 backdrop-blur-md rounded-full flex items-center justify-center border border-white/40 shadow-2xl mx-auto mb-6">
+-                  <Diamond className="w-8 h-8 text-white drop-shadow-lg" />
+-                </div>
+-                <motion.h3 
+-                  key={headline}
+-                  initial={{ opacity: 0, y: 10 }}
+-                  animate={{ opacity: 1, y: 0 }}
+-                  className="font-black text-5xl text-on-background uppercase leading-tight tracking-tighter drop-shadow-xl"
+-                >
+-                  {headline}
+-                </motion.h3>
+-              </div>
+-
+-              <motion.div 
+-                initial={{ scale: 0.9, opacity: 0 }}
+-                animate={{ scale: 1, opacity: 1 }}
+-                className="bg-primary/95 text-white p-8 rounded-[32px] shadow-2xl rotate-[-3deg] transform hover:rotate-0 transition-transform text-center mx-auto w-full max-w-[85%] border-4 border-white"
+-              >
+-                <p className="text-4xl font-black tracking-tight">{discount}</p>
+-                <p className="text-[12px] font-black uppercase tracking-[0.25em] mt-2 opacity-90">Store Exclusive</p>
+-              </motion.div>
+-
+-              <div className="w-full flex items-end justify-between mt-auto pt-10 border-t border-on-background/10">
+-                <div className="flex flex-col gap-2 w-2/3 text-left">
+-                  <p className="text-sm font-bold text-on-surface-variant leading-relaxed">
+-                    {validity}
+-                  </p>
+-                  <p className="text-[11px] font-black text-primary mt-1 flex items-center uppercase tracking-wider">
+-                    <Scissors className="w-4 h-4 mr-2" /> Powered by Nexora AI
+-                  </p>
+-                </div>
+-                {showQR && (
+-                  <div className="w-20 h-20 bg-white p-2 rounded-2xl shadow-xl border border-on-background/10 flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
+-                    <QrCode className="w-full h-full text-on-background" />
+-                  </div>
+-                )}
+-              </div>
+-            </div>
+-          </div>
+-
+-          <div className="flex gap-4 w-full max-w-[450px]">
+-            <button 
+-              onClick={handleSave}
+-              className="flex-1 h-14 rounded-2xl border-2 border-primary text-primary font-black uppercase tracking-widest text-[11px] flex items-center justify-center gap-2 hover:bg-primary/5 transition-all active:scale-95 cursor-pointer bg-transparent"
+-            >
+-              <Save className="w-4 h-4" /> Save Draft
+-            </button>
+-            <button 
+-              onClick={() => setIsShareModalOpen(true)}
+-              className="flex-1 h-14 rounded-2xl bg-primary text-white font-black uppercase tracking-widest text-[11px] flex items-center justify-center gap-2 shadow-xl shadow-primary/20 hover:brightness-110 transition-all active:scale-95 cursor-pointer"
+-            >
+-              <Share2 className="w-4 h-4" /> Share Masterpiece
+-            </button>
+-          </div>
+-        </div>
+-      </div>
+-
+-      {/* Share Modal */}
+-      <AnimatePresence>
+-        {isShareModalOpen && (
+-          <div className="fixed inset-0 z-[100] flex flex-col justify-end">
+-            <motion.div 
+-              initial={{ opacity: 0 }}
+-              animate={{ opacity: 1 }}
+-              exit={{ opacity: 0 }}
+-              onClick={() => setIsShareModalOpen(false)}
+-              className="absolute inset-0 bg-black/60 backdrop-blur-sm cursor-pointer"
+-            />
+-            <motion.div 
+-              initial={{ y: '100%' }}
+-              animate={{ y: 0 }}
+-              exit={{ y: '100%' }}
+-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+-              className="relative bg-surface rounded-t-[40px] p-8 pb-14 shadow-2xl flex flex-col items-center"
+-            >
+-              <div className="w-14 h-1.5 bg-outline-variant/40 rounded-full mb-8" />
+-              <h3 className="text-2xl font-black text-on-surface mb-8">Share Poster</h3>
+-              
+-              <div className="grid grid-cols-4 gap-6 w-full mb-10">
+-                {[
+-                  { id: 'insta', label: 'Instagram', color: 'bg-gradient-to-tr from-amber-400 via-rose-500 to-purple-600', icon: Share2 },
+-                  { id: 'fb', label: 'Facebook', color: 'bg-blue-600', icon: Share2 },
+-                  { id: 'wa', label: 'WhatsApp', color: 'bg-emerald-500', icon: MessageSquare },
+-                  { id: 'link', label: 'Copy Link', color: 'bg-surface-container-high text-on-surface', icon: Share2 },
+-                ].map((app) => {
+-                  const Icon = app.icon;
+-                  return (
+-                    <button key={app.id} className="flex flex-col items-center gap-2 group">
+-                      <div className={`w-16 h-16 rounded-[22px] flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-300 ${app.color}`}>
+-                        <Icon className="w-7 h-7" />
+-                      </div>
+-                      <span className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wider">{app.label}</span>
+-                    </button>
+-                  );
+-                })}
+-              </div>
+-
+-              <button 
+-                onClick={() => setIsShareModalOpen(false)}
+-                className="w-full py-4 rounded-2xl bg-surface-container-high text-on-surface font-black uppercase tracking-widest text-[11px] hover:bg-surface-variant transition-all cursor-pointer"
+-              >
+-                Cancel
+-              </button>
+-            </motion.div>
+-          </div>
+-        )}
+-      </AnimatePresence>
+-
+-      {/* Toast Notification */}
+-      <AnimatePresence>
+-        {saveToast && (
+-          <motion.div 
+-            initial={{ opacity: 0, y: -20, x: '-50%' }}
+-            animate={{ opacity: 1, y: 0, x: '-50%' }}
+-            exit={{ opacity: 0, y: -20, x: '-50%' }}
+-            className="fixed top-24 left-1/2 z-[100] bg-surface-container-highest border border-outline-variant/30 text-on-surface px-8 py-4 rounded-full shadow-2xl flex items-center gap-4 pointer-events-none"
+-          >
+-            <div className="bg-primary/10 text-primary rounded-full p-1.5">
+-              <Check className="w-5 h-5" />
+-            </div>
+-            <span className="text-sm font-black tracking-tight">Poster saved successfully.</span>
+-          </motion.div>
+-        )}
+-      </AnimatePresence>
+-    </div>
+-  );
+-}
+diff --git a/src/components/marketing/WhatsAppCampaign.tsx b/src/components/marketing/WhatsAppCampaign.tsx
+deleted file mode 100644
+index 79728ca..0000000
+--- a/src/components/marketing/WhatsAppCampaign.tsx
++++ /dev/null
+@@ -1,352 +0,0 @@
+-import React, { useState } from 'react';
+-import { 
+-  ArrowLeft, 
+-  Search, 
+-  Send, 
+-  Users, 
+-  MessageSquare, 
+-  ExternalLink, 
+-  ChevronDown, 
+-  CheckCircle2, 
+-  Smartphone,
+-  Info
+-} from 'lucide-react';
+-import { motion, AnimatePresence } from 'motion/react';
+-
+-interface WhatsAppCampaignProps {
+-  onBack: () => void;
+-}
+-
+-export default function WhatsAppCampaign({ onBack }: WhatsAppCampaignProps) {
+-  const [campaignName, setCampaignName] = useState('');
+-  const [selectedOffer, setSelectedOffer] = useState('20% Off All Services');
+-  const [customerGroup, setCustomerGroup] = useState('All opted-in');
+-  const [template, setTemplate] = useState('New Offer');
+-  const [couponCode, setCouponCode] = useState('SUMMER20');
+-  const [includeBooking, setIncludeBooking] = useState(true);
+-  const [scheduleType, setScheduleType] = useState<'now' | 'later'>('now');
+-  const [isSending, setIsSending] = useState(false);
+-  const [isSelectingClients, setIsSelectingClients] = useState(false);
+-  const [selectedClients, setSelectedClients] = useState<string[]>([]);
+-  const [searchQuery, setSearchQuery] = useState('');
+-
+-  const sampleClients = [
+-    { id: '1', name: 'Ananya Sharma', phone: '+91 98765 43210' },
+-    { id: '2', name: 'Priya Kapoor', phone: '+91 98765 87654' },
+-    { id: '3', name: 'Rohan Verma', phone: '+91 98765 32109' },
+-    { id: '4', name: 'Amit Patel', phone: '+91 98765 65432' },
+-  ];
+-
+-  const filteredClients = sampleClients.filter(c => 
+-    c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+-    c.phone.includes(searchQuery)
+-  );
+-
+-  const toggleClient = (id: string) => {
+-    setSelectedClients(prev => 
+-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+-    );
+-  };
+-
+-  const templates = ['New Offer', 'Festival Offer', 'We miss you'];
+-
+-  return (
+-    <div className="flex flex-col h-full max-w-4xl mx-auto w-full gap-8 p-5 pb-32">
+-      {/* Header */}
+-      <div className="flex items-center gap-4 pb-4 border-b border-outline-variant/30">
+-        <button 
+-          onClick={onBack}
+-          className="p-2.5 rounded-full hover:bg-surface-container transition-colors text-primary border border-primary/10"
+-        >
+-          <ArrowLeft className="w-5 h-5" />
+-        </button>
+-        <div>
+-          <h2 className="text-2xl font-black text-primary tracking-tight">WhatsApp Campaign</h2>
+-          <p className="text-xs text-on-surface-variant font-bold uppercase tracking-widest">Connect directly with your clients</p>
+-        </div>
+-      </div>
+-
+-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+-        {/* Configuration Panel */}
+-        <div className="space-y-6">
+-          <section className="bg-white rounded-[32px] p-8 border border-outline-variant/30 shadow-sm space-y-6">
+-            <h3 className="text-lg font-black text-on-surface tracking-tight">Configuration</h3>
+-            
+-            <div className="space-y-5">
+-              <div className="space-y-2">
+-                <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Campaign Name</label>
+-                <input 
+-                  type="text"
+-                  value={campaignName}
+-                  onChange={(e) => setCampaignName(e.target.value)}
+-                  placeholder="e.g., Summer Sale 2026"
+-                  className="w-full h-12 px-4 bg-surface-container-low border border-outline-variant/30 rounded-2xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm font-bold text-on-surface"
+-                />
+-              </div>
+-
+-              <div className="space-y-2">
+-                <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Select Offer</label>
+-                <div className="relative">
+-                  <select 
+-                    value={selectedOffer}
+-                    onChange={(e) => setSelectedOffer(e.target.value)}
+-                    className="w-full h-12 pl-4 pr-10 bg-surface-container-low border border-outline-variant/30 rounded-2xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm font-bold text-on-surface appearance-none"
+-                  >
+-                    <option>20% Off All Services</option>
+-                    <option>Buy 1 Get 1 Free</option>
+-                    <option>Free Consultation</option>
+-                  </select>
+-                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-primary pointer-events-none" />
+-                </div>
+-              </div>
+-
+-              <div className="space-y-2">
+-                <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Target Group</label>
+-                <div className="flex flex-col gap-3">
+-                  <div className="relative">
+-                    <select 
+-                      value={customerGroup}
+-                      onChange={(e) => {
+-                        setCustomerGroup(e.target.value);
+-                        if (e.target.value === 'Individual Selection') {
+-                          setIsSelectingClients(true);
+-                        } else {
+-                          setIsSelectingClients(false);
+-                        }
+-                      }}
+-                      className="w-full h-12 pl-4 pr-10 bg-surface-container-low border border-outline-variant/30 rounded-2xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm font-bold text-on-surface appearance-none"
+-                    >
+-                      <option>All opted-in</option>
+-                      <option>New Clients</option>
+-                      <option>VIP Members</option>
+-                      <option>Inactive (60+ days)</option>
+-                      <option>Individual Selection</option>
+-                    </select>
+-                    <Users className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-primary pointer-events-none" />
+-                  </div>
+-
+-                  {isSelectingClients && (
+-                    <motion.div 
+-                      initial={{ opacity: 0, y: -10 }}
+-                      animate={{ opacity: 1, y: 0 }}
+-                      className="space-y-3 p-4 bg-surface-container-lowest border border-outline-variant/30 rounded-2xl shadow-sm"
+-                    >
+-                      <div className="relative">
+-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-on-surface-variant" />
+-                        <input 
+-                          type="text"
+-                          placeholder="Search clients..."
+-                          value={searchQuery}
+-                          onChange={(e) => setSearchQuery(e.target.value)}
+-                          className="w-full h-9 pl-9 pr-3 bg-surface-container-low border border-outline-variant/20 rounded-xl text-xs outline-none focus:border-primary"
+-                        />
+-                      </div>
+-                      <div className="max-h-40 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+-                        {filteredClients.map(client => (
+-                          <button
+-                            key={client.id}
+-                            onClick={() => toggleClient(client.id)}
+-                            className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all ${
+-                              selectedClients.includes(client.id)
+-                                ? 'bg-primary/5 border-primary/30 text-primary'
+-                                : 'bg-transparent border-transparent text-on-surface-variant hover:bg-surface-container'
+-                            }`}
+-                          >
+-                            <div className="text-left">
+-                              <p className="text-xs font-bold">{client.name}</p>
+-                              <p className="text-[10px] opacity-70">{client.phone}</p>
+-                            </div>
+-                            {selectedClients.includes(client.id) && <CheckCircle2 className="w-4 h-4" />}
+-                          </button>
+-                        ))}
+-                      </div>
+-                      <div className="pt-2 border-t border-outline-variant/20 flex justify-between items-center">
+-                        <p className="text-[10px] font-bold text-on-surface-variant">
+-                          {selectedClients.length} Selected
+-                        </p>
+-                        <button 
+-                          onClick={() => setIsSelectingClients(false)}
+-                          className="text-[10px] font-black text-primary uppercase tracking-widest"
+-                        >
+-                          Confirm Selection
+-                        </button>
+-                      </div>
+-                    </motion.div>
+-                  )}
+-                </div>
+-              </div>
+-
+-              <div className="space-y-3">
+-                <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Template Style</label>
+-                <div className="flex flex-wrap gap-2">
+-                  {templates.map((t) => (
+-                    <button
+-                      key={t}
+-                      onClick={() => setTemplate(t)}
+-                      className={`px-4 py-2 rounded-full text-xs font-bold transition-all border ${
+-                        template === t 
+-                          ? 'bg-primary text-white border-primary shadow-md' 
+-                          : 'bg-surface-container-low border-outline-variant/30 text-on-surface-variant hover:bg-surface-container'
+-                      }`}
+-                    >
+-                      {t}
+-                    </button>
+-                  ))}
+-                </div>
+-              </div>
+-
+-              <div className="grid grid-cols-2 gap-4 pt-2">
+-                <div className="space-y-2">
+-                  <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Coupon Code</label>
+-                  <input 
+-                    type="text"
+-                    value={couponCode}
+-                    onChange={(e) => setCouponCode(e.target.value)}
+-                    className="w-full h-12 px-4 bg-surface-container-low border border-outline-variant/30 rounded-2xl focus:border-primary focus:ring-1 focus:ring-primary outline-none text-sm font-black text-primary uppercase"
+-                  />
+-                </div>
+-                <div className="flex items-end pb-1">
+-                  <label className="flex items-center gap-3 cursor-pointer group">
+-                    <button 
+-                      onClick={() => setIncludeBooking(!includeBooking)}
+-                      className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
+-                        includeBooking ? 'bg-primary border-primary' : 'border-outline-variant/50'
+-                      }`}
+-                    >
+-                      {includeBooking && <CheckCircle2 className="w-4 h-4 text-white" />}
+-                    </button>
+-                    <span className="text-xs font-bold text-on-surface group-hover:text-primary transition-colors">Include Link</span>
+-                  </label>
+-                </div>
+-              </div>
+-            </div>
+-          </section>
+-
+-          {/* Estimates */}
+-          <div className="bg-surface-container-low rounded-3xl p-6 border border-outline-variant/30 flex justify-between items-center">
+-            <div className="space-y-1">
+-              <p className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">Estimated Reach</p>
+-              <h4 className="text-3xl font-black text-primary">
+-                ~{customerGroup === 'Individual Selection' ? selectedClients.length : '1,240'}
+-              </h4>
+-            </div>
+-            <div className="flex gap-4">
+-              <div className="text-right">
+-                <p className="text-[10px] font-bold text-emerald-600 uppercase">Deliverable</p>
+-                <p className="text-sm font-black text-on-surface">1,180</p>
+-              </div>
+-              <div className="text-right border-l border-outline-variant/30 pl-4">
+-                <p className="text-[10px] font-bold text-rose-500 uppercase">Opted-out</p>
+-                <p className="text-sm font-black text-on-surface">60</p>
+-              </div>
+-            </div>
+-          </div>
+-        </div>
+-
+-        {/* Live Preview Panel */}
+-        <div className="lg:sticky lg:top-8 space-y-6">
+-          <div className="relative bg-white rounded-[40px] border-[12px] border-zinc-900 shadow-2xl overflow-hidden aspect-[9/18.5] max-w-[320px] mx-auto group">
+-            {/* Phone Interface */}
+-            <div className="absolute top-0 w-full h-14 bg-[#075E54] flex items-center px-6 gap-3 z-10">
+-              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white">
+-                <Smartphone className="w-4 h-4" />
+-              </div>
+-              <div className="flex flex-col">
+-                <p className="text-[11px] font-black text-white leading-none">Nexora Salon</p>
+-                <p className="text-[9px] text-emerald-100/70 font-bold uppercase tracking-widest mt-0.5">Online</p>
+-              </div>
+-            </div>
+-
+-            {/* WhatsApp Chat Background */}
+-            <div className="absolute inset-0 bg-[#E5DDD5] opacity-40 z-0">
+-               {/* Pattern Overlay Mockup */}
+-               <div className="absolute inset-0 opacity-[0.05]" style={{ backgroundImage: 'radial-gradient(circle, #000 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
+-            </div>
+-
+-            {/* Chat Content */}
+-            <div className="relative z-10 p-6 pt-20 flex flex-col items-end gap-3 h-full">
+-              <div className="bg-[#DCF8C6] p-4 rounded-2xl rounded-tr-none shadow-sm max-w-[90%] relative border border-emerald-900/5">
+-                <p className="text-[13px] text-zinc-800 leading-relaxed font-medium">
+-                  Hey there! 👋 Enjoy <span className="font-bold text-emerald-800">{selectedOffer}</span> this week to celebrate summer!
+-                </p>
+-                <p className="text-[13px] font-black text-emerald-900 mt-2">Use code: {couponCode}</p>
+-                {includeBooking && (
+-                  <p className="text-[13px] text-blue-600 underline mt-2 font-bold flex items-center gap-1">
+-                    Book now: nexora.app/summer <ExternalLink className="w-3 h-3" />
+-                  </p>
+-                )}
+-                
+-                {/* Image Preview */}
+-                <div className="mt-3 rounded-xl overflow-hidden border border-emerald-900/10 shadow-sm bg-white">
+-                  <img 
+-                    src="https://lh3.googleusercontent.com/aida-public/AB6AXuDCJhQINO2dYoc9E1gZAHjGfntuyxm-W7ju6VAJq765U7ZpFJ8iiRrv1EPN4zLKq6JXGsElp3THxsdPK3G6qM4C3Yd2ZItyXfoLPgD-c-j8vg2uvXB5Mt0WzYhEWK8dQE6mBryi5LkzQ3QkPvRm4acFy72bJLnPT9JbpC1q_a5-UmkSVoHeSU68xQ_qLzdONREKIvNgHJvuxX5HbYk9y4oAQVmuVRhr1tEL9BAVXjT6kmgyk2vPrc2G9NXilAg51pfHve2gOt_BIhI" 
+-                    className="w-full h-32 object-cover"
+-                    alt="Offer Preview"
+-                    referrerPolicy="no-referrer"
+-                  />
+-                  <div className="p-2 px-3">
+-                    <p className="text-[10px] font-black text-zinc-800 truncate uppercase tracking-tight">{selectedOffer} Special</p>
+-                  </div>
+-                </div>
+-
+-                <div className="flex justify-end gap-1 mt-1">
+-                   <span className="text-[9px] text-emerald-800/60 font-bold">10:42 AM</span>
+-                   <CheckCircle2 className="w-2.5 h-2.5 text-blue-500" />
+-                </div>
+-              </div>
+-            </div>
+-
+-            <div className="absolute top-4 left-1/2 -translate-x-1/2 w-16 h-5 bg-zinc-900 rounded-full z-20" />
+-          </div>
+-
+-          {/* Schedule Controls */}
+-          <div className="bg-white rounded-[32px] p-6 border border-outline-variant/30 space-y-4">
+-            <h3 className="text-xs font-black text-on-surface uppercase tracking-widest ml-1">Scheduling</h3>
+-            <div className="flex gap-2">
+-              <button 
+-                onClick={() => setScheduleType('now')}
+-                className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+-                  scheduleType === 'now' ? 'bg-primary text-white shadow-lg' : 'bg-surface-container text-on-surface-variant border border-outline-variant/30'
+-                }`}
+-              >
+-                Send Now
+-              </button>
+-              <button 
+-                onClick={() => setScheduleType('later')}
+-                className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+-                  scheduleType === 'later' ? 'bg-primary text-white shadow-lg' : 'bg-surface-container text-on-surface-variant border border-outline-variant/30'
+-                }`}
+-              >
+-                Schedule
+-              </button>
+-            </div>
+-            <div className="flex items-center gap-2 px-2 text-on-surface-variant/60">
+-              <Info className="w-3.5 h-3.5" />
+-              <p className="text-[10px] font-bold">This is a simulation. No real messages are sent.</p>
+-            </div>
+-          </div>
+-        </div>
+-      </div>
+-
+-      {/* Sticky Bottom Actions */}
+-      <div className="fixed bottom-0 left-0 w-full bg-white/80 backdrop-blur-md border-t border-outline-variant/30 p-4 pb-8 z-50 flex items-center justify-center">
+-        <div className="w-full max-w-4xl flex gap-4">
+-          <button className="flex-1 py-4 bg-transparent border-2 border-tertiary text-tertiary rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-tertiary/5 transition-all active:scale-95 flex items-center justify-center gap-2">
+-            Save Draft
+-          </button>
+-          <button 
+-            onClick={() => setIsSending(true)}
+-            disabled={isSending}
+-            className="flex-[2] py-4 bg-primary text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl shadow-primary/20 hover:brightness-110 transition-all active:scale-95 flex items-center justify-center gap-2"
+-          >
+-            {isSending ? (
+-              <>Processing...</>
+-            ) : (
+-              <>Send Campaign <Send className="w-4 h-4" /></>
+-            )}
+-          </button>
+-        </div>
+-      </div>
+-    </div>
+-  );
+-}
 diff --git a/src/lib/ownerRepository.ts b/src/lib/ownerRepository.ts
 new file mode 100644
 index 0000000..83cfc84
