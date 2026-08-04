@@ -11,7 +11,7 @@ exactly what changes and how to deploy.
 | Package | Target repo | Task | Status |
 |---|---|---|---|
 | `customer-pwa/` | `freewebsite859-sudo/custmer-Fresh-app-` | Production-only Customer PWA; remove demo/role-dashboard branches; mount at `/app/customer/` | ✅ Ready (verified: applies to locked repo main) |
-| `owner-pwa/` | `promptaivideo4-coder/PINK-NEXORA-AAP-` | Replace localStorage with Supabase; proposal review system | ✅ Ready (verified: applies on fresh clone, tsc + build clean) |
+| `owner-pwa/` | `promptaivideo4-coder/PINK-NEXORA-AAP-` | Phase 2: live owner workspace, role gate, env-only auth, proposal review, honest server states | ✅ Ready (verified: applies to locked main, tsc + build clean) |
 | `growth-partner-pwa/` | `diamondpeomotion-cyber/pink-growth-partner-aap-` | Supabase from scratch: real auth replaces fake localStorage auth | ✅ Ready (verified: applies on fresh checkout, tsc + build clean) |
 
 ## Why patches instead of direct PRs?

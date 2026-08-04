@@ -1,31 +1,39 @@
-# Shop Owner PWA Integration Package
+# Shop Owner PWA — Phase 2 Supabase integration
 
 **Target repo:** `promptaivideo4-coder/PINK-NEXORA-AAP-` (branch `main`)  
 **Patch:** `supabase-integration.patch`  
-**Coverage:** live Supabase owner data + proposal review + v3 same-origin mount  
-**Verified:** applies to locked `main` (`49ffe780` base), `npx tsc --noEmit`, and `npm run build` pass after applying.
+**Base:** locked `main` `49ffe780`
+**Coverage:** live owner workspace, permanent role gate, env-only auth, honest empty states, proposal review, and v3 same-origin mount
+**Verified:** patch applies to the locked head; `npx tsc --noEmit` and `npm run build` pass after applying.
 
-## Task coverage
+## Delivered
 
-The patch replaces the Shop Owner PWA's business-data mocks with the shared
-Supabase data layer:
-
-- `ownerRepository.ts` resolves only the owner's salon through
-  `organization_members` and RLS-scoped CRUD for services, staff, bookings,
-  offers, reviews, and publish visibility.
-- Dashboard, bookings, services, staff, reviews, profile, and wallet screens
-  show live data with honest loading/error/empty states.
+- `ownerRepository.ts` is the single owner data layer. It resolves salons
+  only through active `organization_members`; it never falls back to the
+  public verified-salon catalog.
+- Dashboard, bookings, customers, customer profile, services, staff, reviews,
+  profile/hours, website status, marketing offers, analytics, and wallet views
+  use shared Supabase rows or show an honest loading/error/empty/unavailable
+  state. Seeded customers, revenue charts, payout transactions, stylist lists,
+  marketing campaigns, and website gallery demos are not rendered.
 - Owner wallet is read-only. The server payout engine settles eligible rows
   daily at 22:00 IST under the locked 90% owner / 10% platform rule.
 - `ProposalReview` calls the role-checked `review_salon_setup` RPC for approve,
   request changes, reject, and publish. Publish preserves partner attribution
   and only then makes the salon visible in the customer catalog.
-- No service-role key is used in the browser.
+- App startup verifies `profiles.platform_role === 'business_user'` and
+  `is_active === true`. A valid Supabase session alone cannot enter the Owner
+  PWA; other roles are signed out and shown the role-conflict screen.
+- Browser and API auth use `VITE_SUPABASE_URL` and
+  `VITE_SUPABASE_ANON_KEY` from deployment environment only. The previous
+  hardcoded anon JWT fallback is removed.
 - `vite.config.ts` reads `VITE_APP_BASE_PATH`; use `/app/owner/` behind the
   main website and `/` for a standalone deployment.
 
-Device-only preferences and drafts may remain local because they are not a
-business-data source of truth.
+Device-only preferences such as theme/language/install flags may remain local.
+They are not business-data sources of truth. Unsupported storage/media or
+manual-appointment operations explicitly say they are unavailable instead of
+claiming success.
 
 ## Apply
 
@@ -44,8 +52,8 @@ npm install && npx tsc --noEmit && npm run build
 1. Set `VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co` and the
    publishable/anon `VITE_SUPABASE_ANON_KEY`. Never add `service_role` to the
    browser build.
-2. Apply the owner schema and role/RLS migrations from this main repository,
-   including `20260804_shop_owner_phase2_full.sql` and
+2. Confirm the shared migrations are applied, including
+   `20260804_shop_owner_phase2_full.sql` and
    `20260805_permanent_profile_role_guard.sql`.
 3. Set `VITE_APP_BASE_PATH=/app/owner/` for the unified path-based deployment.
 4. Configure the main website's `NEXORA_OWNER_PWA_ORIGIN` to the owner PWA
