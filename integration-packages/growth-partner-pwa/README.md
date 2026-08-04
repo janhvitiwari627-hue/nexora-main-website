@@ -1,9 +1,9 @@
 # Growth Partner PWA Integration Package
 
 **Target repo:** `diamondpeomotion-cyber/pink-growth-partner-aap-` (branch `main`)
-**Patch:** `supabase-integration.patch` (single commit, 8 files, +552/−118)
-**Verified:** applies cleanly on a fresh checkout of `main`,
-`tsc --noEmit` clean, `vite build` clean.
+**Patch:** `supabase-integration.patch`
+**Verified:** applies cleanly to the current locked `main` (`2832af2` base), including
+path-scoped manifest/worker; `tsc --noEmit` and `vite build` pass.
 
 ## Task coverage
 
@@ -18,6 +18,11 @@ The Growth Partner **proposal preparation** flow (AddShop →
 `save_growth_partner_salon_setup`) and payout history screens are the
 follow-up phase; the owner-side **proposal review** ships in the Owner PWA
 package (`review_salon_setup`).
+
+For v3 unified entry, the regenerated patch makes Vite read
+`VITE_APP_BASE_PATH`; set `/app/partner/` when this app is proxied behind the
+main website. Its manifest, asset URLs, and service worker are scoped to that
+portal path, so it cannot cache the public site or another portal.
 
 ## Apply
 
@@ -41,3 +46,6 @@ npm install && npx tsc --noEmit && npm run build && npm run dev
 3. Growth Partner accounts: the role must be assigned in the DB
    (`profiles.platform_role = 'growth_partner'` or a `user_roles` row) —
    sign-up alone does not grant app access (permanent roles are locked).
+4. Set `VITE_APP_BASE_PATH=/app/partner/` and configure the main website's
+   `NEXORA_PARTNER_PWA_ORIGIN` for the path-based proxy deployment. The
+   service-worker scope must remain `/app/partner/`.

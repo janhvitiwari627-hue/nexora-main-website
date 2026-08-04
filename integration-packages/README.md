@@ -10,9 +10,9 @@ exactly what changes and how to deploy.
 
 | Package | Target repo | Task | Status |
 |---|---|---|---|
-| `customer-pwa/` | `janhvitiwari627-hue/Free-Website-costumer-pwa-app-` | Remove MOCK_SALONS; live settings / reviews / payment methods / support | ✅ Ready (verified: applies on fresh clone, tsc + build clean) |
-| `owner-pwa/` | `promptaivideo4-coder/PINK-NEXORA-AAP-` | Replace localStorage with Supabase; proposal review system | ✅ Ready (verified: applies on fresh clone, tsc + build clean) |
-| `growth-partner-pwa/` | `diamondpeomotion-cyber/pink-growth-partner-aap-` | Supabase from scratch: real auth replaces fake localStorage auth | ✅ Ready (verified: applies on fresh checkout, tsc + build clean) |
+| `customer-pwa/` | `freewebsite859-sudo/custmer-Fresh-app-` | Production-only Customer PWA; remove demo/role-dashboard branches; mount at `/app/customer/` | ✅ Ready (verified: applies to locked repo main) |
+| `owner-pwa/` | `promptaivideo4-coder/PINK-NEXORA-AAP-` | Phase 2: live owner workspace, role gate, env-only auth, proposal review, honest server states | ✅ Ready (verified: applies to locked main, tsc + build clean) |
+| `growth-partner-pwa/` | `diamondpeomotion-cyber/pink-growth-partner-aap-` | Phase 3: live Auth, server referral identity, attribution, proposal submission, commissions, scoped PWA | ✅ Ready (verified: applies to current locked main, tsc + build clean) |
 
 ## Why patches instead of direct PRs?
 
@@ -32,9 +32,31 @@ git am /path/to/integration-packages/<package>/*.patch   # keeps commit message
 npm install && npx tsc --noEmit && npm run build
 ```
 
-Every package is self-contained: it adds its data layer under `src/lib/`,
-updates the affected screens, documents required env vars in `.env.example`,
-and never commits secrets (anon/publishable keys are set on the host).
+Every package is self-contained: it updates only the target app's allowed
+production screens/data layer, documents required env vars in `.env.example`,
+and never commits secrets (anon/publishable keys are set on the host). The
+locked Customer PWA already carries its Supabase data layer; its package is now
+the production-only cleanup and path-mount patch.
+
+## v3 same-origin mount
+
+The public website owns the canonical browser paths `/app/customer/*`,
+`/app/owner/*`, and `/app/partner/*`. Configure each PWA deployment with its
+matching Vite base path before mounting it behind the main website's rewrites:
+
+```text
+VITE_APP_BASE_PATH=/app/customer/   # Customer package
+VITE_APP_BASE_PATH=/app/owner/      # Owner package
+VITE_APP_BASE_PATH=/app/partner/    # Growth Partner package
+VITE_CANONICAL_ORIGIN=https://your-apex-domain.example  # optional raw-URL redirect
+```
+
+The main website accepts `NEXORA_CUSTOMER_PWA_ORIGIN`,
+`NEXORA_OWNER_PWA_ORIGIN`, and `NEXORA_PARTNER_PWA_ORIGIN` as server-only
+origins and proxies those deployments without changing the browser origin.
+Each patch also rewrites its manifest/assets and registers a service worker with
+its own `/app/*/` scope; the public site has no root-scope PWA worker.
+
 
 ## Backend prerequisites (already live / idempotent)
 

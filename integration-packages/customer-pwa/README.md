@@ -1,44 +1,52 @@
-# Customer PWA Integration Package
+# Customer PWA — production cleanup and same-origin mount
 
-**Target repo:** `janhvitiwari627-hue/Free-Website-costumer-pwa-app-` (branch `main`)
-**Patch:** `supabase-integration.patch` (single commit, 20 files, +1480/−955)
-**Verified:** applies cleanly on a fresh clone of `main` (`b4e9ad0`),
-`tsc --noEmit` clean, `vite build` clean.
+**Target repo:** `freewebsite859-sudo/custmer-Fresh-app-` (branch `main`)
+**Patch:** `supabase-integration.patch`
+**Verified:** applies cleanly to the locked repository `main` (`4eff314` base), including the scoped manifest/service worker.
 
 ## Task coverage
 
+The locked Customer PWA main branch already contains the real Supabase catalog,
+booking, profile, favorites, reviews, settings, payment-methods, support,
+notifications, and address repositories. This patch closes the remaining
+production-boundary gap:
+
 | Requirement | Delivered by |
 |---|---|
-| Remove `MOCK_SALONS` | `src/data/mockData.ts` stripped of `MOCK_SALONS` + fake `INITIAL_BOOKINGS`; `src/lib/salonRepository.ts` loads the live approved/published catalog (`salons` + bookable `services` + published-site config: staff/photos/hours/offers) |
-| Settings → Supabase | `src/lib/settingsRepository.ts` → `customer_settings` (jsonb, one row per user, realtime sync, one-time legacy import); `SettingsScreen` fully wired |
-| Reviews → Supabase | `src/lib/reviewsRepository.ts` → `customer_reviews` (RLS per-user, idempotent upsert, graceful degradation); `SalonDetailScreen` + booking review flow wired; fake seed reviews + fake 4.8 stats removed |
-| Payment methods → Supabase | `src/lib/paymentMethodsRepository.ts` → `saved_payment_methods` (UPI ids / masked cards only, never PANs); ProfileScreen, QR scanner, Add-UPI/Card modals wired; fake seeded cards/UPIs removed |
-| Support → Supabase | `src/lib/supportRepository.ts` → `support_tickets` (created_by per customer) + `customer_feedback`; fake seeded tickets + fake agent auto-reply removed; new "Rate your app experience" card |
+| No demo bypass | Removes the `?demo=true` account/session path and the seeded Demo Customer |
+| Customer PWA only | Removes Owner/Growth Partner dashboard imports and render branches; non-customer roles show the role-conflict flow and are signed out |
+| No copied role routes | Removes `owner-dashboard` and `gp-dashboard` screens from the Customer `Screen` contract and role helper |
+| Same-origin mount | Vite `base` reads `VITE_APP_BASE_PATH`; manifest/worker scope to `/app/customer/`; `.env.example` documents the mount |
+| Discovery handoff | Consumes public salon id/slug + optional service from Main Website query context and resolves it against the live catalog |
 
-Auth was already real Supabase auth (login/signup + customer role guard) — untouched.
-Legacy localStorage business data is imported once then purged (`src/lib/legacyLocalData.ts`).
+The patch intentionally keeps device-only UX storage (location/install flags and
+the one-time legacy migration). It does not treat that as business data.
 
 ## Apply
 
 ```bash
-git clone https://github.com/janhvitiwari627-hue/Free-Website-costumer-pwa-app-.git
-cd Free-Website-costumer-pwa-app-
-git checkout -b supabase-integration-phase1
-git am supabase-integration.patch
-cp .env.example .env   # paste VITE_SUPABASE_ANON_KEY from the Supabase dashboard
-npm install && npx tsc --noEmit && npm run build && npm run dev
+git clone https://github.com/freewebsite859-sudo/custmer-Fresh-app-.git
+cd custmer-Fresh-app-
+git checkout main
+git am /path/to/integration-packages/customer-pwa/supabase-integration.patch
+cp .env.example .env
+# For the unified main website deployment set VITE_APP_BASE_PATH=/app/customer/
+# Optionally set VITE_CANONICAL_ORIGIN for raw-deployment diagnostics.
+npm install && npx tsc --noEmit && npm run build
 ```
 
 ## Deploy checklist
 
-1. Backend migrations applied to `qwaehqsmodekbgvnaavz` (idempotent, in this
-   repo's `supabase/migrations/`): `20260802_customer_phase1_schema.sql`,
-   `20260803_customer_phase1_completion.sql`. Verify:
-   `select * from public.verify_customer_phase1_backend();`
-2. Host env vars (Vercel): `VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co`,
-   `VITE_SUPABASE_ANON_KEY=<anon/publishable key>`. The app refuses to boot
-   against any other Supabase project.
+1. The app must use the locked Supabase project:
+   `https://qwaehqsmodekbgvnaavz.supabase.co`.
+2. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` with the host's
+   publishable/anon key. Never add a service-role key to the browser build.
+3. Set `VITE_APP_BASE_PATH=/app/customer/` when the main website proxies this
+   app through `/app/customer/*`. The manifest and service worker use the same
+   base and scope, so this worker cannot intercept `/app/owner/*`,
+   `/app/partner/*`, or the public site.
+4. Apply and verify the shared customer schema migrations:
+   `select * from public.verify_customer_phase1_backend();`.
 
-## Out of scope (next phase)
-Booking write pipeline (`create_customer_booking` + Razorpay 25% advance),
-favorites/notifications live tables, rewards/wallet RPCs.
+The customer app's own `profiles.platform_role` check remains authoritative; a
+Customer PWA URL cannot grant access to Owner or Growth Partner functionality.

@@ -24,25 +24,21 @@ const patchDoc = await readFile(
 );
 
 // ---------------------------------------------------------------------------
-// Task 6 — the tested booking/payment contract stays exactly as proven.
+// The Customer PWA owns booking/payment writes. The Main Website only hands
+// salon context to the Customer portal.
 // ---------------------------------------------------------------------------
-test("main website keeps the proven booking pipeline contract", () => {
-  assert.match(mainApp, /rpc\("create_customer_booking", \{/);
-  assert.match(mainApp, /p_idempotency_key: randomId\(\)/);
-  assert.match(mainApp, /functions\.invoke<RazorpayOrder>\("razorpay-create-order", \{/);
-  assert.match(mainApp, /body: \{ booking_id: bookingId, stage: "advance" \}/);
-  assert.match(mainApp, /Authorization: `Bearer \$\{session\.access_token\}`/);
-  // The frontend must never create schema or hold payment secrets.
+test("main website hands booking to the Customer PWA", () => {
+  assert.match(mainApp, /customerPortalBookingPath/);
+  assert.match(mainApp, /\/app\/customer\/\?/);
+  assert.doesNotMatch(mainApp, /create_customer_booking|razorpay-create-order/);
   assert.doesNotMatch(mainApp, /create table/i);
   assert.doesNotMatch(mainApp, /service_role|RAZORPAY_KEY_SECRET/);
 });
 
-test("main website uses only the shared Supabase env variables", () => {
-  assert.match(mainApp, /process\.env\.NEXT_PUBLIC_SUPABASE_URL \?\?/);
-  assert.match(mainApp, /viteEnv\.VITE_SUPABASE_URL \?\?/);
+test("main website uses only Next Supabase env variables", () => {
+  assert.match(mainApp, /process\.env\.NEXT_PUBLIC_SUPABASE_URL/);
   assert.match(mainApp, /process\.env\.NEXT_PUBLIC_SUPABASE_ANON_KEY/);
-  assert.match(mainApp, /viteEnv\.VITE_SUPABASE_ANON_KEY/);
-  assert.doesNotMatch(mainApp, /VITE_PUBLIC_SUPABASE|SUPABASE_URLS|SECONDARY_SUPABASE/);
+  assert.doesNotMatch(mainApp, /VITE_PUBLIC_SUPABASE|VITE_SUPABASE_URL|VITE_SUPABASE_ANON_KEY/);
 });
 
 // ---------------------------------------------------------------------------

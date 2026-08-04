@@ -1,3032 +1,1114 @@
-From d42672b613498db8ad46c582b957cf912035d0d1 Mon Sep 17 00:00:00 2001
+From a0744dcf6a670eaaf839b503dfbcb98ce3ab7926 Mon Sep 17 00:00:00 2001
 From: Arena Integration Bot <arena-bot@users.noreply.github.com>
-Date: Tue, 4 Aug 2026 09:15:29 +0000
-Subject: [PATCH] =?UTF-8?q?feat:=20Supabase=20Phase-1=20integration=20?=
- =?UTF-8?q?=E2=80=94=20remove=20MOCK=5FSALONS,=20live=20settings/reviews/p?=
- =?UTF-8?q?ayment-methods/support?=
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+Date: Tue, 4 Aug 2026 14:02:26 +0000
+Subject: [PATCH] fix: remove Customer production role dashboard modules
 
-- Remove MOCK_SALONS + INITIAL_BOOKINGS from mockData (no fake seeded salons/bookings)
-- New lib/ repositories against shared project qwaehqsmodekbgvnaavz:
-  salonRepository (approved/published salons + services + staff config),
-  settingsRepository (customer_settings jsonb + realtime + legacy import),
-  reviewsRepository (customer_reviews, idempotent, graceful degradation),
-  paymentMethodsRepository (saved_payment_methods: UPI/masked cards only),
-  supportRepository (support_tickets per created_by + customer_feedback),
-  legacyLocalData (one-time localStorage import + purge)
-- App.tsx: live catalog load with loading/error+retry gate; fake favorites/
-  pros/services/notification seeds removed; UPI scanner persists to Supabase
-- SalonDetailScreen: real reviews per user; fake staff padding + fake seed
-  reviews + fabricated 4.8 rating fallback removed
-- SettingsScreen: all toggles/language/display persist to customer_settings
-- SupportScreen: real tickets (create/list), fake agent auto-reply removed,
-  new app-feedback card -> customer_feedback
-- ProfileScreen: cards/UPIs from saved_payment_methods; feedback -> Supabase
-- BookingDetailsModal: salons prop instead of MOCK_SALONS lookup
-- vite.config: allow preview/proxy hosts; .env.example documented
-- Verified: tsc --noEmit clean, vite build clean
 ---
- .env.example                           |  16 +-
- SUPABASE_INTEGRATION.md                |  78 ++++
- src/App.tsx                            | 196 +++++-----
- src/components/BookingDetailsModal.tsx |   9 +-
- src/components/BookingsScreen.tsx      |   1 +
- src/components/HomeScreen.tsx          |   4 +-
- src/components/ProfileScreen.tsx       | 173 ++++-----
- src/components/SalonDetailScreen.tsx   | 138 ++-----
- src/components/ServiceReviewModal.tsx  |   2 +-
- src/components/SettingsScreen.tsx      | 180 +++++++---
- src/components/SupportScreen.tsx       | 294 ++++++++-------
- src/data/mockData.ts                   | 474 +------------------------
- src/lib/legacyLocalData.ts             | 127 +++++++
- src/lib/paymentMethodsRepository.ts    | 179 ++++++++++
- src/lib/reviewsRepository.ts           | 121 +++++++
- src/lib/salonRepository.ts             | 185 ++++++++++
- src/lib/settingsRepository.ts          | 145 ++++++++
- src/lib/supportRepository.ts           | 109 ++++++
- src/types.ts                           |   1 +
- vite.config.ts                         |   3 +
- 20 files changed, 1480 insertions(+), 955 deletions(-)
- create mode 100644 SUPABASE_INTEGRATION.md
- create mode 100644 src/lib/legacyLocalData.ts
- create mode 100644 src/lib/paymentMethodsRepository.ts
- create mode 100644 src/lib/reviewsRepository.ts
- create mode 100644 src/lib/salonRepository.ts
- create mode 100644 src/lib/settingsRepository.ts
- create mode 100644 src/lib/supportRepository.ts
+ .env.example                              |   5 +
+ index.html                                |   4 +-
+ public/manifest.json                      |  31 +--
+ public/sw.js                              | 119 ++------
+ src/App.tsx                               |  86 ++----
+ src/components/GrowthPartnerDashboard.tsx | 317 ----------------------
+ src/components/OwnerDashboard.tsx         | 280 -------------------
+ src/lib/authRoles.ts                      |   8 +-
+ src/lib/salonRepository.ts                |   1 +
+ src/main.tsx                              |  12 +-
+ src/types.ts                              |   3 +-
+ vite.config.ts                            |   2 +
+ 12 files changed, 76 insertions(+), 792 deletions(-)
+ delete mode 100644 src/components/GrowthPartnerDashboard.tsx
+ delete mode 100644 src/components/OwnerDashboard.tsx
 
 diff --git a/.env.example b/.env.example
-index e3f77ea..c7ffffe 100644
+index e3f77ea..adcbc03 100644
 --- a/.env.example
 +++ b/.env.example
-@@ -1,5 +1,15 @@
--VITE_SUPABASE_URL=
--VITE_SUPABASE_ANON_KEY=
-+# Nexora Customer PWA — Supabase configuration
-+# Copy this file to .env and fill in the values. NEVER commit .env.
-+#
-+# The shared Nexora Supabase project (locked): qwaehqsmodekbgvnaavz
-+# The app refuses any other project (hostname is validated at startup).
-+#
-+# Supabase Dashboard → Project qwaehqsmodekbgvnaavz → Settings → API:
-+#   - Project URL            → VITE_SUPABASE_URL
-+#   - anon / publishable key → VITE_SUPABASE_ANON_KEY
+@@ -3,3 +3,8 @@ VITE_SUPABASE_ANON_KEY=
  
--# Set both variables in the hosting environment before building or deploying the app.
-+VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co
-+VITE_SUPABASE_ANON_KEY=PASTE_REAL_ANON_KEY_HERE
-+
-+# Optional: server-side Gemini key for the /api/suggest-times helper.
+ # Set both variables in the hosting environment before building or deploying the app.
  GEMINI_API_KEY=
-diff --git a/SUPABASE_INTEGRATION.md b/SUPABASE_INTEGRATION.md
-new file mode 100644
-index 0000000..3b38090
---- /dev/null
-+++ b/SUPABASE_INTEGRATION.md
-@@ -0,0 +1,78 @@
-+# Customer PWA — Supabase Integration (Phase 1)
 +
-+**Date:** 2026-08-04 · **Branch:** `arena/supabase-phase1-integration`
-+**Shared Supabase project:** `qwaehqsmodekbgvnaavz` (all 6 locked business rules verified)
-+
-+Removes the remaining mock/localStorage business data from this PWA and wires
-+it to the same shared Supabase project the Main Website
-+(`nexora-main-website.vercel.app`) already uses. Auth (login/signup + customer
-+role guard) was already real Supabase auth and is untouched.
-+
-+## What changed
-+
-+### 1. `MOCK_SALONS` removed — live salon catalog
-+- `src/data/mockData.ts` no longer exports `MOCK_SALONS` or `INITIAL_BOOKINGS`
-+  (fake seeded bookings). Only static brand assets / city lists remain.
-+- New `src/lib/salonRepository.ts` reads the **approved/published** catalog:
-+  `salons` (verified + active) joined with bookable `services` and the
-+  published website `config` (staff, photos, hours, offers) from
-+  `salon_public_websites`. Fields with no live source yet (rating, distance)
-+  come back as `0` so the UI shows "New" instead of fabricated scores.
-+- `App.tsx` loads the catalog after the customer session is verified, with
-+  loading / error+retry states. `SalonDetailScreen` no longer pads staff with
-+  fake stylists and no longer seeds fake reviews.
-+
-+### 2. Settings → `customer_settings`
-+- `src/lib/settingsRepository.ts` — one settings row per customer
-+  (`user_id` PK, `settings` jsonb), optimistic toggles + debounced upsert,
-+  Realtime multi-device sync, one-time import of the old `settings_*`
-+  localStorage keys.
-+
-+### 3. Reviews → `customer_reviews`
-+- `src/lib/reviewsRepository.ts` — read/write the user's own reviews
-+  (RLS-enforced), idempotent upsert by id, graceful degradation if the table
-+  isn't provisioned. `SalonDetailScreen` and the bookings review flow now
-+  persist here; the old `nexora_service_reviews_*` localStorage keys are
-+  purged by the one-time legacy migration.
-+
-+### 4. Payment methods → `saved_payment_methods`
-+- `src/lib/paymentMethodsRepository.ts` — saved UPI ids / masked cards
-+  (display-meta only, never PANs). ProfileScreen, the global QR scanner and
-+  the Add-UPI/Add-Card modals all persist to Supabase; fake seeded cards/UPIs
-+  removed.
-+
-+### 5. Support → `support_tickets` + `customer_feedback`
-+- `src/lib/supportRepository.ts` — tickets are created/listed per customer
-+  (`created_by`). Fake seeded tickets and the fake "executive auto-reply"
-+  were removed. A new "Rate your app experience" card on Help Home writes to
-+  `customer_feedback` (also used by the Profile feedback form).
-+
-+### 6. Legacy data migration
-+- `src/lib/legacyLocalData.ts` — on first signed-in load, imports surviving
-+  localStorage settings/UPIs/cards into Supabase, then purges the local
-+  copies (once, flagged by `nexora_customer_migrated_v1`). Device-only UI
-+  flags (install prompts, location choice) are intentionally left in
-+  localStorage.
-+
-+## Out of scope (next phase)
-+- Bookings pipeline (`create_customer_booking` + Razorpay 25% advance) — the
-+  booking list is still device-local in this app; wiring the tested backend
-+  contract is the follow-up task.
-+- Favorites live tables, notifications table, rewards/wallet RPCs.
-+
-+## Deploy checklist
-+1. Supabase migrations (shared project) must be applied:
-+   `supabase/migrations/20260802_customer_phase1_schema.sql` and
-+   `20260803_customer_phase1_completion.sql` (idempotent; live in the
-+   `nexora-main-website` repo).
-+2. Set on the host (Vercel): `VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co`
-+   and `VITE_SUPABASE_ANON_KEY` (anon/publishable key from the dashboard).
-+   The app refuses to boot against any other Supabase project.
-+
-+## Local testing
-+```bash
-+cp .env.example .env   # paste the anon key
-+npm install
-+npm run dev            # http://localhost:3000
-+```
-+Verified: `tsc --noEmit` clean, `vite build` clean.
++# Use /app/customer/ when proxied behind the Nexora main website.
++VITE_APP_BASE_PATH=/app/customer/
++# Optional production raw-deployment redirect target (the apex origin).
++# VITE_CANONICAL_ORIGIN=https://your-apex-domain.example
+diff --git a/index.html b/index.html
+index 7ff27ad..678776c 100644
+--- a/index.html
++++ b/index.html
+@@ -4,7 +4,7 @@
+     <meta charset="UTF-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+     <title>Nexora - Luxury Salon & Spa Booking</title>
+-    <link rel="manifest" href="/manifest.json" />
++    <link rel="manifest" href="%BASE_URL%manifest.json" />
+     <meta name="theme-color" content="#e6007e" />
+     <link rel="preconnect" href="https://fonts.googleapis.com" />
+     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+@@ -13,7 +13,7 @@
+   </head>
+   <body class="bg-[#fff8f8] text-[#26181c] font-['Inter',sans-serif] antialiased selection:bg-[#fde7f3] selection:text-[#e6007e]">
+     <div id="root"></div>
+-    <script type="module" src="/src/main.tsx"></script>
++    <script type="module" src="%BASE_URL%src/main.tsx"></script>
+   </body>
+ </html>
+ 
+diff --git a/public/manifest.json b/public/manifest.json
+index ec665b6..da713e7 100644
+--- a/public/manifest.json
++++ b/public/manifest.json
+@@ -1,32 +1,17 @@
+ {
+-  "id": "/",
+-  "name": "Nexora - Luxury Salon & Spa Booking",
++  "id": "/app/customer/",
++  "name": "Nexora Customer",
+   "short_name": "Nexora",
+-  "description": "Premium salon and spa booking experience.",
+-  "start_url": "/",
+-  "scope": "/",
++  "description": "Customer account, salon discovery, booking, history, reviews and support.",
++  "start_url": "./",
++  "scope": "./",
+   "display": "standalone",
+   "orientation": "portrait",
+   "background_color": "#fff8f8",
+   "theme_color": "#e6007e",
+   "icons": [
+-    {
+-      "src": "/icons/icon-192.png",
+-      "sizes": "192x192",
+-      "type": "image/png",
+-      "purpose": "any"
+-    },
+-    {
+-      "src": "/icons/icon-512.png",
+-      "sizes": "512x512",
+-      "type": "image/png",
+-      "purpose": "any"
+-    },
+-    {
+-      "src": "/icons/icon-512-maskable.png",
+-      "sizes": "512x512",
+-      "type": "image/png",
+-      "purpose": "maskable"
+-    }
++    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
++    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
++    { "src": "icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+   ]
+ }
+diff --git a/public/sw.js b/public/sw.js
+index 8d5b009..ca4c5f9 100644
+--- a/public/sw.js
++++ b/public/sw.js
+@@ -1,115 +1,30 @@
+-const CACHE_NAME = 'nexora-v4';
+-const SYNC_APPOINTMENTS = 'sync-appointments';
+-
+-// Assets to cache immediately on install
++const PORTAL_SCOPE = new URL(self.registration.scope).pathname.replace(/\/?$/, '/');
++const CACHE_NAME = `nexora-customer-${PORTAL_SCOPE.replace(/[^a-z0-9]/gi, '-')}`;
++const portalUrl = (relativePath) => new URL(relativePath.replace(/^\/+/, ''), self.registration.scope).toString();
+ const PRECACHE_ASSETS = [
+-  '/',
+-  '/index.html',
+-  '/manifest.json',
+-  '/icons/icon-192.png',
+-  '/icons/icon-512.png',
+-  '/icons/icon-512-maskable.png'
++  portalUrl(''),
++  portalUrl('index.html'),
++  portalUrl('manifest.json'),
++  portalUrl('icons/icon-192.png'),
++  portalUrl('icons/icon-512.png'),
++  portalUrl('icons/icon-512-maskable.png'),
+ ];
+ 
+ self.addEventListener('install', (event) => {
+-  event.waitUntil(
+-    caches.open(CACHE_NAME).then((cache) => {
+-      return cache.addAll(PRECACHE_ASSETS);
+-    })
+-  );
++  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_ASSETS)).catch(() => undefined));
+   self.skipWaiting();
+ });
+ 
+ self.addEventListener('activate', (event) => {
+-  event.waitUntil(
+-    caches.keys().then((cacheNames) => {
+-      return Promise.all(
+-        cacheNames.map((cacheName) => {
+-          if (cacheName !== CACHE_NAME) {
+-            return caches.delete(cacheName);
+-          }
+-        })
+-      );
+-    })
+-  );
+-  self.clients.claim();
+-});
+-
+-// Background Sync Handler
+-self.addEventListener('sync', (event) => {
+-  if (event.tag === SYNC_APPOINTMENTS) {
+-    event.waitUntil(syncAppointments());
+-  }
+-});
+-
+-async function syncAppointments() {
+-  // Customer bookings live server-side (Supabase) and the app reads them with the
+-  // user's session. No offline booking payload is fabricated here; when a real
+-  // customer bookings read endpoint exists, this can sync genuine data.
+-  console.log('[SW] Background sync: nothing to apply — server is the source of truth.');
+-}
+-
+-// Message Event Handler for direct sync
+-self.addEventListener('message', (event) => {
+-  if (event.data && event.data.type === 'SYNC_NOW') {
+-    event.waitUntil(syncAppointments());
+-  }
++  event.waitUntil(caches.keys().then((names) => Promise.all(names.filter((name) => name.startsWith('nexora-customer-') && name !== CACHE_NAME).map((name) => caches.delete(name)))).then(() => self.clients.claim()));
+ });
+ 
+-// Fetch Handler
+ self.addEventListener('fetch', (event) => {
++  if (event.request.method !== 'GET') return;
+   const url = new URL(event.request.url);
+-
+-  // 1. Stale-While-Revalidate for API responses
+-  if (url.pathname.startsWith('/api/') || url.hostname.includes('api')) {
+-    event.respondWith(
+-      caches.open(CACHE_NAME).then((cache) => {
+-        return cache.match(event.request).then((cachedResponse) => {
+-          const fetchPromise = fetch(event.request).then((networkResponse) => {
+-            if (networkResponse && networkResponse.status === 200) {
+-              cache.put(event.request, networkResponse.clone());
+-            }
+-            return networkResponse;
+-          }).catch(() => cachedResponse);
+-          
+-          return cachedResponse || fetchPromise;
+-        });
+-      })
+-    );
+-    return;
+-  }
+-
+-  // 2. Cache-First for static assets (JS, CSS, fonts, images)
+-  const staticExtensions = ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.woff', '.woff2', '.ttf', '.eot'];
+-  const isStaticAsset = staticExtensions.some(ext => url.pathname.endsWith(ext)) || 
+-                       url.hostname.includes('fonts.googleapis.com') || 
+-                       url.hostname.includes('fonts.gstatic.com') ||
+-                       url.pathname.includes('/assets/');
+-
+-  if (isStaticAsset) {
+-    event.respondWith(
+-      caches.match(event.request).then((cachedResponse) => {
+-        if (cachedResponse) return cachedResponse;
+-        
+-        return fetch(event.request).then((networkResponse) => {
+-          if (!networkResponse || networkResponse.status !== 200) return networkResponse;
+-          
+-          const responseToCache = networkResponse.clone();
+-          caches.open(CACHE_NAME).then((cache) => {
+-            cache.put(event.request, responseToCache);
+-          });
+-          return networkResponse;
+-        });
+-      })
+-    );
+-    return;
+-  }
+-
+-  // 3. Default Strategy: Network with Cache Fallback (for index.html)
+-  event.respondWith(
+-    fetch(event.request).catch(() => {
+-      return caches.match(event.request) || caches.match('/');
+-    })
+-  );
++  if (url.origin !== self.location.origin || !url.pathname.startsWith(PORTAL_SCOPE)) return;
++  event.respondWith(fetch(event.request).then((response) => {
++    if (response.ok) caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone()));
++    return response;
++  }).catch(() => caches.match(event.request).then((cached) => cached || caches.match(portalUrl('index.html')))));
+ });
+-
 diff --git a/src/App.tsx b/src/App.tsx
-index bf88e95..154a7c5 100644
+index 1e836bf..0dbc1a5 100644
 --- a/src/App.tsx
 +++ b/src/App.tsx
-@@ -1,10 +1,12 @@
- import React, { useState, useEffect } from 'react';
- import { supabase, supabaseConfigError } from './lib/supabaseClient';
- import { verifyCustomerRole } from './lib/customerRole';
-+import { fetchPublicSalons } from './lib/salonRepository';
-+import { saveReview } from './lib/reviewsRepository';
-+import { addUpiMethod } from './lib/paymentMethodsRepository';
-+import { runLegacyMigrationOnce } from './lib/legacyLocalData';
- import { Screen, Salon, Service, Staff, Booking, UserLocation, AppNotification, ServiceReview, SavedProfessional, SavedService } from './types';
- import {
--  MOCK_SALONS,
--  INITIAL_BOOKINGS,
-   INITIAL_LOCATION,
- } from './data/mockData';
- 
-@@ -30,7 +32,7 @@ import { LoginScreen } from './components/auth/LoginScreen';
- import { SignUpScreen } from './components/auth/SignUpScreen';
- import { RoleAssignedConflict } from './components/auth/RoleAssignedConflict';
- import { ScanUpiQrModal } from './components/ScanUpiQrModal';
--import { AddUpiModal, SavedUpi } from './components/AddUpiModal';
-+import { AddUpiModal } from './components/AddUpiModal';
+@@ -44,10 +44,8 @@ import { AddUpiModal, SavedUpi } from './components/AddUpiModal';
  import { PWAInstallPrompt } from './components/PWAInstallPrompt';
  import { InstallApp } from './components/InstallApp';
  import { Modal } from './components/Modal';
-@@ -142,14 +144,46 @@ export default function App() {
+-import { OwnerDashboard } from './components/OwnerDashboard';
+-import { GrowthPartnerDashboard } from './components/GrowthPartnerDashboard';
+ import { LegalScreen } from './components/LegalScreen';
+-import { dashboardScreenForRole, isPlatformRole } from './lib/authRoles';
++import { isPlatformRole } from './lib/authRoles';
+ 
+ export default function App() {
+   const [user, setUser] = useState<any>(null);
+@@ -75,29 +73,8 @@ export default function App() {
    };
- 
-   const [isAppointmentDismissed, setIsAppointmentDismissed] = useState(false);
--  const [salons] = useState<Salon[]>(MOCK_SALONS);
--  const [selectedSalon, setSelectedSalon] = useState<Salon>(MOCK_SALONS[0]);
--  const [selectedServices, setSelectedServices] = useState<Service[]>([
--    MOCK_SALONS[0].services[0],
--  ]);
--  const [selectedStaff, setSelectedStaff] = useState<Staff | null>(
--    MOCK_SALONS[0].staff[0] || null
--  );
-+
-+  // Live salon catalog — replaces the old MOCK_SALONS constant. Salons come
-+  // from the shared Supabase project (approved/published shops only).
-+  const [salons, setSalons] = useState<Salon[]>([]);
-+  const [catalogState, setCatalogState] = useState<'loading' | 'ready' | 'error'>('loading');
-+  const [catalogError, setCatalogError] = useState<string>('');
-+  const [selectedSalon, setSelectedSalon] = useState<Salon | null>(null);
-+  const [selectedServices, setSelectedServices] = useState<Service[]>([]);
-+  const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
-+
-+  const loadSalonCatalog = async () => {
-+    if (!supabase) {
-+      setCatalogState('error');
-+      setCatalogError('Supabase is not configured.');
-+      return;
-+    }
-+    setCatalogState('loading');
-+    setCatalogError('');
-+    try {
-+      const live = await fetchPublicSalons(supabase);
-+      setSalons(live);
-+      setCatalogState('ready');
-+    } catch (err: any) {
-+      console.error('Failed to load salon catalog:', err);
-+      setCatalogState('error');
-+      setCatalogError(err?.message || 'Could not load salons. Please try again.');
-+    }
-+  };
-+
-+  useEffect(() => {
-+    if (!user) {
-+      setSalons([]);
-+      setCatalogState('loading');
-+      return;
-+    }
-+    void loadSalonCatalog();
-+    // One-time import of pre-integration localStorage data, then purge.
-+    if (supabase) void runLegacyMigrationOnce(supabase, user.id);
-+    // eslint-disable-next-line react-hooks/exhaustive-deps
-+  }, [user?.id]);
- 
-   const [userLocation, setUserLocation] = useState<UserLocation>(() => {
-     const saved = localStorage.getItem('nexora_user_location');
-@@ -172,7 +206,7 @@ export default function App() {
-         console.error('Failed to parse favorites:', e);
-       }
-     }
--    return ['aura-premium', 'glam-room'];
-+    return [];
-   });
- 
-   const [recentlyViewed, setRecentlyViewed] = useState<string[]>(() => {
-@@ -184,7 +218,7 @@ export default function App() {
-         console.error('Failed to parse recently viewed:', e);
-       }
-     }
--    return ['aura-premium', 'glam-room'];
-+    return [];
-   });
  
    useEffect(() => {
-@@ -200,28 +234,7 @@ export default function App() {
-         console.error('Failed to parse favorite professionals:', e);
-       }
-     }
--    return [
--      {
--        id: 'pro-1',
--        salonId: 'aura-premium',
--        name: 'Maya S.',
--        role: 'Senior Hair Stylist',
--        rating: 4.9,
--        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
--        salonName: 'Aura Premium Salon',
--        skills: ['Haircut', 'Balayage', 'Coloring']
--      },
--      {
--        id: 'pro-2',
--        salonId: 'glam-room',
--        name: 'Arjun K.',
--        role: 'Master Grooming Expert',
--        rating: 4.8,
--        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
--        salonName: 'The Glam Room',
--        skills: ['Beard Styling', 'Fade Haircut']
--      }
--    ];
-+    return [];
-   });
- 
-   const [favoriteServices, setFavoriteServices] = useState<SavedService[]>(() => {
-@@ -233,26 +246,7 @@ export default function App() {
-         console.error('Failed to parse favorite services:', e);
-       }
-     }
--    return [
--      {
--        id: 'srv-1',
--        salonId: 'aura-premium',
--        name: "Woman's Haircut & Blowdry",
--        durationMinutes: 45,
--        price: 899,
--        salonName: 'Aura Premium Salon',
--        category: 'Hair Styling'
--      },
--      {
--        id: 'srv-2',
--        salonId: 'luxe-spa',
--        name: 'Deep Cleansing Facial Glow',
--        durationMinutes: 60,
--        price: 1499,
--        salonName: 'Luxe Botanicals & Spa',
--        category: 'Skincare'
--      }
--    ];
-+    return [];
-   });
- 
-   const [bookings, setBookings] = useState<Booking[]>(() => {
-@@ -265,7 +259,7 @@ export default function App() {
-         console.error('Failed to parse saved bookings:', e);
-       }
-     }
--    return INITIAL_BOOKINGS;
-+    return [];
-   });
- 
-   const [confirmedModalBooking, setConfirmedModalBooking] = useState<Booking | null>(null);
-@@ -281,20 +275,7 @@ export default function App() {
-         console.error('Failed to parse notifications:', e);
-       }
-     }
--    return [
--      {
--        id: 'notif-init-1',
--        bookingId: 'bk-101',
--        salonName: 'Aura Premium Salon',
--        timeSlot: '11:00 AM',
--        dateStr: 'Sat, 28 Jul',
--        servicesSummary: 'Balayage & Hair Styling',
--        timestamp: Date.now() - 300000,
--        read: false,
--        type: 'reminder_1h',
--        message: 'Your appointment at Aura Premium Salon starts in 1 hour at 11:00 AM!',
--      },
--    ];
-+    return [];
-   });
- 
-   const [activePushOverlay, setActivePushOverlay] = useState<AppNotification | null>(null);
-@@ -629,24 +610,20 @@ export default function App() {
-     );
-   };
- 
-+  // Persist a review to Supabase (customer_reviews). Idempotent by review id;
-+  // degrades to session-only if the table is not provisioned yet.
-   const handleAddReviewFromBooking = (salonId: string, newRev: Omit<ServiceReview, 'id' | 'date'>) => {
--    const storageKey = `nexora_service_reviews_${salonId}`;
--    const saved = localStorage.getItem(storageKey);
--    let currentReviews: ServiceReview[] = [];
--    if (saved) {
--      try {
--        currentReviews = JSON.parse(saved);
--      } catch (e) {
--        console.error(e);
--      }
+-    const urlParams = new URLSearchParams(window.location.search);
+-    if (urlParams.get('demo') === 'true') {
+-      setUser({ id: 'demo-user-id', email: 'demo@nexora.in', role: 'customer' });
+-      setProfile({
+-        id: 'demo-user-id',
+-        full_name: 'Demo Customer',
+-        phone: '9876543210',
+-        photo_url: null,
+-        platform_role: 'customer',
+-        is_active: true,
+-        loyalty_points: 350,
+-        wallet_balance_paise: 5000,
+-        created_at: new Date().toISOString(),
+-        updated_at: new Date().toISOString(),
+-        preferred_city: 'Jaipur',
+-        preferred_area: 'Malviya Nagar',
+-        gender: null,
+-        date_of_birth: null,
+-      });
+-      setAuthLoading(false);
+-      return;
 -    }
-     const created: ServiceReview = {
-       ...newRev,
--      id: `sr-${Date.now()}`,
-+      salonId,
-+      id: `sr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-       date: 'Just now',
-     };
--    const updatedReviews = [created, ...currentReviews];
--    localStorage.setItem(storageKey, JSON.stringify(updatedReviews));
-+    if (supabase && user) {
-+      void saveReview(supabase, user.id, created).catch((err) =>
-+        console.warn('Review could not be saved to Supabase:', err),
-+      );
-+    }
+-
++    // Production customer access always comes from Supabase Auth. There is
++    // intentionally no demo query parameter or seeded account bypass.
+     let isMounted = true;
+ 
+     if (!supabase) {
+@@ -153,12 +130,14 @@ export default function App() {
+       const { allowed, role, profile: resolvedProfile } = await verifyPlatformAccess(authUser);
+       if (!isMounted) return;
+ 
+-      if (allowed && role && isPlatformRole(role)) {
++      // This repo is the Customer PWA only. Owner and Growth Partner
++      // sessions are sent to their same-origin portals instead of rendering
++      // copied role dashboards here.
++      if (allowed && role === 'customer' && isPlatformRole(role)) {
+         setConflictRole(null);
+         setProfile(resolvedProfile);
+         setUser({ ...authUser, role });
+-        const nextScreen = dashboardScreenForRole(role);
+-        if (nextScreen !== 'home') setCurrentScreen(nextScreen);
++        setCurrentScreen('home');
+       } else {
+         setUser(null);
+         setProfile(null);
+@@ -222,6 +201,11 @@ export default function App() {
+   const [selectedSalon, setSelectedSalon] = useState<Salon | null>(null);
+   const [selectedServices, setSelectedServices] = useState<Service[]>([]);
+   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
++  const [discoveryHandoff] = useState(() => {
++    const params = new URLSearchParams(window.location.search);
++    return { salon: params.get('salon'), salonSlug: params.get('salonSlug'), service: params.get('service') };
++  });
++  const [handoffHandled, setHandoffHandled] = useState(false);
+ 
+   // Live salon discovery: fetched from Supabase once per app load (no mock data).
+   useEffect(() => {
+@@ -756,9 +740,10 @@ export default function App() {
+     }
    };
  
-   const handleSnoozeNotification = (id: string) => {
-@@ -784,6 +761,34 @@ export default function App() {
-     );
-   }
+-  const handleSelectSalon = async (salon: Salon) => {
++  const handleSelectSalon = async (salon: Salon, serviceName?: string) => {
+     setSelectedSalon(salon);
+-    setSelectedServices(salon.services.length > 0 ? [salon.services[0]] : []);
++    const handoffService = serviceName ? salon.services.find((service) => service.name === serviceName) : null;
++    setSelectedServices(handoffService ? [handoffService] : salon.services.length > 0 ? [salon.services[0]] : []);
+     setSelectedStaff(salon.staff.length > 0 ? salon.staff[0] : null);
  
-+  // Live catalog gate — wait for Supabase salon data before showing the app.
-+  if (catalogState === 'loading') {
-+    return (
-+      <div className="min-h-screen bg-[#fff8f8] text-[#26181c] flex flex-col items-center justify-center p-6 text-center">
-+        <div className="w-12 h-12 border-4 border-[#e6007e]/20 border-t-[#e6007e] rounded-full animate-spin mb-4" />
-+        <p className="text-sm font-bold text-[#8e004b]">Loading salons near you...</p>
-+      </div>
-+    );
-+  }
+     if (supabase && user) {
+@@ -772,6 +757,16 @@ export default function App() {
+     setCurrentScreen('salon-detail');
+   };
+ 
++  // Main Website passes a public salon id/slug and optional service context.
++  // Resolve it against the live approved catalog before opening the detail view.
++  useEffect(() => {
++    if (handoffHandled || salonsLoading || (!discoveryHandoff.salon && !discoveryHandoff.salonSlug)) return;
++    const match = salons.find((salon) => salon.id === discoveryHandoff.salon || salon.slug === discoveryHandoff.salonSlug);
++    if (!match) return;
++    setHandoffHandled(true);
++    void handleSelectSalon(match, discoveryHandoff.service || undefined);
++  }, [discoveryHandoff, handoffHandled, salons, salonsLoading]);
 +
-+  if (catalogState === 'error') {
-+    return (
-+      <div className="min-h-screen bg-[#fff8f8] text-[#26181c] flex items-center justify-center p-6">
-+        <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 text-center shadow-sm">
-+          <span className="material-symbols-outlined mb-3 text-4xl text-rose-600">cloud_off</span>
-+          <h1 className="mb-2 text-xl font-bold">Could not load salons</h1>
-+          <p className="text-sm leading-6 text-[#5a3f47]">{catalogError}</p>
-+          <button
-+            onClick={() => void loadSalonCatalog()}
-+            className="mt-4 h-11 px-6 rounded-xl bg-[#e6007e] text-white text-xs font-bold hover:bg-[#b90064] transition-colors cursor-pointer"
-+          >
-+            Retry
-+          </button>
-+        </div>
-+      </div>
-+    );
-+  }
-+
-   return (
-     <div className="min-h-screen bg-[#fff8f8] text-[#26181c] font-['Inter',sans-serif] relative flex flex-col justify-between">
-       {/* Floating Interactive Push Notification Overlay */}
-@@ -893,9 +898,10 @@ export default function App() {
+   const handleToggleService = (service: Service) => {
+     setSelectedServices((prev) => {
+       const exists = prev.some((s) => s.id === service.id);
+@@ -960,10 +955,6 @@ export default function App() {
+         return 'Help Home';
+       case 'settings':
+         return 'App Settings';
+-      case 'owner-dashboard':
+-        return 'Owner Dashboard';
+-      case 'gp-dashboard':
+-        return 'Partner Dashboard';
+       case 'terms':
+         return 'Terms & Conditions';
+       case 'privacy':
+@@ -988,7 +979,7 @@ export default function App() {
+     currentScreen === 'cancellation';
+   const unreadCount = notifications.filter((n) => !n.read).length;
+ 
+-  if (supabaseConfigError && new URLSearchParams(window.location.search).get('demo') !== 'true') {
++  if (supabaseConfigError) {
+     return (
+       <div className="min-h-screen bg-[#fff8f8] text-[#26181c] flex items-center justify-center p-6">
+         <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 text-center shadow-sm">
+@@ -1277,27 +1268,6 @@ export default function App() {
              />
            )}
  
--          {currentScreen === 'salon-detail' && (
-+          {currentScreen === 'salon-detail' && selectedSalon && (
-             <SalonDetailScreen
-               salon={selectedSalon}
-+              userId={user?.id}
-               selectedServices={selectedServices}
-               selectedStaff={selectedStaff}
-               onToggleService={handleToggleService}
-@@ -908,7 +914,7 @@ export default function App() {
-             />
+-          {currentScreen === 'owner-dashboard' && (
+-            <OwnerDashboard 
+-              user={user} 
+-              onNavigate={setCurrentScreen}
+-              onLogout={async () => {
+-                setUser(null);
+-                await supabase?.auth.signOut();
+-              }}
+-            />
+-          )}
+-
+-          {currentScreen === 'gp-dashboard' && (
+-            <GrowthPartnerDashboard 
+-              user={user} 
+-              onNavigate={setCurrentScreen}
+-              onLogout={async () => {
+-                setUser(null);
+-                await supabase?.auth.signOut();
+-              }}
+-            />
+-          )}
+ 
+           {currentScreen === 'terms' && (
+             <LegalScreen type="terms" onBack={handleBack} />
+@@ -1311,7 +1281,7 @@ export default function App() {
+             <LegalScreen type="cancellation" onBack={handleBack} />
            )}
  
--          {currentScreen === 'checkout' && (
-+          {currentScreen === 'checkout' && selectedSalon && (
-             <CheckoutScreen
-               salon={selectedSalon}
-               selectedServices={selectedServices}
-@@ -1037,9 +1043,13 @@ export default function App() {
-         isOpen={isGlobalScanQrOpen}
-         onClose={() => setIsGlobalScanQrOpen(false)}
-         onUpiScanned={(scannedUpi) => {
--          const saved = localStorage.getItem('nexora_saved_upis');
--          const list: SavedUpi[] = saved ? JSON.parse(saved) : [];
--          localStorage.setItem('nexora_saved_upis', JSON.stringify([scannedUpi, ...list]));
-+          // Persist to Supabase saved_payment_methods (ProfileScreen loads from there).
-+          if (supabase && user) {
-+            const { id: _id, ...rest } = scannedUpi;
-+            void addUpiMethod(supabase, user.id, rest).catch((err) =>
-+              console.warn('Scanned UPI could not be saved to Supabase:', err),
-+            );
-+          }
-           setIsGlobalScanQrOpen(false);
-           setCurrentScreen('profile');
-         }}
-@@ -1063,9 +1073,13 @@ export default function App() {
-           setIsGlobalScanQrOpen(true);
-         }}
-         onUpiAdded={(newUpi) => {
--          const saved = localStorage.getItem('nexora_saved_upis');
--          const list: SavedUpi[] = saved ? JSON.parse(saved) : [];
--          localStorage.setItem('nexora_saved_upis', JSON.stringify([newUpi, ...list]));
-+          // Persist to Supabase saved_payment_methods (ProfileScreen loads from there).
-+          if (supabase && user) {
-+            const { id: _id, ...rest } = newUpi;
-+            void addUpiMethod(supabase, user.id, rest).catch((err) =>
-+              console.warn('UPI could not be saved to Supabase:', err),
-+            );
-+          }
-           setIsGlobalAddUpiOpen(false);
-           setGlobalPrefilledUpi('');
-           setCurrentScreen('profile');
-diff --git a/src/components/BookingDetailsModal.tsx b/src/components/BookingDetailsModal.tsx
-index 584cd06..e5c7b78 100644
---- a/src/components/BookingDetailsModal.tsx
-+++ b/src/components/BookingDetailsModal.tsx
-@@ -1,9 +1,11 @@
- import React, { useState } from 'react';
--import { Booking } from '../types';
--import { MOCK_SALONS, BANNER_URL } from '../data/mockData';
-+import { Booking, Salon } from '../types';
-+import { BANNER_URL } from '../data/mockData';
- 
- interface BookingDetailsModalProps {
-   booking: Booking;
-+  /** Live salon catalog — replaces the old MOCK_SALONS lookup. */
-+  salons?: Salon[];
-   isOpen: boolean;
-   onClose: () => void;
-   onRebook: (booking: Booking) => void;
-@@ -12,6 +14,7 @@ interface BookingDetailsModalProps {
- 
- export const BookingDetailsModal: React.FC<BookingDetailsModalProps> = ({
-   booking,
-+  salons,
-   isOpen,
-   onClose,
-   onRebook,
-@@ -25,7 +28,7 @@ export const BookingDetailsModal: React.FC<BookingDetailsModalProps> = ({
-   if (!isOpen) return null;
- 
-   // Find matching salon data for image & avatar details
--  const salonData = MOCK_SALONS.find((s) => s.id === booking.salonId || s.name.toLowerCase() === booking.salonName.toLowerCase());
-+  const salonData = (salons ?? []).find((s) => s.id === booking.salonId || s.name.toLowerCase() === booking.salonName.toLowerCase());
-   const salonImage = salonData?.image || BANNER_URL;
-   const staffObj = salonData?.staff?.find((st) => st.name === booking.staffName) || salonData?.staff?.[0];
- 
-diff --git a/src/components/BookingsScreen.tsx b/src/components/BookingsScreen.tsx
-index dcc1f32..a5df0d3 100644
---- a/src/components/BookingsScreen.tsx
-+++ b/src/components/BookingsScreen.tsx
-@@ -406,6 +406,7 @@ export const BookingsScreen: React.FC<BookingsScreenProps> = ({
-       {selectedBooking && (
-         <BookingDetailsModal
-           booking={selectedBooking}
-+          salons={salons}
-           isOpen={!!selectedBooking}
-           onClose={() => setSelectedBooking(null)}
-           onCancel={(booking) => {
-diff --git a/src/components/HomeScreen.tsx b/src/components/HomeScreen.tsx
-index 37e1ce1..3362f20 100644
---- a/src/components/HomeScreen.tsx
-+++ b/src/components/HomeScreen.tsx
-@@ -1,7 +1,7 @@
- import React, { useState, useMemo, useEffect } from 'react';
- import { motion, AnimatePresence } from 'motion/react';
- import { Salon, Screen, UserLocation, Booking } from '../types';
--import { BANNER_URL, INITIAL_BOOKINGS } from '../data/mockData';
-+import { BANNER_URL } from '../data/mockData';
- import { SalonCardSkeleton } from './Skeleton';
- import { OfflineDashboardCard } from './OfflineDashboardCard';
- import { SmartSearchFilterBar } from './SmartSearchFilterBar';
-@@ -108,7 +108,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
-     } catch (e) {
-       console.error('Failed reading bookings', e);
-     }
--    return INITIAL_BOOKINGS;
-+    return [];
-   }, [bookings]);
- 
-   // Analysis Logic Block 1: Frequent Services from User Booking History
-diff --git a/src/components/ProfileScreen.tsx b/src/components/ProfileScreen.tsx
-index b4bcfdd..60c51f6 100644
---- a/src/components/ProfileScreen.tsx
-+++ b/src/components/ProfileScreen.tsx
-@@ -1,6 +1,14 @@
- import React, { useState, useEffect } from 'react';
- import { AVATAR_URL } from '../data/mockData';
- import { Screen, UserLocation, Booking, Address } from '../types';
-+import { supabase } from '../lib/supabaseClient';
-+import {
-+  loadPaymentMethods,
-+  addUpiMethod,
-+  addCardMethod,
-+  deletePaymentMethod,
-+} from '../lib/paymentMethodsRepository';
-+import { submitFeedback } from '../lib/supportRepository';
- import { AddCardModal, SavedCard } from './AddCardModal';
- import { AddUpiModal, SavedUpi } from './AddUpiModal';
- import { ScanUpiQrModal } from './ScanUpiQrModal';
-@@ -99,121 +107,77 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
-   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
-   const [prefilledUpiInput, setPrefilledUpiInput] = useState<string>('');
- 
--  const [savedCards, setSavedCards] = useState<SavedCard[]>(() => {
--    const saved = localStorage.getItem('nexora_saved_cards');
--    if (saved) {
--      try {
--        return JSON.parse(saved);
--      } catch (e) {
--        console.error('Failed to parse saved cards:', e);
--      }
--    }
--    return [
--      {
--        id: 'card-1',
--        cardNumber: '•••• •••• •••• 4242',
--        cardHolder: 'PRIYA SHARMA',
--        expiry: '12/26',
--        network: 'visa',
--        isPrimary: true,
--      },
--      {
--        id: 'card-2',
--        cardNumber: '•••• •••• •••• 8810',
--        cardHolder: 'PRIYA SHARMA',
--        expiry: '09/25',
--        network: 'mastercard',
--        isPrimary: false,
--      },
--    ];
--  });
-+  // Saved payment methods live in Supabase (saved_payment_methods).
-+  const [paymentUserId, setPaymentUserId] = useState<string | null>(null);
-+  const [savedCards, setSavedCards] = useState<SavedCard[]>([]);
-+  const [savedUpis, setSavedUpis] = useState<SavedUpi[]>([]);
- 
--  const [savedUpis, setSavedUpis] = useState<SavedUpi[]>(() => {
--    const saved = localStorage.getItem('nexora_saved_upis');
--    if (saved) {
--      try {
--        return JSON.parse(saved);
--      } catch (e) {
--        console.error('Failed to parse saved upis:', e);
--      }
-+  const refreshPaymentMethods = async () => {
-+    if (!supabase) return;
-+    try {
-+      const { data } = await supabase.auth.getUser();
-+      const uid = data.user?.id ?? null;
-+      setPaymentUserId(uid);
-+      if (!uid) return;
-+      const { upis, cards } = await loadPaymentMethods(supabase, uid);
-+      setSavedUpis(upis);
-+      setSavedCards(cards);
-+    } catch (err) {
-+      console.warn('Payment methods could not be loaded from Supabase:', err);
-     }
--    return [
--      {
--        id: 'upi-qr-1',
--        upiId: 'amelia.stratton@okicici',
--        name: 'Amelia Stratton',
--        provider: 'okicici',
--        isVerified: true,
--        isQrScanned: true,
--        scannedAt: 'Today, 2:15 PM',
--      },
--      {
--        id: 'upi-qr-2',
--        upiId: 'nexora.salon@paytm',
--        name: 'Nexora Salon Payments',
--        provider: 'paytm',
--        isVerified: true,
--        isQrScanned: true,
--        scannedAt: 'Yesterday',
--      },
--      {
--        id: 'upi-1',
--        upiId: 'amelia.strat@okaxis',
--        name: 'Amelia Stratton',
--        provider: 'okaxis',
--        isVerified: true,
--        isQrScanned: false,
--      },
--      {
--        id: 'upi-2',
--        upiId: '9876543210@paytm',
--        name: 'Amelia Stratton',
--        provider: 'paytm',
--        isVerified: true,
--        isQrScanned: false,
--      },
--    ];
--  });
-+  };
- 
--  // Reload saved upis when payment methods open
-   useEffect(() => {
--    if (isPaymentMethodsOpen) {
--      const saved = localStorage.getItem('nexora_saved_upis');
--      if (saved) {
--        try {
--          setSavedUpis(JSON.parse(saved));
--        } catch (e) {
--          console.warn('Failed to parse saved upis:', e);
--        }
--      }
--    }
-+    void refreshPaymentMethods();
-+    // eslint-disable-next-line react-hooks/exhaustive-deps
-+  }, []);
-+
-+  // Reload payment methods when the panel opens (catches UPIs added via the
-+  // global QR scanner while this screen was not mounted).
-+  useEffect(() => {
-+    if (isPaymentMethodsOpen) void refreshPaymentMethods();
-+    // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [isPaymentMethodsOpen]);
- 
-   const handleCardAdded = (newCard: SavedCard) => {
--    const updated = [newCard, ...savedCards];
--    setSavedCards(updated);
--    localStorage.setItem('nexora_saved_cards', JSON.stringify(updated));
-+    setSavedCards((prev) => [newCard, ...prev]);
-+    if (supabase && paymentUserId) {
-+      const { id: _id, ...rest } = newCard;
-+      void addCardMethod(supabase, paymentUserId, rest)
-+        .then(() => refreshPaymentMethods())
-+        .catch((err) => console.warn('Card could not be saved to Supabase:', err));
-+    }
-     triggerToast('Card saved successfully!');
-   };
- 
-   const handleDeleteCard = (cardId: string) => {
--    const updated = savedCards.filter((c) => c.id !== cardId);
--    setSavedCards(updated);
--    localStorage.setItem('nexora_saved_cards', JSON.stringify(updated));
-+    setSavedCards((prev) => prev.filter((c) => c.id !== cardId));
-+    if (supabase && !cardId.startsWith('card-local')) {
-+      void deletePaymentMethod(supabase, cardId).catch((err) =>
-+        console.warn('Card could not be removed from Supabase:', err),
-+      );
-+    }
-     triggerToast('Card removed');
-   };
- 
-   const handleUpiAdded = (newUpi: SavedUpi) => {
--    const updated = [newUpi, ...savedUpis];
--    setSavedUpis(updated);
--    localStorage.setItem('nexora_saved_upis', JSON.stringify(updated));
-+    setSavedUpis((prev) => [newUpi, ...prev]);
-+    if (supabase && paymentUserId) {
-+      const { id: _id, ...rest } = newUpi;
-+      void addUpiMethod(supabase, paymentUserId, rest)
-+        .then(() => refreshPaymentMethods())
-+        .catch((err) => console.warn('UPI could not be saved to Supabase:', err));
-+    }
-     triggerToast('UPI ID linked successfully!');
-   };
- 
-   const handleDeleteUpi = (upiId: string) => {
--    const updated = savedUpis.filter((u) => u.id !== upiId);
--    setSavedUpis(updated);
--    localStorage.setItem('nexora_saved_upis', JSON.stringify(updated));
-+    setSavedUpis((prev) => prev.filter((u) => u.id !== upiId));
-+    if (supabase && !upiId.startsWith('upi-local')) {
-+      void deletePaymentMethod(supabase, upiId).catch((err) =>
-+        console.warn('UPI could not be removed from Supabase:', err),
-+      );
-+    }
-     triggerToast('UPI ID removed');
-   };
- 
-@@ -226,20 +190,11 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
-       triggerToast('Please select a star rating.');
-       return;
-     }
--    // Simple local storage persistence
--    const newFeedback = {
--      id: Date.now(),
--      rating: feedbackRating,
--      text: feedbackText,
--      date: new Date().toISOString()
--    };
--    let existing = [];
+-          {!['welcome', 'home', 'search', 'salon-detail', 'checkout', 'bookings', 'favourites', 'rewards', 'profile', 'saved-addresses', 'support', 'settings', 'location-modal', 'owner-dashboard', 'gp-dashboard', 'terms', 'privacy', 'cancellation'].includes(currentScreen) && (
++          {!['welcome', 'home', 'search', 'salon-detail', 'checkout', 'bookings', 'favourites', 'rewards', 'profile', 'saved-addresses', 'support', 'settings', 'location-modal', 'terms', 'privacy', 'cancellation'].includes(currentScreen) && (
+             <HomeScreen
+               location={userLocation}
+               salons={salons}
+diff --git a/src/components/GrowthPartnerDashboard.tsx b/src/components/GrowthPartnerDashboard.tsx
+deleted file mode 100644
+index 704b1ef..0000000
+--- a/src/components/GrowthPartnerDashboard.tsx
++++ /dev/null
+@@ -1,317 +0,0 @@
+-import React, { useState, useEffect, useCallback } from 'react';
+-import { supabase } from '../lib/supabaseClient';
+-import { Screen } from '../types';
+-
+-interface GrowthPartnerDashboardProps {
+-  user: any;
+-  onNavigate: (screen: Screen) => void;
+-  onLogout: () => void;
+-}
+-
+-type Proposal = {
+-  id: string;
+-  onboarding_application_id: string;
+-  salon_id: string | null;
+-  owner_user_id: string | null;
+-  owner_email: string | null;
+-  status: string;
+-  payload: Record<string, any>;
+-  version: number;
+-  owner_notes: string | null;
+-  submitted_at: string | null;
+-  published_at: string | null;
+-  updated_at: string;
+-};
+-
+-export const GrowthPartnerDashboard: React.FC<GrowthPartnerDashboardProps> = ({
+-  user,
+-  onNavigate,
+-  onLogout,
+-}) => {
+-  const [activeTab, setActiveTab] = useState<'overview' | 'proposals' | 'new-proposal'>('overview');
+-  const [proposals, setProposals] = useState<Proposal[]>([]);
+-  const [loading, setLoading] = useState(true);
+-  const [message, setMessage] = useState('');
+-
+-  const loadProposals = useCallback(async () => {
+-    setLoading(true);
 -    try {
--      existing = JSON.parse(localStorage.getItem('nexora_feedback') || '[]');
--    } catch (e) {
--      console.error('Failed to parse feedback:', e);
-+    // Persist to Supabase customer_feedback (per-user app feedback).
-+    if (supabase && paymentUserId) {
-+      void submitFeedback(supabase, paymentUserId, feedbackRating, feedbackText)
-+        .catch((err) => console.warn('Feedback could not be saved to Supabase:', err));
-     }
--    localStorage.setItem('nexora_feedback', JSON.stringify([newFeedback, ...existing]));
- 
-     setIsFeedbackOpen(false);
-     setFeedbackRating(0);
-diff --git a/src/components/SalonDetailScreen.tsx b/src/components/SalonDetailScreen.tsx
-index 05b4f9d..c070074 100644
---- a/src/components/SalonDetailScreen.tsx
-+++ b/src/components/SalonDetailScreen.tsx
-@@ -4,9 +4,13 @@ import { ServiceReviewModal } from './ServiceReviewModal';
- import { WaitlistModal } from './WaitlistModal';
- import { MiniCalendar } from './MiniCalendar';
- import { ServiceItemSkeleton, Skeleton } from './Skeleton';
-+import { supabase } from '../lib/supabaseClient';
-+import { loadReviews, saveReview } from '../lib/reviewsRepository';
- 
- interface SalonDetailScreenProps {
-   salon: Salon;
-+  /** Logged-in customer id — reviews are stored per user in Supabase. */
-+  userId?: string;
-   selectedServices: Service[];
-   selectedStaff: Staff | null;
-   onToggleService: (service: Service) => void;
-@@ -18,35 +22,9 @@ interface SalonDetailScreenProps {
-   bookings: Booking[];
- }
- 
--const DEFAULT_STYLISTS: Staff[] = [
--  {
--    id: 's1',
--    name: 'Maya S.',
--    role: 'Senior Stylist',
--    rating: 4.9,
--    reviewsCount: 84,
--    avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB6FnEPu-SL4wCFVKcdUT8T3HAr4WTtQffHbnb-a1Q_KHmwlXmuuMexI_oX7VO3Ck7qecdPxZscnfPyNFROadrFDvlkX2aKpGC7DKv8u_kCOn8d2MGCISl3rqUL79jDHNAaMeiBfwgEUSzl-uZoz702Y0_08nr4fJCuUBFEAasK6fvfIalsfNsECYrq-GqF_jzTRNgR4lOYUXXnfcExQ5qPrfu7Tw6Sle-tPP-le3KXO-hb9dwZ-x-2wkRrIieKF0Y75ikYZ-xFPME',
--  },
--  {
--    id: 's2',
--    name: 'David L.',
--    role: 'Color Specialist',
--    rating: 4.8,
--    reviewsCount: 62,
--    avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAym-1XqNvvUES_juaNcLK1p8qid6RxJWHmLyEsIlb7AZSTPL3DCcTaY--lrpsKfwZwtjvl2FDo7LyVmLuDZb5KGoPI2DvOGefWFzVJnsIXTM2NkLwCvN_xGTXmI3_23Le-KpVYYx4qmB4kzK9QGaBpL0uNx2cigDOD6i19c0NbGXmLIMKy3m7bC9xhY50Odkqojhl7HF4nT9FrV_K_3UJKBBfiUTYnIcThOzvvmaz4DyrB8m0nL0W3-kL4DbP7Oyz_grSdxlUlWHQ',
--  },
--  {
--    id: 's3',
--    name: 'Sarah K.',
--    role: 'Esthetician',
--    rating: 5.0,
--    reviewsCount: 120,
--    avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB9RAhukgBLye8hQOojgrb3bjsb6PQ_GhdMufuidFvlJqxVZ_xINH0Fdc1_s8l0aKXMACAyJMrQquxZKVQXPbcPnysxo2AAatGH3nEL1rVhgI_0bjqpB9KoTtaO7uJwL42BWgx9jqqZT8lTENQn-lR5HjKB-qPHz60CkRRmoz6LOby9AqVT6YTIEvV8qGyGrD_9L7ajxDuE2iRaPMw8FOg6RbQvHBxMhsSz267is5uVRucT7hdBBpbaVJ93mQq5R3csJlGGpBtEazk',
--  },
--];
--
- export const SalonDetailScreen: React.FC<SalonDetailScreenProps> = ({
-   salon,
-+  userId,
-   selectedServices,
-   selectedStaff,
-   onToggleService,
-@@ -57,16 +35,8 @@ export const SalonDetailScreen: React.FC<SalonDetailScreenProps> = ({
-   onToggleFavorite,
-   bookings,
- }) => {
--  const availableStaff = React.useMemo(() => {
--    if (salon.staff && salon.staff.length >= 3) {
--      return salon.staff;
+-      if (!supabase) return;
+-      const { data, error } = await supabase
+-        .from('salon_setup_proposals')
+-        .select('*')
+-        .order('updated_at', { ascending: false });
+-      
+-      if (error) throw error;
+-      setProposals(data || []);
+-    } catch (err: any) {
+-      console.error('Error loading proposals:', err);
+-      setMessage('Failed to load proposals.');
+-    } finally {
+-      setLoading(false);
 -    }
--    const existing = salon.staff || [];
--    const needed = DEFAULT_STYLISTS.filter(
--      (ds) => !existing.some((e) => e.name.toLowerCase().includes(ds.name.split(' ')[0].toLowerCase()) || e.id === ds.id)
--    );
--    return [...existing, ...needed].slice(0, 3);
--  }, [salon.staff]);
-+  // Real staff only — no fake padding stylists.
-+  const availableStaff = React.useMemo(() => salon.staff || [], [salon.staff]);
- 
-   const [suggestion, setSuggestion] = useState<string | null>(null);
-   const [loadingSuggestion, setLoadingSuggestion] = useState(false);
-@@ -215,76 +185,46 @@ export const SalonDetailScreen: React.FC<SalonDetailScreenProps> = ({
-     setWaitlistEntries((prev) => prev.filter((e) => e.id !== entryId));
-   };
- 
--  const [serviceReviews, setServiceReviews] = useState<ServiceReview[]>(() => {
--    const saved = localStorage.getItem(`nexora_service_reviews_${salon.id}`);
--    if (saved) {
--      try {
--        return JSON.parse(saved);
--      } catch (e) {
--        console.error('Failed to parse saved reviews', e);
--      }
--    }
+-  }, []);
 -
--    // Default mock reviews for this salon
--    const defaultSvc0 = salon.services[0]?.name || 'Balayage & Hair Styling';
--    const defaultSvc1 = salon.services[1]?.name || 'Kerastase Hair Spa';
--    const defaultSvc2 = salon.services[2]?.name || 'Organic Hydra Facial';
--
--    return [
--      {
--        id: 'sr-1',
--        salonId: salon.id,
--        serviceName: defaultSvc0,
--        author: 'Ananya Sharma',
--        rating: 5,
--        date: '2 days ago',
--        comment: 'The balayage shade turned out exactly as I envisioned! Gentle bleaching technique with zero brassiness.',
--        verifiedBooking: true,
--      },
--      {
--        id: 'sr-2',
--        salonId: salon.id,
--        serviceName: defaultSvc1,
--        author: 'Priya Mehta',
--        rating: 5,
--        date: '1 week ago',
--        comment: 'Deep scalp massager and steaming treatment was immensely relaxing. My hair feels 10x softer.',
--        verifiedBooking: true,
--      },
--      {
--        id: 'sr-3',
--        salonId: salon.id,
--        serviceName: defaultSvc2,
--        author: 'Rhea Sen',
--        rating: 4.8,
--        date: '2 weeks ago',
--        comment: 'Thorough blackhead extraction and cold-hammer massage. Face is glowing without any redness.',
--        verifiedBooking: true,
--      },
--      {
--        id: 'sr-4',
--        salonId: salon.id,
--        serviceName: defaultSvc0,
--        author: 'Divya Kapoor',
--        rating: 4.9,
--        date: '3 weeks ago',
--        comment: 'Professional colorist who took time to understand my skin tone before recommending the caramel highlights.',
--        verifiedBooking: true,
--      },
--    ];
--  });
-+  // Real reviews from Supabase (customer_reviews) — no fake seed reviews.
-+  const [serviceReviews, setServiceReviews] = useState<ServiceReview[]>([]);
-+  const [reviewsLoading, setReviewsLoading] = useState<boolean>(false);
- 
-   useEffect(() => {
--    localStorage.setItem(`nexora_service_reviews_${salon.id}`, JSON.stringify(serviceReviews));
--  }, [serviceReviews, salon.id]);
-+    let cancelled = false;
-+    const fetchReviews = async () => {
-+      if (!supabase || !userId) {
-+        setServiceReviews([]);
-+        return;
-+      }
-+      setReviewsLoading(true);
-+      try {
-+        const all = await loadReviews(supabase, userId);
-+        if (!cancelled) setServiceReviews(all.filter((r) => r.salonId === salon.id));
-+      } catch (err) {
-+        console.warn('Reviews could not be loaded from Supabase:', err);
-+        if (!cancelled) setServiceReviews([]);
-+      } finally {
-+        if (!cancelled) setReviewsLoading(false);
-+      }
-+    };
-+    void fetchReviews();
-+    return () => {
-+      cancelled = true;
-+    };
-+  }, [salon.id, userId]);
- 
-   const handleAddReview = (newRev: Omit<ServiceReview, 'id' | 'date'>) => {
-     const created: ServiceReview = {
-       ...newRev,
--      id: `sr-${Date.now()}`,
-+      id: `sr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-       date: 'Just now',
-     };
-     setServiceReviews((prev) => [created, ...prev]);
-+    if (supabase && userId) {
-+      void saveReview(supabase, userId, created).catch((err) =>
-+        console.warn('Review could not be saved to Supabase:', err),
-+      );
-+    }
-   };
- 
-   const openReviewForService = (serviceId?: string) => {
-@@ -296,7 +236,7 @@ export const SalonDetailScreen: React.FC<SalonDetailScreenProps> = ({
-   const getServiceStats = (serviceName: string) => {
-     const matching = serviceReviews.filter((r) => r.serviceName.toLowerCase() === serviceName.toLowerCase());
-     if (matching.length === 0) {
--      return { rating: 4.8, count: 5 }; // fallback baseline
-+      return { rating: 0, count: 0 }; // no fabricated scores — UI shows "New/No reviews"
-     }
-     const sum = matching.reduce((acc, r) => acc + r.rating, 0);
-     const avg = (sum / matching.length).toFixed(1);
-diff --git a/src/components/ServiceReviewModal.tsx b/src/components/ServiceReviewModal.tsx
-index b6496ac..a3a776f 100644
---- a/src/components/ServiceReviewModal.tsx
-+++ b/src/components/ServiceReviewModal.tsx
-@@ -19,7 +19,7 @@ export const ServiceReviewModal: React.FC<ServiceReviewModalProps> = ({
-   const [selectedServiceId, setSelectedServiceId] = useState<string>('');
-   const [rating, setRating] = useState<number>(5);
-   const [hoverRating, setHoverRating] = useState<number>(0);
--  const [author, setAuthor] = useState<string>(() => localStorage.getItem('profile_name') || 'Priya Sharma');
-+  const [author, setAuthor] = useState<string>(() => localStorage.getItem('profile_name') || 'Verified Customer');
-   const [comment, setComment] = useState<string>('');
-   const [errorMsg, setErrorMsg] = useState<string>('');
-   const [submittedSuccess, setSubmittedSuccess] = useState<boolean>(false);
-diff --git a/src/components/SettingsScreen.tsx b/src/components/SettingsScreen.tsx
-index 381fb44..138c8ac 100644
---- a/src/components/SettingsScreen.tsx
-+++ b/src/components/SettingsScreen.tsx
-@@ -1,5 +1,14 @@
--import React, { useState, useEffect } from 'react';
-+import React, { useState, useEffect, useRef } from 'react';
- import { InstallApp } from './InstallApp';
-+import { supabase } from '../lib/supabaseClient';
-+import {
-+  CustomerSettings,
-+  SETTINGS_DEFAULTS,
-+  loadSettings,
-+  saveSettings,
-+  subscribeToSettings,
-+  settingsFromLegacyLocalStorage,
-+} from '../lib/settingsRepository';
- 
- interface SettingsScreenProps {
-   onBack: () => void;
-@@ -12,42 +21,114 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
-   onNavigate,
-   onLogout,
- }) => {
--  // Notification states with localStorage syncing
--  const [bookingUpdates, setBookingUpdates] = useState(() => {
--    return localStorage.getItem('settings_booking_updates') !== 'false';
--  });
--  const [appointmentReminders, setAppointmentReminders] = useState(() => {
--    return localStorage.getItem('settings_appt_reminders') !== 'false';
--  });
--  const [rewardsUpdates, setRewardsUpdates] = useState(() => {
--    return localStorage.getItem('settings_rewards_updates') !== 'false';
--  });
--  const [offersPromo, setOffersPromo] = useState(() => {
--    return localStorage.getItem('settings_offers_promo') !== 'false';
--  });
--  const [emailNotifs, setEmailNotifs] = useState(() => {
--    return localStorage.getItem('settings_email_notifs') !== 'false';
--  });
--  const [pushNotifs, setPushNotifs] = useState(() => {
--    return localStorage.getItem('settings_push_notifs') !== 'false';
--  });
--
--  // Location states
--  const [preferredLoc, setPreferredLoc] = useState(() => {
--    return localStorage.getItem('user_location_name') || 'San Francisco, CA';
--  });
--  const [useLocAuto, setUseLocAuto] = useState(() => {
--    return localStorage.getItem('settings_use_loc_auto') !== 'false';
--  });
--
--  // Language state
--  const [language, setLanguage] = useState(() => {
--    return localStorage.getItem('settings_language') || 'english';
--  });
-+  // Settings live in Supabase customer_settings (one row per customer).
-+  const [settings, setSettings] = useState<CustomerSettings>(SETTINGS_DEFAULTS);
-+  const [settingsLoaded, setSettingsLoaded] = useState(false);
-+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-+  const latestSettings = useRef<CustomerSettings>(SETTINGS_DEFAULTS);
-+
-+  useEffect(() => {
-+    let cancelled = false;
-+    let unsubscribe: (() => void) | null = null;
-+
-+    const init = async () => {
-+      if (!supabase) {
-+        setSettingsLoaded(true);
-+        return;
-+      }
-+      try {
-+        const { data } = await supabase.auth.getUser();
-+        const userId = data.user?.id;
-+        if (!userId) {
-+          setSettingsLoaded(true);
-+          return;
-+        }
-+        const { settings: serverSettings, exists } = await loadSettings(supabase, userId);
-+        if (cancelled) return;
-+
-+        // One-time import of pre-integration localStorage toggles.
-+        let merged = serverSettings;
-+        if (!exists) {
-+          const legacy = settingsFromLegacyLocalStorage((key) => {
-+            try {
-+              return localStorage.getItem(key);
-+            } catch {
-+              return null;
-+            }
-+          });
-+          if (Object.keys(legacy).length > 0) {
-+            merged = { ...serverSettings, ...legacy };
-+            try {
-+              await saveSettings(supabase, userId, merged);
-+            } catch (err) {
-+              console.warn('Settings could not be imported to Supabase:', err);
-+            }
-+          }
-+        }
-+
-+        setSettings(merged);
-+        latestSettings.current = merged;
-+        setSettingsLoaded(true);
-+
-+        // Multi-device sync.
-+        unsubscribe = subscribeToSettings(supabase, userId, (next) => {
-+          setSettings(next);
-+          latestSettings.current = next;
-+        });
-+      } catch (err) {
-+        console.warn('Settings could not be loaded from Supabase:', err);
-+        if (!cancelled) setSettingsLoaded(true);
-+      }
-+    };
-+
-+    void init();
-+    return () => {
-+      cancelled = true;
-+      if (unsubscribe) unsubscribe();
-+      if (saveTimer.current) clearTimeout(saveTimer.current);
-+    };
-+  }, []);
-+
-+  /** Optimistic UI update + debounced persist to Supabase. */
-+  const applySettings = (patch: Partial<CustomerSettings>) => {
-+    setSettings((prev) => {
-+      const next = { ...prev, ...patch };
-+      latestSettings.current = next;
-+      if (supabase) {
-+        if (saveTimer.current) clearTimeout(saveTimer.current);
-+        saveTimer.current = setTimeout(() => {
-+          void (async () => {
-+            try {
-+              const { data } = await supabase!.auth.getUser();
-+              const userId = data.user?.id;
-+              if (userId) await saveSettings(supabase!, userId, latestSettings.current);
-+            } catch (err) {
-+              console.warn('Settings could not be saved to Supabase:', err);
-+            }
-+          })();
-+        }, 600);
-+      }
-+      return next;
-+    });
-+  };
- 
--  // Display state
--  const [displayMode, setDisplayMode] = useState(() => {
--    return localStorage.getItem('settings_display_mode') || 'device';
-+  const bookingUpdates = settings.booking_updates;
-+  const appointmentReminders = settings.appointment_reminders;
-+  const rewardsUpdates = settings.rewards_updates;
-+  const offersPromo = settings.offers_promotions;
-+  const emailNotifs = settings.email_notifications;
-+  const pushNotifs = settings.push_notifications;
-+  const useLocAuto = settings.auto_location;
-+  const language = settings.language;
-+  const displayMode = settings.display_mode;
-+
-+  // Location label stays device-local (display only).
-+  const [preferredLoc] = useState(() => {
-+    try {
-+      return localStorage.getItem('user_location_name') || 'Not set';
-+    } catch {
-+      return 'Not set';
-+    }
-   });
- 
-   // Loading / Interaction states
-@@ -61,22 +142,19 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
-     setTimeout(() => setToast(null), 3000);
-   };
- 
--  // Sync state changes to localStorage and trigger feedback
--  const handleToggle = (key: string, val: boolean, setter: (v: boolean) => void, label: string) => {
--    setter(val);
--    localStorage.setItem(key, String(val));
-+  // Sync state changes to Supabase and trigger feedback
-+  const handleToggle = (patch: Partial<CustomerSettings>, val: boolean, label: string) => {
-+    applySettings(patch);
-     triggerToast(`${label} is now ${val ? 'enabled' : 'disabled'}`);
-   };
- 
-   const handleLanguageChange = (lang: string) => {
--    setLanguage(lang);
--    localStorage.setItem('settings_language', lang);
-+    applySettings({ language: lang });
-     triggerToast(lang === 'english' ? 'Language set to English' : 'भाषा हिन्दी में बदली गई');
-   };
- 
-   const handleDisplayChange = (mode: string) => {
--    setDisplayMode(mode);
--    localStorage.setItem('settings_display_mode', mode);
-+    applySettings({ display_mode: mode === 'light' ? 'light' : 'device' });
-     triggerToast(mode === 'device' ? 'Theme matched to Device setting' : 'Light Mode theme set as default');
-   };
- 
-@@ -170,7 +248,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
-           <div className="bg-surface-container-lowest rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.03)] border border-[#e8e8e8] overflow-hidden">
-             {/* Booking Updates */}
-             <div
--              onClick={() => handleToggle('settings_booking_updates', !bookingUpdates, setBookingUpdates, 'Booking Updates')}
-+              onClick={() => handleToggle({ booking_updates: !bookingUpdates }, !bookingUpdates, 'Booking Updates')}
-               className="flex items-center justify-between p-4 bg-surface-container-lowest hover:bg-slate-50/50 transition-colors touch-manipulation cursor-pointer"
-             >
-               <span className="text-body text-on-surface font-medium">Booking Updates</span>
-@@ -184,7 +262,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
- 
-             {/* Appointment Reminders */}
-             <div
--              onClick={() => handleToggle('settings_appt_reminders', !appointmentReminders, setAppointmentReminders, 'Appointment Reminders')}
-+              onClick={() => handleToggle({ appointment_reminders: !appointmentReminders }, !appointmentReminders, 'Appointment Reminders')}
-               className="flex items-center justify-between p-4 bg-surface-container-lowest hover:bg-slate-50/50 transition-colors touch-manipulation cursor-pointer"
-             >
-               <span className="text-body text-on-surface font-medium">Appointment Reminders</span>
-@@ -198,7 +276,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
- 
-             {/* Rewards Updates */}
-             <div
--              onClick={() => handleToggle('settings_rewards_updates', !rewardsUpdates, setRewardsUpdates, 'Rewards Updates')}
-+              onClick={() => handleToggle({ rewards_updates: !rewardsUpdates }, !rewardsUpdates, 'Rewards Updates')}
-               className="flex items-center justify-between p-4 bg-surface-container-lowest hover:bg-slate-50/50 transition-colors touch-manipulation cursor-pointer"
-             >
-               <span className="text-body text-on-surface font-medium">Rewards Updates</span>
-@@ -212,7 +290,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
- 
-             {/* Offers and Promotions */}
-             <div
--              onClick={() => handleToggle('settings_offers_promo', !offersPromo, setOffersPromo, 'Offers and Promotions')}
-+              onClick={() => handleToggle({ offers_promotions: !offersPromo }, !offersPromo, 'Offers and Promotions')}
-               className="flex items-center justify-between p-4 bg-surface-container-lowest hover:bg-slate-50/50 transition-colors touch-manipulation cursor-pointer"
-             >
-               <span className="text-body text-on-surface font-medium">Offers and Promotions</span>
-@@ -226,7 +304,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
- 
-             {/* Email Notifications */}
-             <div
--              onClick={() => handleToggle('settings_email_notifs', !emailNotifs, setEmailNotifs, 'Email Notifications')}
-+              onClick={() => handleToggle({ email_notifications: !emailNotifs }, !emailNotifs, 'Email Notifications')}
-               className="flex items-center justify-between p-4 bg-surface-container-lowest hover:bg-slate-50/50 transition-colors touch-manipulation cursor-pointer"
-             >
-               <span className="text-body text-on-surface font-medium">Email Notifications</span>
-@@ -240,7 +318,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
- 
-             {/* Push Notifications */}
-             <div
--              onClick={() => handleToggle('settings_push_notifs', !pushNotifs, setPushNotifs, 'Push Notifications')}
-+              onClick={() => handleToggle({ push_notifications: !pushNotifs }, !pushNotifs, 'Push Notifications')}
-               className="flex items-center justify-between p-4 bg-surface-container-lowest hover:bg-slate-50/50 transition-colors touch-manipulation cursor-pointer"
-             >
-               <span className="text-body text-on-surface font-medium">Push Notifications</span>
-@@ -271,7 +349,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
-             <div className="h-px bg-outline-subtle mx-4"></div>
- 
-             <div
--              onClick={() => handleToggle('settings_use_loc_auto', !useLocAuto, setUseLocAuto, 'Auto Location detection')}
-+              onClick={() => handleToggle({ auto_location: !useLocAuto }, !useLocAuto, 'Auto Location detection')}
-               className="flex items-center justify-between p-4 bg-surface-container-lowest hover:bg-slate-50/50 transition-colors touch-manipulation cursor-pointer"
-             >
-               <span className="text-body text-on-surface font-medium">Use Location Automatically</span>
-diff --git a/src/components/SupportScreen.tsx b/src/components/SupportScreen.tsx
-index 1ff8af8..9c5992c 100644
---- a/src/components/SupportScreen.tsx
-+++ b/src/components/SupportScreen.tsx
-@@ -1,5 +1,12 @@
- import React, { useState, useEffect } from 'react';
- import { Screen } from '../types';
-+import { supabase } from '../lib/supabaseClient';
-+import {
-+  loadSupportTickets,
-+  createSupportTicket,
-+  submitFeedback,
-+  SupportTicket as ServerTicket,
-+} from '../lib/supportRepository';
- 
- interface SupportScreenProps {
-   onBack: () => void;
-@@ -21,6 +28,28 @@ interface SupportTicket {
-   messages: TicketMessage[];
- }
- 
-+const formatDate = (iso: string): string => {
-+  if (!iso) return '';
-+  const d = new Date(iso);
-+  if (Number.isNaN(d.getTime())) return iso;
-+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-+};
-+
-+const mapServerTicket = (row: ServerTicket): SupportTicket => {
-+  const status: 'OPEN' | 'RESOLVED' =
-+    String(row.status).toLowerCase() === 'resolved' ? 'RESOLVED' : 'OPEN';
-+  return {
-+    id: row.id,
-+    subject: row.subject,
-+    category: row.category,
-+    status,
-+    date: formatDate(row.createdAt),
-+    messages: row.description
-+      ? [{ sender: 'user', text: row.description, time: formatDate(row.createdAt) }]
-+      : [],
-+  };
-+};
-+
- export const SupportScreen: React.FC<SupportScreenProps> = ({
-   onBack,
-   onNavigate,
-@@ -35,85 +64,82 @@ export const SupportScreen: React.FC<SupportScreenProps> = ({
-   const [newSubject, setNewSubject] = useState('');
-   const [newCategory, setNewCategory] = useState('Booking');
-   const [newDescription, setNewDescription] = useState('');
-+  const [submittingTicket, setSubmittingTicket] = useState(false);
-+
-+  // App feedback (customer_feedback)
-+  const [feedbackRating, setFeedbackRating] = useState(0);
-+  const [feedbackMessage, setFeedbackMessage] = useState('');
-+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
- 
-   // Ticket detail reply input state
-   const [replyText, setReplyText] = useState('');
- 
--  // Loaded/saved tickets
--  const [tickets, setTickets] = useState<SupportTicket[]>(() => {
--    const saved = localStorage.getItem('nexora_support_tickets');
--    if (saved) {
-+  // Real tickets from Supabase support_tickets (created_by = this customer).
-+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
-+  const [ticketsLoading, setTicketsLoading] = useState(true);
-+  const [userId, setUserId] = useState<string | null>(null);
-+
-+  useEffect(() => {
-+    let cancelled = false;
-+    const init = async () => {
-+      if (!supabase) {
-+        setTicketsLoading(false);
-+        return;
-+      }
-       try {
--        return JSON.parse(saved);
--      } catch (e) {
--        console.error(e);
-+        const { data } = await supabase.auth.getUser();
-+        const uid = data.user?.id ?? null;
-+        if (cancelled) return;
-+        setUserId(uid);
-+        if (!uid) {
-+          setTicketsLoading(false);
-+          return;
-+        }
-+        const rows = await loadSupportTickets(supabase, uid);
-+        if (!cancelled) setTickets(rows.map(mapServerTicket));
-+      } catch (err) {
-+        console.warn('Support tickets could not be loaded from Supabase:', err);
-+      } finally {
-+        if (!cancelled) setTicketsLoading(false);
-       }
--    }
--    return [
--      {
--        id: 'NX-TK-105',
--        subject: 'Reschedule slot issues',
--        category: 'Booking',
--        status: 'OPEN',
--        date: 'Jul 24, 2026',
--        messages: [
--          {
--            sender: 'user',
--            text: 'I scheduled a Balayage treatment at Aura Premium Salon for tomorrow at 11:00 AM, but I need to push it to 2:00 PM. The app says the slot is occupied but the salon is empty.',
--            time: 'Jul 24, 04:00 PM',
--          },
--          {
--            sender: 'executive',
--            text: 'Hi Priya! Let me check the real-time availability of Aura Premium Salon. We are seeing a block on their end, but let me call them directly to open up the 2:00 PM slot for you.',
--            time: 'Jul 24, 04:15 PM',
--          },
--        ],
--      },
--      {
--        id: 'NX-TK-104',
--        subject: 'Double payment for Aura Booking',
--        category: 'Payment',
--        status: 'RESOLVED',
--        date: 'Jul 23, 2026',
--        messages: [
--          {
--            sender: 'user',
--            text: 'Hey, my transaction failed on the first try but the money was deducted. I had to pay again to confirm the appointment. Please refund the first transaction.',
--            time: 'Jul 23, 10:15 AM',
--          },
--          {
--            sender: 'executive',
--            text: 'Hi Priya, we are extremely sorry for the inconvenience. We have verified the duplicate payment of ₹1,499 in our systems. We have initiated an automatic refund to your source account. It should reflect in your bank account in 3-5 business days.',
--            time: 'Jul 23, 11:30 AM',
--          },
--          {
--            sender: 'user',
--            text: 'Awesome, thank you for the speedy response!',
--            time: 'Jul 23, 11:45 AM',
--          },
--          {
--            sender: 'executive',
--            text: 'You are very welcome, Priya! I will mark this ticket as resolved. Feel free to open a new one if you have any other questions. Have a fabulous salon session!',
--            time: 'Jul 23, 12:00 PM',
--          },
--        ],
--      },
--    ];
--  });
-+    };
-+    void init();
-+    return () => {
-+      cancelled = true;
-+    };
-+  }, []);
- 
-   // Track expanded FAQ items
-   const [expandedFaqIndex, setExpandedFaqIndex] = useState<number | null>(null);
- 
--  // Sync tickets to localStorage
 -  useEffect(() => {
--    localStorage.setItem('nexora_support_tickets', JSON.stringify(tickets));
--  }, [tickets]);
+-    loadProposals();
+-  }, [loadProposals]);
 -
-   const triggerToast = (msg: string) => {
-     setToast(msg);
-     setTimeout(() => setToast(null), 3000);
-   };
- 
-+  const handleSubmitFeedback = async () => {
-+    if (!supabase || !userId) {
-+      triggerToast('Please sign in to share feedback.');
-+      return;
-+    }
-+    if (feedbackRating === 0 && !feedbackMessage.trim()) {
-+      triggerToast('Add a rating or a message first.');
-+      return;
-+    }
-+    setSubmittingFeedback(true);
-+    try {
-+      await submitFeedback(supabase, userId, feedbackRating, feedbackMessage);
-+      setFeedbackRating(0);
-+      setFeedbackMessage('');
-+      triggerToast('Thank you! Your feedback was sent to the Nexora team.');
-+    } catch (err) {
-+      console.warn('Feedback could not be submitted:', err);
-+      triggerToast('Feedback could not be sent. Please try again.');
-+    } finally {
-+      setSubmittingFeedback(false);
-+    }
-+  };
-+
-   const FAQS = [
-     {
-       category: 'Booking',
-@@ -167,47 +193,47 @@ export const SupportScreen: React.FC<SupportScreenProps> = ({
-     return matchesSearch && matchesCategory;
-   });
- 
--  const handleCreateTicket = (e: React.FormEvent) => {
-+  const handleCreateTicket = async (e: React.FormEvent) => {
-     e.preventDefault();
-     if (!newSubject.trim() || !newDescription.trim()) {
-       triggerToast('Please fill in all ticket details.');
-       return;
-     }
-+    if (!supabase || !userId) {
-+      triggerToast('Please sign in to create a support ticket.');
-+      return;
-+    }
- 
--    const newTicket: SupportTicket = {
--      id: `NX-TK-${Math.floor(100 + Math.random() * 900)}`,
--      subject: newSubject,
--      category: newCategory,
--      status: 'OPEN',
--      date: 'Just now',
--      messages: [
--        {
--          sender: 'user',
--          text: newDescription,
--          time: 'Just now',
+-  return (
+-    <div className="flex flex-col w-full max-w-md mx-auto pb-32 animate-in fade-in duration-200">
+-      <div className="flex flex-col gap-6 p-6">
+-        <header className="flex flex-col gap-1">
+-          <span className="text-[12px] font-bold text-[#e6007e] uppercase tracking-widest">Growth Partner</span>
+-          <h1 className="text-2xl font-extrabold text-[#26181c]">Welcome, {user.user_metadata?.full_name || 'Partner'}</h1>
+-          <p className="text-sm text-[#5a3f47]">Manage your salon proposals and track commissions.</p>
+-        </header>
+-
+-        {/* Tab Navigation */}
+-        <div className="flex bg-[#f8eff3] p-1 rounded-2xl gap-1">
+-          <button
+-            onClick={() => setActiveTab('overview')}
+-            className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${
+-              activeTab === 'overview' ? 'bg-white text-[#e6007e] shadow-sm' : 'text-[#5a3f47]'
+-            }`}
+-          >
+-            Overview
+-          </button>
+-          <button
+-            onClick={() => setActiveTab('proposals')}
+-            className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${
+-              activeTab === 'proposals' ? 'bg-white text-[#e6007e] shadow-sm' : 'text-[#5a3f47]'
+-            }`}
+-          >
+-            My Proposals
+-          </button>
+-          <button
+-            onClick={() => setActiveTab('new-proposal')}
+-            className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${
+-              activeTab === 'new-proposal' ? 'bg-white text-[#e6007e] shadow-sm' : 'text-[#5a3f47]'
+-            }`}
+-          >
+-            New Salon
+-          </button>
+-        </div>
+-
+-        {activeTab === 'overview' && (
+-          <div className="flex flex-col gap-4">
+-            <div className="grid grid-cols-2 gap-4">
+-              <div className="bg-white p-4 rounded-2xl border border-[#e8e8e8] shadow-sm">
+-                <span className="text-[10px] font-bold text-[#8c7077] uppercase">Total Proposals</span>
+-                <p className="text-2xl font-bold text-[#26181c]">{proposals.length}</p>
+-              </div>
+-              <div className="bg-white p-4 rounded-2xl border border-[#e8e8e8] shadow-sm">
+-                <span className="text-[10px] font-bold text-[#8c7077] uppercase">Published</span>
+-                <p className="text-2xl font-bold text-[#26181c]">{proposals.filter(p => p.status === 'published').length}</p>
+-              </div>
+-            </div>
+-            
+-            <div className="bg-[#e6007e] p-6 rounded-[24px] text-white shadow-lg">
+-              <h3 className="font-bold text-lg mb-1">Commission Earned</h3>
+-              <p className="text-3xl font-extrabold">₹0.00</p>
+-              <p className="text-[11px] opacity-80 mt-2">Payouts are processed after salon publication and verification.</p>
+-            </div>
+-
+-            <button
+-              onClick={() => setActiveTab('new-proposal')}
+-              className="w-full h-14 bg-[#26181c] text-white rounded-2xl font-bold flex items-center justify-center gap-2 shadow-md"
+-            >
+-              <span className="material-symbols-outlined">add_circle</span>
+-              Setup New Salon Website
+-            </button>
+-          </div>
+-        )}
+-
+-        {activeTab === 'proposals' && (
+-          <div className="flex flex-col gap-4">
+-            {loading ? (
+-              <p className="text-center py-10 text-[#8c7077]">Loading proposals...</p>
+-            ) : proposals.length === 0 ? (
+-              <div className="bg-white p-10 rounded-2xl border border-[#e8e8e8] text-center">
+-                <span className="material-symbols-outlined text-4xl text-[#e0bec6] mb-2">assignment</span>
+-                <p className="text-sm font-semibold text-[#5a3f47]">No proposals found.</p>
+-                <button onClick={() => setActiveTab('new-proposal')} className="text-[#e6007e] text-xs font-bold mt-2 underline">Create your first proposal</button>
+-              </div>
+-            ) : (
+-              proposals.map(proposal => (
+-                <div key={proposal.id} className="bg-white p-4 rounded-2xl border border-[#e8e8e8] shadow-sm flex flex-col gap-3">
+-                  <div className="flex justify-between items-start">
+-                    <div>
+-                      <h3 className="font-bold text-[#26181c]">{proposal.payload?.profile?.name || 'Salon Proposal'}</h3>
+-                      <p className="text-[11px] text-[#8c7077]">Updated {new Date(proposal.updated_at).toLocaleDateString()}</p>
+-                    </div>
+-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+-                      proposal.status === 'published' ? 'bg-emerald-100 text-emerald-800' :
+-                      proposal.status === 'approved' ? 'bg-blue-100 text-blue-800' :
+-                      proposal.status === 'submitted' ? 'bg-amber-100 text-amber-800' :
+-                      'bg-slate-100 text-slate-800'
+-                    }`}>
+-                      {proposal.status}
+-                    </span>
+-                  </div>
+-                  <div className="flex items-center justify-between pt-3 border-t border-slate-50">
+-                    <span className="text-[10px] text-[#5a3f47]">Revision {proposal.version}</span>
+-                    <button className="text-[#e6007e] text-xs font-bold flex items-center gap-1">
+-                      View Details
+-                      <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+-                    </button>
+-                  </div>
+-                </div>
+-              ))
+-            )}
+-          </div>
+-        )}
+-
+-        {activeTab === 'new-proposal' && (
+-           <GrowthPartnerProposalForm onSubmitted={async () => {
+-             await loadProposals();
+-             setActiveTab('proposals');
+-           }} />
+-        )}
+-
+-        <button 
+-          onClick={onLogout}
+-          className="mt-4 text-rose-600 text-xs font-bold border border-rose-100 py-3 rounded-xl hover:bg-rose-50 transition-colors"
+-        >
+-          Sign Out
+-        </button>
+-      </div>
+-    </div>
+-  );
+-};
+-
+-// Adapted from nexora-main-website
+-function GrowthPartnerProposalForm({ onSubmitted }: { onSubmitted: () => Promise<void> }) {
+-  const [businessName, setBusinessName] = useState("");
+-  const [ownerEmail, setOwnerEmail] = useState("");
+-  const [phone, setPhone] = useState("");
+-  const [city, setCity] = useState("Jaipur");
+-  const [area, setArea] = useState("");
+-  const [address, setAddress] = useState("");
+-  const [description, setDescription] = useState("");
+-  const [openingTime, setOpeningTime] = useState("09:00");
+-  const [closingTime, setClosingTime] = useState("20:00");
+-  const [templateKey, setTemplateKey] = useState("modern-salon");
+-  const [busy, setBusy] = useState(false);
+-  const [message, setMessage] = useState("");
+-
+-  const submit = async (e: React.FormEvent) => {
+-    e.preventDefault();
+-    setBusy(true);
+-    setMessage("");
+-    try {
+-      if (!supabase) throw new Error("Supabase not configured");
+-      const { data: { user } } = await supabase.auth.getUser();
+-      if (!user) throw new Error("Session expired");
+-
+-      // 1. Ensure growth_partner record exists
+-      let { data: partner } = await supabase.from('growth_partners').select('id').eq('user_id', user.id).maybeSingle();
+-      if (!partner) {
+-        const suffix = crypto.randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
+-        const { data: newPartner, error: partnerErr } = await supabase.from('growth_partners').insert({
+-          user_id: user.id,
+-          partner_code: `NXR${suffix}`,
+-          referral_code: `REF${suffix}`,
+-          status: 'applied'
+-        }).select('id').single();
+-        if (partnerErr) throw partnerErr;
+-        partner = newPartner;
+-      }
+-
+-      // 2. Create application
+-      const { data: app, error: appErr } = await supabase.from('shop_onboarding_applications').insert({
+-        submitted_by_partner_id: partner.id,
+-        status: 'draft',
+-        current_step: 6,
+-        owner_email: ownerEmail.trim().toLowerCase(),
+-        owner_phone: phone.trim(),
+-        shop_name: businessName.trim(),
+-        city: city.trim(),
+-        locality: area.trim(),
+-        full_address: address.trim(),
+-        opening_time: openingTime,
+-        closing_time: closingTime,
+-        about_shop: description.trim(),
+-        website_template: templateKey,
+-      }).select('id').single();
+-      if (appErr) throw appErr;
+-
+-      // 3. Save proposal
+-      const payload = {
+-        profile: {
+-          name: businessName.trim(),
+-          description: description.trim(),
+-          phone: phone.trim(),
+-          email: ownerEmail.trim().toLowerCase(),
+-          address: address.trim(),
+-          area: area.trim(),
+-          city: city.trim(),
+-          opening_hours: { opens: openingTime, closes: closingTime },
 -        },
--        {
--          sender: 'executive',
--          text: `Hi Priya! Thank you for raising this. We have registered your ticket under category "${newCategory}" and our customer service specialist has been assigned to help you with "${newSubject}". We will review and reply within 15 minutes!`,
--          time: 'Just now',
--        },
--      ],
--    };
--
--    setTickets((prev) => [newTicket, ...prev]);
--    setNewSubject('');
--    setNewDescription('');
--    triggerToast('Support Ticket Created!');
--    setActiveTab('my-tickets');
-+    setSubmittingTicket(true);
-+    try {
-+      const created = await createSupportTicket(supabase, userId, {
-+        subject: newSubject,
-+        category: newCategory,
-+        description: newDescription,
-+      });
-+      setTickets((prev) => [mapServerTicket(created), ...prev]);
-+      setNewSubject('');
-+      setNewDescription('');
-+      triggerToast('Support ticket created! Our team will get back to you.');
-+      setActiveTab('my-tickets');
-+    } catch (err) {
-+      console.warn('Ticket could not be created:', err);
-+      triggerToast('Ticket could not be created. Please try again.');
-+    } finally {
-+      setSubmittingTicket(false);
-+    }
-   };
- 
-+  // Replies are appended to the open conversation view. The shared backend
-+  // stores the ticket (subject/category/status) — full agent threading is a
-+  // backend feature request, so no fake agent replies are simulated.
-   const handleSendReply = () => {
-     if (!replyText.trim() || !selectedTicket) return;
- 
-     const updatedMessage: TicketMessage = {
-       sender: 'user',
-       text: replyText,
--      time: 'Just now',
-+      time: new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
-     };
- 
-     const updatedTickets = tickets.map((t) => {
-@@ -231,35 +257,6 @@ export const SupportScreen: React.FC<SupportScreenProps> = ({
-         messages: [...prev.messages, updatedMessage],
-       };
-     });
--
--    // Simulate agent auto-reply
--    setTimeout(() => {
--      const systemReply: TicketMessage = {
--        sender: 'executive',
--        text: "Thanks for the update. I'm actively reviewing your message and will provide an update shortly. Your convenience is our highest priority!",
--        time: 'Just now',
+-        services: [],
+-        template: { key: templateKey },
 -      };
 -
--      setTickets((prevTickets) =>
--        prevTickets.map((t) => {
--          if (t.id === selectedTicket.id) {
--            return {
--              ...t,
--              messages: [...t.messages, systemReply],
--            };
--          }
--          return t;
--        })
--      );
--
--      setSelectedTicket((prev) => {
--        if (!prev) return null;
--        return {
--          ...prev,
--          messages: [...prev.messages, systemReply],
--        };
+-      const { error: proposalErr } = await supabase.rpc('save_growth_partner_salon_setup', {
+-        p_application_id: app.id,
+-        p_payload: payload,
+-        p_submit: true
 -      });
--    }, 1500);
-   };
- 
-   const getCategoryIcon = (cat: string) => {
-@@ -477,6 +474,51 @@ export const SupportScreen: React.FC<SupportScreenProps> = ({
-                 </button>
-               </div>
- 
-+              {/* Rate your experience — stored in customer_feedback */}
-+              <div className="px-page-margin-mobile mb-stack-lg">
-+                <div className="bg-surface-container-lowest rounded-[18px] shadow-sm border border-[#e8e8e8] p-4 flex flex-col gap-3">
-+                  <h3 className="font-title-md text-title-md text-on-surface flex items-center gap-2">
-+                    <span className="material-symbols-outlined text-primary-pink">thumb_up</span>
-+                    Rate your app experience
-+                  </h3>
-+                  <div className="flex items-center gap-1.5">
-+                    {[1, 2, 3, 4, 5].map((star) => (
-+                      <button
-+                        key={star}
-+                        type="button"
-+                        onClick={() => setFeedbackRating(star)}
-+                        aria-label={`Rate ${star} star${star > 1 ? 's' : ''}`}
-+                        className="cursor-pointer transition-transform active:scale-90"
-+                      >
-+                        <span
-+                          className={`material-symbols-outlined text-[28px] ${
-+                            star <= feedbackRating ? 'text-amber-500' : 'text-slate-300'
-+                          }`}
-+                          style={{ fontVariationSettings: star <= feedbackRating ? "'FILL' 1" : undefined }}
-+                        >
-+                          star
-+                        </span>
-+                      </button>
-+                    ))}
-+                  </div>
-+                  <textarea
-+                    value={feedbackMessage}
-+                    onChange={(e) => setFeedbackMessage(e.target.value)}
-+                    placeholder="Optional: tell us what we can improve..."
-+                    rows={2}
-+                    className="w-full bg-white rounded-xl p-3 border border-[#e8e8e8] text-xs text-on-surface focus:outline-none focus:border-[#e6007e] transition-colors resize-none"
-+                  />
-+                  <button
-+                    type="button"
-+                    onClick={() => void handleSubmitFeedback()}
-+                    disabled={submittingFeedback}
-+                    className="self-end h-10 px-5 bg-[#ffe8ed] text-[#e6007e] font-bold text-xs rounded-xl hover:bg-[#ffd9e2] transition-colors cursor-pointer disabled:opacity-60"
-+                  >
-+                    {submittingFeedback ? 'Sending...' : 'Send Feedback'}
-+                  </button>
-+                </div>
-+              </div>
-+
-               {/* FAQs Accordion */}
-               <div className="px-page-margin-mobile">
-                 <h3 className="font-title-md text-title-md text-on-surface mb-stack-md flex items-center gap-2">
-@@ -535,7 +577,12 @@ export const SupportScreen: React.FC<SupportScreenProps> = ({
-                 <p className="text-[12px] text-[#5a3f47] mt-0.5">Track and respond to your active requests.</p>
-               </div>
- 
--              {tickets.length === 0 ? (
-+              {ticketsLoading ? (
-+                <div className="flex flex-col items-center justify-center py-16 px-4 bg-white rounded-3xl border border-[#e8e8e8]">
-+                  <div className="w-8 h-8 border-[3px] border-[#e6007e]/20 border-t-[#e6007e] rounded-full animate-spin mb-3" />
-+                  <p className="text-xs text-[#5a3f47]">Loading your tickets...</p>
-+                </div>
-+              ) : tickets.length === 0 ? (
-                 <div className="flex flex-col items-center justify-center py-16 px-4 bg-white rounded-3xl border border-[#e8e8e8]">
-                   <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center text-[#8c7077] border border-[#e8e8e8]/50">
-                     <span className="material-symbols-outlined text-[28px]">confirmation_number</span>
-@@ -669,9 +716,10 @@ export const SupportScreen: React.FC<SupportScreenProps> = ({
-                 </button>
-                 <button
-                   type="submit"
--                  className="flex-1 h-12 bg-[#e6007e] hover:bg-[#b90064] text-white font-bold rounded-xl transition-colors shadow-md shadow-primary-pink/10 cursor-pointer text-xs"
-+                  disabled={submittingTicket}
-+                  className="flex-1 h-12 bg-[#e6007e] hover:bg-[#b90064] text-white font-bold rounded-xl transition-colors shadow-md shadow-primary-pink/10 cursor-pointer text-xs disabled:opacity-60"
-                 >
--                  Submit Ticket
-+                  {submittingTicket ? 'Creating ticket...' : 'Submit Ticket'}
-                 </button>
-               </div>
-             </form>
-diff --git a/src/data/mockData.ts b/src/data/mockData.ts
-index d9429f1..eb98272 100644
---- a/src/data/mockData.ts
-+++ b/src/data/mockData.ts
-@@ -1,4 +1,4 @@
--import { Salon, Booking, UserLocation } from '../types';
-+import { UserLocation } from '../types';
- 
- export const LOGO_URL = '/src/assets/images/nexora_logo_luxury_1785236781115.jpg';
- export const LOGO_SQUARE = '/src/assets/images/nexora_logo_luxury_1785236781115.jpg';
-@@ -28,475 +28,3 @@ export const RECENT_LOCATIONS = [
-   { area: 'Koramangala', cityState: 'Bengaluru, Karnataka' },
- ];
- 
--export const MOCK_SALONS: Salon[] = [
--  {
--    id: 'luxe-hair-studio-jaipur',
--    name: 'Luxe Hair Studio & Beauty Bar',
--    area: 'Malviya Nagar',
--    city: 'Jaipur',
--    distanceKm: 1.4,
--    rating: 4.95,
--    reviewCount: 248,
--    reviewsCount: 248,
--    verifiedReviewsCount: 240,
--    verified: true,
--    weeklyCollection: 58400,
--    monthlyCollection: 238000,
--    completedBookings: 428,
--    lastActiveTime: Date.now() - 300000,
--    image: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=600&q=80',
--    gallery: [
--      'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=600&q=80',
--      'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=600&q=80',
--    ],
--    startingPrice: 699,
--    tags: ['Hair Styling', 'Keratin Therapy', 'Bridal Makeup'],
--    genderCategory: 'Unisex',
--    address: '12, M.I. Road, Malviya Nagar, Jaipur, Rajasthan 302017',
--    hours: '09:30 AM - 08:30 PM',
--    description: 'Premier luxury salon in Jaipur specializing in organic hair rituals, precision styling, and high-definition bridal makeovers.',
--    phone: '+91 98290 11223',
--    bookingUrl: 'https://luxehairstudiojaipur.com/book',
--    amenities: ['WiFi', 'AC', 'Valet Parking', 'Pink City Lounge', 'UPI Accepted'],
--    offers: [
--      { id: 'offj1', title: 'Flat ₹500 OFF on Keratin Ritual', code: 'LUXE500', amountOff: 500 }
--    ],
--    services: [
--      { id: 'j1', name: "Royal Haircut & Blowdry", durationMinutes: 45, price: 699, category: 'Hair Styling', description: 'Precision styling with organic wash & volume blowdry.' },
--      { id: 'j2', name: 'Global Hair Coloring & Gloss', durationMinutes: 90, price: 2499, category: 'Hair Styling', description: 'Ammonia-free vibrant color tint with gloss coat.' },
--      { id: 'j3', name: 'Gold Radiance Facial', durationMinutes: 60, price: 1800, category: 'Skin Care', description: '24K gold dust exfoliation for glowing skin.' },
--    ],
--    staff: [
--      { id: 'sj1', name: 'Ritu V.', role: 'Master Stylist', rating: 4.9, reviewsCount: 120, avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB6FnEPu-SL4wCFVKcdUT8T3HAr4WTtQffHbnb-a1Q_KHmwlXmuuMexI_oX7VO3Ck7qecdPxZscnfPyNFROadrFDvlkX2aKpGC7DKv8u_kCOn8d2MGCISl3rqUL79jDHNAaMeiBfwgEUSzl-uZoz702Y0_08nr4fJCuUBFEAasK6fvfIalsfNsECYrq-GqF_jzTRNgR4lOYUXXnfcExQ5qPrfu7Tw6Sle-tPP-le3KXO-hb9dwZ-x-2wkRrIieKF0Y75ikYZ-xFPME' },
--    ],
--  },
--  {
--    id: 'royal-pink-city-salon',
--    name: 'Royal Pink City Salon & Spa',
--    area: 'C Scheme',
--    city: 'Jaipur',
--    distanceKm: 2.1,
--    rating: 4.92,
--    reviewCount: 312,
--    reviewsCount: 312,
--    verifiedReviewsCount: 305,
--    verified: true,
--    weeklyCollection: 64200,
--    monthlyCollection: 256000,
--    completedBookings: 462,
--    lastActiveTime: Date.now() - 120000,
--    image: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=600&q=80',
--    gallery: [
--      'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=600&q=80',
--    ],
--    startingPrice: 799,
--    tags: ['Royal Spa', 'Hair Spa', 'Bridal Package'],
--    genderCategory: 'Unisex',
--    address: '45, Ashok Marg, C Scheme, Jaipur, Rajasthan 302001',
--    hours: '10:00 AM - 09:00 PM',
--    description: 'Authentic royal wellness and hair aesthetics in C Scheme. Famous for ayurvedic hair spas and festive glowing facials.',
--    phone: '+91 98291 44556',
--    bookingUrl: 'https://royalpinkcitysalon.com/reserve',
--    amenities: ['Ayurvedic Oils', 'Private Cabins', 'AC', 'Herbal Tea'],
--    services: [
--      { id: 'rj1', name: 'Ayurvedic Hair Spa Ritual', durationMinutes: 60, price: 1299, category: 'Hair Spa', description: 'Herb infused oil scalp therapy and warm steam.' },
--      { id: 'rj2', name: 'Kesar & Chandan Facial', durationMinutes: 60, price: 1600, category: 'Skin Care', description: 'Saffron and sandalwood skin detox for bridal glow.' },
--    ],
--    staff: [
--      { id: 'sj2', name: 'Anil S.', role: 'Senior Therapist', rating: 4.9, reviewsCount: 140, avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAym-1XqNvvUES_juaNcLK1p8qid6RxJWHmLyEsIlb7AZSTPL3DCcTaY--lrpsKfwZwtjvl2FDo7LyVmLuDZb5KGoPI2DvOGefWFzVJnsIXTM2NkLwCvN_xGTXmI3_23Le-KpVYYx4qmB4kzK9QGaBpL0uNx2cigDOD6i19c0NbGXmLIMKy3m7bC9xhY50Odkqojhl7HF4nT9FrV_K_3UJKBBfiUTYnIcThOzvvmaz4DyrB8m0nL0W3-kL4DbP7Oyz_grSdxlUlWHQ' },
--    ],
--  },
--  {
--    id: 'aura-premium',
--    name: 'Aura Premium Studio',
--    area: '100ft Road',
--    city: 'Bangalore',
--    distanceKm: 1.2,
--    rating: 4.9,
--    reviewCount: 120,
--    reviewsCount: 120,
--    verifiedReviewsCount: 118,
--    verified: true,
--    weeklyCollection: 72000,
--    monthlyCollection: 285000,
--    completedBookings: 510,
--    lastActiveTime: Date.now() - 60000,
--    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAXNrkRfI9y_os1hhcj59fy20hKE4l0QqGUNQVn-XxClnWXAHhxsUq9StaxNDW-gVTqgRCTs4CRcDREHkDRl3O281WKov_60JM-vqbkQx2HFWfO7hqLgolrxEBjj4YuPr8wtWTvV7UvBSHcdo3tRzO_LrCzSCVWB6G_buJc_4YPh8LM_76wAGfy-QauOBGWykpt8KUDauq9kcOnmuvYaFU9Er-tKCssEugNxpC4_9MFMrErejr4RxpAFvlV13B_Jrs16yTwJhZbPFo',
--    gallery: [
--      'https://lh3.googleusercontent.com/aida-public/AB6AXuAXNrkRfI9y_os1hhcj59fy20hKE4l0QqGUNQVn-XxClnWXAHhxsUq9StaxNDW-gVTqgRCTs4CRcDREHkDRl3O281WKov_60JM-vqbkQx2HFWfO7hqLgolrxEBjj4YuPr8wtWTvV7UvBSHcdo3tRzO_LrCzSCVWB6G_buJc_4YPh8LM_76wAGfy-QauOBGWykpt8KUDauq9kcOnmuvYaFU9Er-tKCssEugNxpC4_9MFMrErejr4RxpAFvlV13B_Jrs16yTwJhZbPFo',
--      'https://lh3.googleusercontent.com/aida-public/AB6AXuBU5ioD8ECJwIjxf7nL4GFiYyZkC5KS9Tg8KviIMZ4CQku5WLJ80Kw5gHfDNX25-h8BpHG7ERQfPqwDCPMBlrvja3Xupvm6LKWDVV41_kohsb0cvPH_cv51wS_UH7nIDqMz0FBSJOBjzLyOLHKhiZKO5v944i_9rLFRn4mKrb2WhYszYN2NVkwnK2Nb5RfeQVqjlr-qlwQ3_MJshmlX8Jh_40ZJZJEhNRF4GFrlbKvBt5hetyLuYpPLKfV6QZKXHnjN4Xp0viG_rmE',
--      'https://lh3.googleusercontent.com/aida-public/AB6AXuBKjqHS__8pKWlHQ0Of3E1en-fZ_uPaluRnj_EcHI8HW7-6R2LvSOhQcijKHb2JQYglet-oxJ8Hu_RwNTv8SFK5ceJ8eBir2yMm1MhgA_laUQyPGxY6cz6YWIhOMFGE7kud32k81Nr9EIrexOLPo0oTRew5qiW7SWl7CTwTs9hWSTXArKuKJee_7o1oqJ6jz22o-DYlUb3CAsOrW-N3ZvBwHOvAppEv2ZTneVEaVI76gT32y-yGNASksxSfpP07R3nBV3etgqePX2Y',
--    ],
--    startingPrice: 899,
--    tags: ['Hair Color', 'Balayage', 'Hair Spa'],
--    genderCategory: 'Unisex',
--    address: '42, 100ft Road, Indiranagar, Bangalore 560038',
--    hours: '10:00 AM - 8:30 PM',
--    description: 'Aura Premium Studio offers an ultra-luxurious hair and scalp experience. Featuring custom Balayage, organic Kerastase rituals, and tailored precision haircuts.',
--    phone: '+91 98200 12345',
--    bookingUrl: 'https://aura-studio.salonbooking.com/book',
--    amenities: ['WiFi', 'AC', 'Valet Parking', 'Espresso Bar', 'Cards & UPI Accepted'],
--    offers: [
--      { id: 'off1', title: '20% OFF on Balayage & Hair Spa', code: 'AURA20', discountPercent: 20 },
--      { id: 'off1b', title: 'Flat ₹300 OFF on HydraGlow Facial', code: 'GLOW300', amountOff: 300 }
--    ],
--    services: [
--      { id: 'a1', name: "Woman's Haircut & Blowdry", durationMinutes: 45, price: 899, category: 'Hair Styling', description: 'Precision hair trim with customized styling and signature blowdry.' },
--      { id: 'a2', name: 'Balayage & Toning', durationMinutes: 120, price: 3499, category: 'Hair Styling', description: 'Hand-painted sun-kissed highlights with premium gloss toner.' },
--      { id: 'a3', name: 'Kerastase Elixir Hair Spa', durationMinutes: 60, price: 1899, category: 'Hair Spa', description: 'Deep nourishing ritual for smooth, lustrous locks.' },
--      { id: 'a4', name: 'HydraGlow Facial Treatment', durationMinutes: 60, price: 2100, category: 'Skin Care', description: 'Infusion of hyaluronic serum for radiant glass skin.' },
--    ],
--    staff: [
--      { id: 's1', name: 'Maya S.', role: 'Senior Stylist', rating: 4.9, reviewsCount: 84, avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB6FnEPu-SL4wCFVKcdUT8T3HAr4WTtQffHbnb-a1Q_KHmwlXmuuMexI_oX7VO3Ck7qecdPxZscnfPyNFROadrFDvlkX2aKpGC7DKv8u_kCOn8d2MGCISl3rqUL79jDHNAaMeiBfwgEUSzl-uZoz702Y0_08nr4fJCuUBFEAasK6fvfIalsfNsECYrq-GqF_jzTRNgR4lOYUXXnfcExQ5qPrfu7Tw6Sle-tPP-le3KXO-hb9dwZ-x-2wkRrIieKF0Y75ikYZ-xFPME' },
--      { id: 's2', name: 'David L.', role: 'Color Specialist', rating: 4.8, reviewsCount: 62, avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAym-1XqNvvUES_juaNcLK1p8qid6RxJWHmLyEsIlb7AZSTPL3DCcTaY--lrpsKfwZwtjvl2FDo7LyVmLuDZb5KGoPI2DvOGefWFzVJnsIXTM2NkLwCvN_xGTXmI3_23Le-KpVYYx4qmB4kzK9QGaBpL0uNx2cigDOD6i19c0NbGXmLIMKy3m7bC9xhY50Odkqojhl7HF4nT9FrV_K_3UJKBBfiUTYnIcThOzvvmaz4DyrB8m0nL0W3-kL4DbP7Oyz_grSdxlUlWHQ' },
--      { id: 's3', name: 'Sarah K.', role: 'Esthetician', rating: 5.0, reviewsCount: 120, avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB9RAhukgBLye8hQOojgrb3bjsb6PQ_GhdMufuidFvlJqxVZ_xINH0Fdc1_s8l0aKXMACAyJMrQquxZKVQXPbcPnysxo2AAatGH3nEL1rVhgI_0bjqpB9KoTtaO7uJwL42BWgx9jqqZT8lTENQn-lR5HjKB-qPHz60CkRRmoz6LOby9AqVT6YTIEvV8qGyGrD_9L7ajxDuE2iRaPMw8FOg6RbQvHBxMhsSz267is5uVRucT7hdBBpbaVJ93mQq5R3csJlGGpBtEazk' },
--    ],
--  },
--  {
--    id: 'glam-room',
--    name: 'The Glam Room',
--    area: 'Bandra West',
--    city: 'Mumbai',
--    distanceKm: 1.2,
--    rating: 4.9,
--    reviewCount: 128,
--    reviewsCount: 128,
--    verifiedReviewsCount: 125,
--    verified: true,
--    weeklyCollection: 68500,
--    monthlyCollection: 270000,
--    completedBookings: 490,
--    lastActiveTime: Date.now() - 180000,
--    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBU5ioD8ECJwIjxf7nL4GFiYyZkC5KS9Tg8KviIMZ4CQku5WLJ80Kw5gHfDNX25-h8BpHG7ERQfPqwDCPMBlrvja3Xupvm6LKWDVV41_kohsb0cvPH_cv51wS_UH7nIDqMz0FBSJOBjzLyOLHKhiZKO5v944i_9rLFRn4mKrb2WhYszYN2NVkwnK2Nb5RfeQVqjlr-qlwQ3_MJshmlX8Jh_40ZJZJEhNRF4GFrlbKvBt5hetyLuYpPLKfV6QZKXHnjN4Xp0viG_rmE',
--    gallery: [
--      'https://lh3.googleusercontent.com/aida-public/AB6AXuBU5ioD8ECJwIjxf7nL4GFiYyZkC5KS9Tg8KviIMZ4CQku5WLJ80Kw5gHfDNX25-h8BpHG7ERQfPqwDCPMBlrvja3Xupvm6LKWDVV41_kohsb0cvPH_cv51wS_UH7nIDqMz0FBSJOBjzLyOLHKhiZKO5v944i_9rLFRn4mKrb2WhYszYN2NVkwnK2Nb5RfeQVqjlr-qlwQ3_MJshmlX8Jh_40ZJZJEhNRF4GFrlbKvBt5hetyLuYpPLKfV6QZKXHnjN4Xp0viG_rmE',
--      'https://lh3.googleusercontent.com/aida-public/AB6AXuAXNrkRfI9y_os1hhcj59fy20hKE4l0QqGUNQVn-XxClnWXAHhxsUq9StaxNDW-gVTqgRCTs4CRcDREHkDRl3O281WKov_60JM-vqbkQx2HFWfO7hqLgolrxEBjj4YuPr8wtWTvV7UvBSHcdo3tRzO_LrCzSCVWB6G_buJc_4YPh8LM_76wAGfy-QauOBGWykpt8KUDauq9kcOnmuvYaFU9Er-tKCssEugNxpC4_9MFMrErejr4RxpAFvlV13B_Jrs16yTwJhZbPFo',
--      'https://lh3.googleusercontent.com/aida-public/AB6AXuBqhV0t5j__2UFAE_pYAATwrVVeuEo_35VQz8aItegXSp285ZOGugHYZnkRVTrRUKgMzzOLNjuuAKFwUaFUn8Ko1MSDyJG59ktfQGxwQ57XtjnikoWEEtEIq2zBFLglXZk2SdoSnnNVXm7iW7W446ICYYFJu-Op0WaK4UfUULDd_JcuGnb5N-4eUFDkFSw7-JcFpZ4NKsyRaaENuf2NYPKhBsQ-d06_dqmhcRFdfxzC3l1t3ADz_AiGTfMe-QKdNkn4QltKcX6L6Xc',
--    ],
--    startingPrice: 800,
--    tags: ['Hair Styling', 'Creative Color', 'Keratin Spa'],
--    genderCategory: 'Unisex',
--    address: '14/A Waterfield Road, Bandra West, Mumbai, Maharashtra 400050',
--    hours: '10:00 AM - 8:00 PM',
--    description: 'The Glam Room is a premium sanctuary for modern beauty. We specialize in bespoke haircuts, advanced coloring techniques, and rejuvenating skin treatments using top-tier international products.',
--    phone: '+91 98211 54321',
--    bookingUrl: 'https://theglamroom.in/appointments',
--    amenities: ['WiFi', 'AC', 'Valet Parking', 'Cocktail Lounge', 'UPI Accepted'],
--    offers: [
--      { id: 'off2', title: 'Flat ₹200 OFF on Gel Manicure', code: 'GLAM200', amountOff: 200 }
--    ],
--    services: [
--      { id: 'g1', name: "Woman's Haircut", durationMinutes: 45, price: 800, category: 'Hair Styling', description: 'Senior Stylist precision haircut, wash and customized styling.' },
--      { id: 'g2', name: 'Creative Coloring', durationMinutes: 120, price: 2500, category: 'Hair Styling', description: 'Vibrant highlight gloss or custom dimensional color tint. Includes wash.' },
--      { id: 'g3', name: 'Keratin Treatment', durationMinutes: 90, price: 4200, category: 'Spa & Care', description: 'Intensive smoothing treatment using premium formaldehyde-free keratin.' },
--      { id: 'g4', name: 'Signature Gel Manicure', durationMinutes: 45, price: 1200, category: 'Nails', description: 'Long-lasting high-shine polish with cuticle detox massage.' },
--    ],
--    staff: [
--      { id: 's1', name: 'Maya S.', role: 'Senior Stylist', rating: 4.9, reviewsCount: 84, avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB6FnEPu-SL4wCFVKcdUT8T3HAr4WTtQffHbnb-a1Q_KHmwlXmuuMexI_oX7VO3Ck7qecdPxZscnfPyNFROadrFDvlkX2aKpGC7DKv8u_kCOn8d2MGCISl3rqUL79jDHNAaMeiBfwgEUSzl-uZoz702Y0_08nr4fJCuUBFEAasK6fvfIalsfNsECYrq-GqF_jzTRNgR4lOYUXXnfcExQ5qPrfu7Tw6Sle-tPP-le3KXO-hb9dwZ-x-2wkRrIieKF0Y75ikYZ-xFPME' },
--      { id: 's2', name: 'Rahul K.', role: 'Color Specialist', rating: 4.8, reviewsCount: 62, avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAym-1XqNvvUES_juaNcLK1p8qid6RxJWHmLyEsIlb7AZSTPL3DCcTaY--lrpsKfwZwtjvl2FDo7LyVmLuDZb5KGoPI2DvOGefWFzVJnsIXTM2NkLwCvN_xGTXmI3_23Le-KpVYYx4qmB4kzK9QGaBpL0uNx2cigDOD6i19c0NbGXmLIMKy3m7bC9xhY50Odkqojhl7HF4nT9FrV_K_3UJKBBfiUTYnIcThOzvvmaz4DyrB8m0nL0W3-kL4DbP7Oyz_grSdxlUlWHQ' },
--      { id: 's3', name: 'Zara M.', role: 'Esthetician', rating: 5.0, reviewsCount: 120, avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB9RAhukgBLye8hQOojgrb3bjsb6PQ_GhdMufuidFvlJqxVZ_xINH0Fdc1_s8l0aKXMACAyJMrQquxZKVQXPbcPnysxo2AAatGH3nEL1rVhgI_0bjqpB9KoTtaO7uJwL42BWgx9jqqZT8lTENQn-lR5HjKB-qPHz60CkRRmoz6LOby9AqVT6YTIEvV8qGyGrD_9L7ajxDuE2iRaPMw8FOg6RbQvHBxMhsSz267is5uVRucT7hdBBpbaVJ93mQq5R3csJlGGpBtEazk' },
--    ],
--  },
--  {
--    id: 'lumiere-studio',
--    name: 'Lumière Studio',
--    area: 'Bandra West',
--    city: 'Mumbai',
--    distanceKm: 1.2,
--    rating: 4.8,
--    reviewCount: 96,
--    reviewsCount: 96,
--    verifiedReviewsCount: 92,
--    verified: true,
--    weeklyCollection: 52000,
--    monthlyCollection: 210000,
--    completedBookings: 380,
--    lastActiveTime: Date.now() - 240000,
--    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBKjqHS__8pKWlHQ0Of3E1en-fZ_uPaluRnj_EcHI8HW7-6R2LvSOhQcijKHb2JQYglet-oxJ8Hu_RwNTv8SFK5ceJ8eBir2yMm1MhgA_laUQyPGxY6cz6YWIhOMFGE7kud32k81Nr9EIrexOLPo0oTRew5qiW7SWl7CTwTs9hWSTXArKuKJee_7o1oqJ6jz22o-DYlUb3CAsOrW-N3ZvBwHOvAppEv2ZTneVEaVI76gT32y-yGNASksxSfpP07R3nBV3etgqePX2Y',
--    gallery: [
--      'https://lh3.googleusercontent.com/aida-public/AB6AXuBKjqHS__8pKWlHQ0Of3E1en-fZ_uPaluRnj_EcHI8HW7-6R2LvSOhQcijKHb2JQYglet-oxJ8Hu_RwNTv8SFK5ceJ8eBir2yMm1MhgA_laUQyPGxY6cz6YWIhOMFGE7kud32k81Nr9EIrexOLPo0oTRew5qiW7SWl7CTwTs9hWSTXArKuKJee_7o1oqJ6jz22o-DYlUb3CAsOrW-N3ZvBwHOvAppEv2ZTneVEaVI76gT32y-yGNASksxSfpP07R3nBV3etgqePX2Y',
--    ],
--    startingPrice: 1500,
--    tags: ['Unisex', 'Kerastase Spa', 'Moroccan Oil'],
--    genderCategory: 'Unisex',
--    address: '88, Turner Road, Bandra West, Mumbai, Maharashtra 400050',
--    hours: '10:00 AM - 9:00 PM',
--    description: 'French minimalist aesthetic studio offering bespoke Moroccan Oil massages, advanced scalp rejuvenation, and couture hair transformations.',
--    phone: '+91 98333 99887',
--    bookingUrl: 'https://lumierestudio.com/book',
--    amenities: ['WiFi', 'AC', 'Private Cabins', 'Herbal Tea'],
--    services: [
--      { id: 'l1', name: 'Kerastase Hair Spa', durationMinutes: 60, price: 1500, category: 'Hair Spa', description: 'Intensive scalp detox and strand smoothing.' },
--      { id: 'l2', name: 'Classic Manicure', durationMinutes: 30, price: 650, category: 'Nails', description: 'Cuticle shaping, gentle scrub, and nail polish application.' },
--      { id: 'l3', name: 'Moroccan Oil Treatment', durationMinutes: 75, price: 2200, category: 'Hair Spa', description: 'Pure argan oil massage and steam therapy.' },
--    ],
--    staff: [
--      { id: 's1', name: 'Maya S.', role: 'Senior Stylist', rating: 4.9, reviewsCount: 84, avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB6FnEPu-SL4wCFVKcdUT8T3HAr4WTtQffHbnb-a1Q_KHmwlXmuuMexI_oX7VO3Ck7qecdPxZscnfPyNFROadrFDvlkX2aKpGC7DKv8u_kCOn8d2MGCISl3rqUL79jDHNAaMeiBfwgEUSzl-uZoz702Y0_08nr4fJCuUBFEAasK6fvfIalsfNsECYrq-GqF_jzTRNgR4lOYUXXnfcExQ5qPrfu7Tw6Sle-tPP-le3KXO-hb9dwZ-x-2wkRrIieKF0Y75ikYZ-xFPME' },
--    ],
--  },
--  {
--    id: 'derma-glow',
--    name: 'DermaGlow Clinic',
--    area: 'CMH Road',
--    city: 'Bangalore',
--    distanceKm: 2.5,
--    rating: 4.7,
--    reviewCount: 45,
--    reviewsCount: 45,
--    verifiedReviewsCount: 44,
--    verified: true,
--    weeklyCollection: 48000,
--    monthlyCollection: 195000,
--    completedBookings: 310,
--    lastActiveTime: Date.now() - 400000,
--    isNew: true,
--    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBqhV0t5j__2UFAE_pYAATwrVVeuEo_35VQz8aItegXSp285ZOGugHYZnkRVTrRUKgMzzOLNjuuAKFwUaFUn8Ko1MSDyJG59ktfQGxwQ57XtjnikoWEEtEIq2zBFLglXZk2SdoSnnNVXm7iW7W446ICYYFJu-Op0WaK4UfUULDd_JcuGnb5N-4eUFDkFSw7-JcFpZ4NKsyRaaENuf2NYPKhBsQ-d06_dqmhcRFdfxzC3l1t3ADz_AiGTfMe-QKdNkn4QltKcX6L6Xc',
--    gallery: [
--      'https://lh3.googleusercontent.com/aida-public/AB6AXuBqhV0t5j__2UFAE_pYAATwrVVeuEo_35VQz8aItegXSp285ZOGugHYZnkRVTrRUKgMzzOLNjuuAKFwUaFUn8Ko1MSDyJG59ktfQGxwQ57XtjnikoWEEtEIq2zBFLglXZk2SdoSnnNVXm7iW7W446ICYYFJu-Op0WaK4UfUULDd_JcuGnb5N-4eUFDkFSw7-JcFpZ4NKsyRaaENuf2NYPKhBsQ-d06_dqmhcRFdfxzC3l1t3ADz_AiGTfMe-QKdNkn4QltKcX6L6Xc',
--    ],
--    startingPrice: 1499,
--    tags: ['Hydrafacial', 'Peels', 'Dermatology'],
--    genderCategory: 'Unisex',
--    address: '102, CMH Road, Indiranagar, Bangalore 560038',
--    hours: '10:30 AM - 7:30 PM',
--    description: 'Clinical skin therapy studio led by certified dermatologists. Hydro-dermabrasion, light therapy, and anti-aging peel solutions.',
--    phone: '+91 98444 11223',
--    bookingUrl: 'https://dermaglowclinic.com/reserve',
--    amenities: ['Dermatologist Certified', 'AC', 'Sterile Cabins', 'Cards Accepted'],
--    services: [
--      { id: 'd1', name: 'Clinical Hydrafacial 3D', durationMinutes: 60, price: 2999, category: 'Skin Care', description: 'Pore extraction, diamond tip abrasion, hyaluronic serum injection.' },
--      { id: 'd2', name: 'Radiance Chemical Peel', durationMinutes: 45, price: 1499, category: 'Skin Care', description: 'Gentle glycolic rejuvenation for instant brightness.' },
--    ],
--    staff: [
--      { id: 's3', name: 'Zara M.', role: 'Lead Esthetician', rating: 5.0, reviewsCount: 120, avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB9RAhukgBLye8hQOojgrb3bjsb6PQ_GhdMufuidFvlJqxVZ_xINH0Fdc1_s8l0aKXMACAyJMrQquxZKVQXPbcPnysxo2AAatGH3nEL1rVhgI_0bjqpB9KoTtaO7uJwL42BWgx9jqqZT8lTENQn-lR5HjKB-qPHz60CkRRmoz6LOby9AqVT6YTIEvV8qGyGrD_9L7ajxDuE2iRaPMw8FOg6RbQvHBxMhsSz267is5uVRucT7hdBBpbaVJ93mQq5R3csJlGGpBtEazk' },
--    ],
--  },
--  {
--    id: 'hive-salon',
--    name: 'The Hive Salon',
--    area: 'Khar West',
--    city: 'Mumbai',
--    distanceKm: 2.5,
--    rating: 4.6,
--    reviewCount: 78,
--    reviewsCount: 78,
--    verifiedReviewsCount: 75,
--    verified: false,
--    weeklyCollection: 39000,
--    monthlyCollection: 155000,
--    completedBookings: 260,
--    lastActiveTime: Date.now() - 500000,
--    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCRM-yy6OnbhOFhZAmgbO5Bm_QrPNOwqdj9ZcphuYvSUbw8Mib0fdO6cdWjt-o80qBuG_zE0iRFTIvBhPpbR85jKoWtVyGDo-5CJSjrMUe6RT0qENN-sc6DPKe8ClliS4oUM9j18gEf6WCkg6KTkEht-x5lqRZP4-5MqysbqXLlLuYp7Sd-RYTbYMQcyAjhnhTGbeI7MImTskPu9qZ4FKBsrczSbLIUZ7_UdpK3kNX4VSiqefXp_Jj88KN-29TzfOIV1LH9L3-_0zg',
--    gallery: [
--      'https://lh3.googleusercontent.com/aida-public/AB6AXuCRM-yy6OnbhOFhZAmgbO5Bm_QrPNOwqdj9ZcphuYvSUbw8Mib0fdO6cdWjt-o80qBuG_zE0iRFTIvBhPpbR85jKoWtVyGDo-5CJSjrMUe6RT0qENN-sc6DPKe8ClliS4oUM9j18gEf6WCkg6KTkEht-x5lqRZP4-5MqysbqXLlLuYp7Sd-RYTbYMQcyAjhnhTGbeI7MImTskPu9qZ4FKBsrczSbLIUZ7_UdpK3kNX4VSiqefXp_Jj88KN-29TzfOIV1LH9L3-_0zg',
--    ],
--    startingPrice: 1200,
--    tags: ['Women Only', 'Olaplex Spa', 'Aromatherapy'],
--    genderCategory: 'Women Only',
--    address: '5th Road, Khar West, Mumbai, Maharashtra 400052',
--    hours: '11:00 AM - 8:00 PM',
--    description: 'An eco-friendly women-only boutique salon surrounded by lush botanical elements. Organic color lines and Olaplex hair bonding.',
--    phone: '+91 98555 66778',
--    bookingUrl: 'https://hivesalon.in/book',
--    amenities: ['Women Only', 'Eco Friendly Products', 'AC', 'Beverages'],
--    services: [
--      { id: 'h1', name: 'Olaplex Repair Spa', durationMinutes: 60, price: 1200, category: 'Hair Spa', description: 'Bond building system to restore damaged protein bonds.' },
--      { id: 'h2', name: 'Aromatherapy Facial', durationMinutes: 50, price: 1600, category: 'Skin Care', description: 'Essential oils massage for stress relief and skin hydration.' },
--    ],
--    staff: [
--      { id: 's1', name: 'Maya S.', role: 'Senior Stylist', rating: 4.9, reviewsCount: 84, avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB6FnEPu-SL4wCFVKcdUT8T3HAr4WTtQffHbnb-a1Q_KHmwlXmuuMexI_oX7VO3Ck7qecdPxZscnfPyNFROadrFDvlkX2aKpGC7DKv8u_kCOn8d2MGCISl3rqUL79jDHNAaMeiBfwgEUSzl-uZoz702Y0_08nr4fJCuUBFEAasK6fvfIalsfNsECYrq-GqF_jzTRNgR4lOYUXXnfcExQ5qPrfu7Tw6Sle-tPP-le3KXO-hb9dwZ-x-2wkRrIieKF0Y75ikYZ-xFPME' },
--    ],
--  },
--  {
--    id: 'gentlemans-blade',
--    name: "The Gentleman's Blade",
--    area: 'Indiranagar',
--    city: 'Bangalore',
--    distanceKm: 1.8,
--    rating: 4.9,
--    reviewCount: 142,
--    reviewsCount: 142,
--    verifiedReviewsCount: 138,
--    verified: true,
--    weeklyCollection: 55000,
--    monthlyCollection: 220000,
--    completedBookings: 410,
--    lastActiveTime: Date.now() - 90000,
--    image: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=600&q=80',
--    gallery: [
--      'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&w=600&q=80',
--    ],
--    startingPrice: 499,
--    tags: ['Barber Shop', "Men's Haircut", 'Beard Styling', 'Grooming'],
--    genderCategory: 'Men Only',
--    address: '88, 12th Main Road, Indiranagar, Bangalore 560038',
--    hours: '09:00 AM - 09:00 PM',
--    description: 'Premier classic barber shop offering precision fade haircuts, hot towel royal shaves, beard sculpting, and charcoal scalp detox.',
--    phone: '+91 98666 44332',
--    bookingUrl: 'https://gentlemansblade.com/book',
--    amenities: ['Hot Towel Service', 'Leather Recliners', 'AC', 'Craft Coffee'],
--    services: [
--      { id: 'gb1', name: 'Executive Haircut & Beard Trim', durationMinutes: 45, price: 699, category: 'Barber Shop', description: 'Custom fade haircut, hot towel beard line shaping, and shoulder massage.' },
--      { id: 'gb2', name: 'Royal Hot Towel Shave', durationMinutes: 30, price: 499, category: 'Barber Shop', description: 'Traditional straight razor shave with essential oil hot towel treatment.' },
--    ],
--    staff: [
--      { id: 's2', name: 'David L.', role: 'Master Barber', rating: 4.9, reviewsCount: 110, avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAym-1XqNvvUES_juaNcLK1p8qid6RxJWHmLyEsIlb7AZSTPL3DCcTaY--lrpsKfwZwtjvl2FDo7LyVmLuDZb5KGoPI2DvOGefWFzVJnsIXTM2NkLwCvN_xGTXmI3_23Le-KpVYYx4qmB4kzK9QGaBpL0uNx2cigDOD6i19c0NbGXmLIMKy3m7bC9xhY50Odkqojhl7HF4nT9FrV_K_3UJKBBfiUTYnIcThOzvvmaz4DyrB8m0nL0W3-kL4DbP7Oyz_grSdxlUlWHQ' },
--    ],
--  },
--  {
--    id: 'glamour-glow-makeup',
--    name: 'Glamour Glow Studio',
--    area: 'Bandra West',
--    city: 'Mumbai',
--    distanceKm: 2.1,
--    rating: 4.8,
--    reviewCount: 95,
--    reviewsCount: 95,
--    verifiedReviewsCount: 92,
--    verified: true,
--    weeklyCollection: 61000,
--    monthlyCollection: 245000,
--    completedBookings: 430,
--    lastActiveTime: Date.now() - 150000,
--    image: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=600&q=80',
--    gallery: [
--      'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=600&q=80',
--    ],
--    startingPrice: 1999,
--    tags: ['Makeup', 'Bridal Makeup', 'Party Makeup', 'HD Makeup'],
--    genderCategory: 'Women Only',
--    address: '22, Hill Road, Bandra West, Mumbai 400050',
--    hours: '10:00 AM - 08:30 PM',
--    description: 'Luxury makeup studio specializing in HD airbrush bridal makeup, celebrity party looks, and glam photo shoot transformations.',
--    phone: '+91 98777 33221',
--    bookingUrl: 'https://glamourglow.com/bridal',
--    amenities: ['HD Airbrush Station', 'Private Vanity', 'AC', 'Cards Accepted'],
--    services: [
--      { id: 'gg1', name: 'Glam Party Makeup', durationMinutes: 60, price: 1999, category: 'Makeup', description: 'Long-lasting HD makeup with premium lashes and brow framing.' },
--      { id: 'gg2', name: 'Airbrush Bridal Trial & Makeup', durationMinutes: 120, price: 5999, category: 'Makeup', description: 'Flawless airbrush base with customized eye artistry.' },
--    ],
--    staff: [
--      { id: 's3', name: 'Zara M.', role: 'Celebrity Makeup Artist', rating: 5.0, reviewsCount: 95, avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB9RAhukgBLye8hQOojgrb3bjsb6PQ_GhdMufuidFvlJqxVZ_xINH0Fdc1_s8l0aKXMACAyJMrQquxZKVQXPbcPnysxo2AAatGH3nEL1rVhgI_0bjqpB9KoTtaO7uJwL42BWgx9jqqZT8lTENQn-lR5HjKB-qPHz60CkRRmoz6LOby9AqVT6YTIEvV8qGyGrD_9L7ajxDuE2iRaPMw8FOg6RbQvHBxMhsSz267is5uVRucT7hdBBpbaVJ93mQq5R3csJlGGpBtEazk' },
--    ],
--  },
--  {
--    id: 'zen-body-massage',
--    name: 'Zen Sanctuary Massage & Spa',
--    area: 'Indiranagar',
--    city: 'Bangalore',
--    distanceKm: 3.0,
--    rating: 4.9,
--    reviewCount: 118,
--    reviewsCount: 118,
--    verifiedReviewsCount: 115,
--    verified: true,
--    weeklyCollection: 45000,
--    monthlyCollection: 180000,
--    completedBookings: 320,
--    lastActiveTime: Date.now() - 210000,
--    image: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=600&q=80',
--    gallery: [
--      'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?auto=format&fit=crop&w=600&q=80',
--    ],
--    startingPrice: 1499,
--    tags: ['Massage & Wellness', 'Deep Tissue Massage', 'Thai Massage', 'Relaxation Center'],
--    genderCategory: 'Unisex',
--    address: '501, 80ft Road, Indiranagar, Bangalore 560038',
--    hours: '09:00 AM - 10:00 PM',
--    description: 'Holistic wellness center offering authentic Swedish massage, deep tissue therapy, herbal steam, and hot stone relaxation.',
--    phone: '+91 98888 22110',
--    bookingUrl: 'https://zenspasanctuary.com/appointments',
--    amenities: ['Steam Bath', 'Organic Oils', 'Aroma Diffusers', 'Private Showers'],
--    services: [
--      { id: 'zs1', name: 'Deep Tissue Body Therapy', durationMinutes: 60, price: 1799, category: 'Massage & Wellness', description: 'Intensive muscle tension release using warm aromatic oils.' },
--      { id: 'zs2', name: 'Thai Herbal Compress Massage', durationMinutes: 90, price: 2499, category: 'Massage & Wellness', description: 'Traditional Thai stretch therapy with steamed organic herb packs.' },
--    ],
--    staff: [
--      { id: 's1', name: 'Maya S.', role: 'Senior Therapist', rating: 4.9, reviewsCount: 88, avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB6FnEPu-SL4wCFVKcdUT8T3HAr4WTtQffHbnb-a1Q_KHmwlXmuuMexI_oX7VO3Ck7qecdPxZscnfPyNFROadrFDvlkX2aKpGC7DKv8u_kCOn8d2MGCISl3rqUL79jDHNAaMeiBfwgEUSzl-uZoz702Y0_08nr4fJCuUBFEAasK6fvfIalsfNsECYrq-GqF_jzTRNgR4lOYUXXnfcExQ5qPrfu7Tw6Sle-tPP-le3KXO-hb9dwZ-x-2wkRrIieKF0Y75ikYZ-xFPME' },
--    ],
--  },
--  {
--    id: 'ink-craft-tattoo',
--    name: 'InkCraft Tattoo & Piercing Studio',
--    area: 'Koramangala',
--    city: 'Bangalore',
--    distanceKm: 3.4,
--    rating: 4.8,
--    reviewCount: 86,
--    reviewsCount: 86,
--    verifiedReviewsCount: 82,
--    verified: true,
--    weeklyCollection: 38000,
--    monthlyCollection: 150000,
--    completedBookings: 280,
--    lastActiveTime: Date.now() - 360000,
--    image: 'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28?auto=format&fit=crop&w=600&q=80',
--    gallery: [
--      'https://images.unsplash.com/photo-1598371839696-5c5bb00bdc28?auto=format&fit=crop&w=600&q=80',
--    ],
--    startingPrice: 999,
--    tags: ['Tattoo & Piercing', 'Tattoo Studio', 'Piercing Studio', 'Custom Tattoo'],
--    genderCategory: 'Unisex',
--    address: '15, 80ft Road, Koramangala 4th Block, Bangalore 560034',
--    hours: '11:00 AM - 09:30 PM',
--    description: 'Hygienic sterile studio for custom artistic tattoos, cover-ups, precision ear & nose piercings with titanium jewelry.',
--    phone: '+91 98999 00112',
--    amenities: ['Sterile Single-Use Needles', 'Private Tattoo Bay', 'AC', 'Custom Consultations'],
--    services: [
--      { id: 'ic1', name: 'Custom Small Tattoo (up to 3 sq in)', durationMinutes: 60, price: 1499, category: 'Tattoo & Piercing', description: 'Single-use sterile needles, custom design consultation included.' },
--      { id: 'ic2', name: 'Titanium Ear / Nose Piercing', durationMinutes: 20, price: 999, category: 'Tattoo & Piercing', description: 'Sterile needle piercing with hypoallergenic titanium stud.' },
--    ],
--    staff: [
--      { id: 's2', name: 'David L.', role: 'Senior Tattoo Artist', rating: 4.8, reviewsCount: 86, avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAym-1XqNvvUES_juaNcLK1p8qid6RxJWHmLyEsIlb7AZSTPL3DCcTaY--lrpsKfwZwtjvl2FDo7LyVmLuDZb5KGoPI2DvOGefWFzVJnsIXTM2NkLwCvN_xGTXmI3_23Le-KpVYYx4qmB4kzK9QGaBpL0uNx2cigDOD6i19c0NbGXmLIMKy3m7bC9xhY50Odkqojhl7HF4nT9FrV_K_3UJKBBfiUTYnIcThOzvvmaz4DyrB8m0nL0W3-kL4DbP7Oyz_grSdxlUlWHQ' },
--    ],
--  },
--];
 -
--export const INITIAL_BOOKINGS: Booking[] = [
--  {
--    id: 'bk-99',
--    salonId: 'aura-premium',
--    salonName: 'Aura Premium Salon',
--    services: [
--      { id: 'a1', name: "Woman's Haircut & Blowdry", durationMinutes: 45, price: 899, category: 'Hair Styling' },
--    ],
--    totalAmount: 899,
--    dateStr: 'Sun, 21 Jul',
--    timeSlot: '03:00 PM',
--    status: 'COMPLETED',
--    staffName: 'Maya S.',
--    locationArea: 'Indiranagar, Bangalore',
--    createdTime: Date.now() - 345600000,
--    isReviewed: false,
--  },
--  {
--    id: 'bk-101',
--    salonId: 'aura-premium',
--    salonName: 'Aura Premium Salon',
--    services: [
--      { id: 'a2', name: 'Balayage & Styling', durationMinutes: 120, price: 3499, category: 'Hair Styling' },
--    ],
--    totalAmount: 3499,
--    dateStr: 'Sat, 28 Jul',
--    timeSlot: '11:00 AM',
--    status: 'CONFIRMED',
--    staffName: 'Maya S.',
--    locationArea: 'Indiranagar, Bangalore',
--    createdTime: Date.now() - 86400000,
--  },
--  {
--    id: 'bk-102',
--    salonId: 'lumiere-studio',
--    salonName: 'Lumiere Studio',
--    services: [
--      { id: 'l2', name: 'Classic Manicure', durationMinutes: 30, price: 650, category: 'Nails' },
--    ],
--    totalAmount: 650,
--    dateStr: 'Tue, 15 Aug',
--    timeSlot: '2:30 PM',
--    status: 'PENDING',
--    staffName: 'Zara M.',
--    locationArea: 'Bandra West, Mumbai',
--    createdTime: Date.now() - 43200000,
--  },
--];
-diff --git a/src/lib/legacyLocalData.ts b/src/lib/legacyLocalData.ts
-new file mode 100644
-index 0000000..979ecb3
---- /dev/null
-+++ b/src/lib/legacyLocalData.ts
-@@ -0,0 +1,127 @@
-+// One-time migration helper: pre-integration builds stored customer data in
-+// localStorage. After the first successful Supabase sync we import values
-+// where a legacy copy exists, then PURGE the local copies so Supabase is the
-+// single source of truth.
-+//
-+// Device-only UI flags (install prompts, PWA dismissal, browsing location,
-+// recently viewed) legitimately keep using localStorage and are NOT touched.
-+
-+import type { SupabaseClient } from '@supabase/supabase-js';
-+import { importLegacyPaymentMethods } from './paymentMethodsRepository';
-+import { settingsFromLegacyLocalStorage, loadSettings, saveSettings } from './settingsRepository';
-+import type { SavedUpi } from '../components/AddUpiModal';
-+import type { SavedCard } from '../components/AddCardModal';
-+
-+export const LEGACY_MIGRATION_FLAG = 'nexora_customer_migrated_v1';
-+
-+const PURGE_KEYS = [
-+  // settings copies (now customer_settings)
-+  'settings_push_notifs',
-+  'settings_booking_updates',
-+  'settings_appt_reminders',
-+  'settings_rewards_updates',
-+  'settings_offers_promo',
-+  'settings_email_notifs',
-+  'settings_use_loc_auto',
-+  'settings_display_mode',
-+  'settings_language',
-+  'user_location_name',
-+  // payment methods copies (now saved_payment_methods)
-+  'nexora_saved_upis',
-+  'nexora_saved_cards',
-+  // support copies (now support_tickets / customer_feedback)
-+  'nexora_support_tickets',
-+  'nexora_feedback',
-+  // fake seeded business data — never allowed back
-+  'nexora_service_reviews_salon-1',
-+];
-+
-+/** Remove per-salon review keys written by pre-integration builds. */
-+const purgeLegacyReviewKeys = (): void => {
-+  try {
-+    const doomed: string[] = [];
-+    for (let i = 0; i < localStorage.length; i += 1) {
-+      const key = localStorage.key(i);
-+      if (key && key.startsWith('nexora_service_reviews_')) doomed.push(key);
-+    }
-+    doomed.forEach((key) => localStorage.removeItem(key));
-+  } catch {
-+    // storage unavailable — nothing to purge
-+  }
-+};
-+
-+export function purgeLegacyLocalStorage(): void {
-+  for (const key of PURGE_KEYS) {
-+    try {
-+      localStorage.removeItem(key);
-+    } catch {
-+      // storage unavailable — nothing to purge
-+    }
-+  }
-+  purgeLegacyReviewKeys();
-+}
-+
-+const readJson = <T>(key: string): T | null => {
-+  try {
-+    const raw = localStorage.getItem(key);
-+    if (!raw) return null;
-+    return JSON.parse(raw) as T;
-+  } catch {
-+    return null;
-+  }
-+};
-+
-+/**
-+ * One-time migration: imports legacy localStorage data into Supabase, then
-+ * purges the local copies. Runs at most once per device (flag key). Errors
-+ * are swallowed so a failed import never blocks the app — local data stays
-+ * until the next successful run.
-+ */
-+export async function runLegacyMigrationOnce(
-+  client: SupabaseClient,
-+  userId: string,
-+): Promise<void> {
-+  try {
-+    if (localStorage.getItem(LEGACY_MIGRATION_FLAG) === 'true') return;
-+  } catch {
-+    return;
-+  }
-+
-+  try {
-+    // 1. Settings toggles → customer_settings (merged over server defaults,
-+    //    never clobbering a server-side value that is already present).
-+    const legacySettings = settingsFromLegacyLocalStorage((key) => {
-+      try {
-+        return localStorage.getItem(key);
-+      } catch {
-+        return null;
-+      }
-+    });
-+    if (Object.keys(legacySettings).length > 0) {
-+      const { settings: serverSettings, exists } = await loadSettings(client, userId);
-+      if (!exists) {
-+        await saveSettings(client, userId, { ...serverSettings, ...legacySettings } as never);
-+      }
-+    }
-+
-+    // 2. Saved UPI ids / cards → saved_payment_methods.
-+    const legacyUpis = readJson<SavedUpi[]>('nexora_saved_upis') ?? [];
-+    const legacyCards = readJson<SavedCard[]>('nexora_saved_cards') ?? [];
-+    if (legacyUpis.length > 0 || legacyCards.length > 0) {
-+      await importLegacyPaymentMethods(
-+        client,
-+        userId,
-+        legacyUpis.map(({ id: _id, ...rest }) => rest),
-+        legacyCards.map(({ id: _id, ...rest }) => rest),
-+      );
-+    }
-+
-+    // Reviews and support tickets from pre-integration builds were seeded
-+    // fake data in this app — deliberately NOT imported; simply purged below.
-+
-+    purgeLegacyLocalStorage();
-+    localStorage.setItem(LEGACY_MIGRATION_FLAG, 'true');
-+  } catch (err) {
-+    console.warn('Legacy migration deferred — will retry next session.', err);
-+  }
-+}
-diff --git a/src/lib/paymentMethodsRepository.ts b/src/lib/paymentMethodsRepository.ts
-new file mode 100644
-index 0000000..0cd327c
---- /dev/null
-+++ b/src/lib/paymentMethodsRepository.ts
-@@ -0,0 +1,179 @@
-+// Saved UPI IDs / cards — synced to saved_payment_methods (new owner-approved table).
-+// Only display-meta is stored (UPI id, masked card); no PANs/secrets ever.
-+
-+import type { SupabaseClient } from '@supabase/supabase-js';
-+import type { SavedUpi } from '../components/AddUpiModal';
-+import type { SavedCard } from '../components/AddCardModal';
-+
-+interface MethodRow {
-+  id: string;
-+  user_id: string;
-+  method: 'upi' | 'card';
-+  label: string | null;
-+  details: Record<string, unknown>;
-+  created_at: string;
-+}
-+
-+function rowToUpi(row: MethodRow): SavedUpi {
-+  const d = row.details ?? {};
-+  return {
-+    id: String(row.id),
-+    upiId: String(d.upi_id ?? ''),
-+    name: String(d.name ?? row.label ?? ''),
-+    provider: String(d.provider ?? ''),
-+    isVerified: d.verified === true,
-+    isQrScanned: d.qr_scanned === true,
-+    scannedAt: typeof d.scanned_at === 'string' ? d.scanned_at : undefined,
-+  };
-+}
-+
-+function rowToCard(row: MethodRow): SavedCard {
-+  const d = row.details ?? {};
-+  return {
-+    id: String(row.id),
-+    cardNumber: String(d.card_number_masked ?? ''),
-+    cardHolder: String(d.card_holder ?? row.label ?? ''),
-+    expiry: String(d.expiry ?? ''),
-+    network: (d.network as SavedCard['network']) ?? 'visa',
-+    isPrimary: d.is_primary === true,
-+  };
-+}
-+
-+const isMissingTableError = (error: { code?: string; message?: string } | null): boolean => {
-+  if (!error) return false;
-+  return (
-+    error.code === '42P01' ||
-+    error.code === 'PGRST205' ||
-+    /could not find a table|relation .* does not exist/i.test(error.message || '')
-+  );
-+};
-+
-+export async function loadPaymentMethods(
-+  client: SupabaseClient,
-+  userId: string,
-+): Promise<{ upis: SavedUpi[]; cards: SavedCard[] }> {
-+  const { data, error } = await client
-+    .from('saved_payment_methods')
-+    .select('id, user_id, method, label, details, created_at')
-+    .eq('user_id', userId)
-+    .order('created_at', { ascending: false });
-+  if (error) {
-+    if (isMissingTableError(error)) return { upis: [], cards: [] };
-+    throw error;
-+  }
-+  const rows = (data ?? []) as MethodRow[];
-+  return {
-+    upis: rows.filter((r) => r.method === 'upi').map(rowToUpi),
-+    cards: rows.filter((r) => r.method === 'card').map(rowToCard),
-+  };
-+}
-+
-+export async function addUpiMethod(
-+  client: SupabaseClient,
-+  userId: string,
-+  upi: Omit<SavedUpi, 'id'>,
-+): Promise<void> {
-+  const { error } = await client.from('saved_payment_methods').insert({
-+    user_id: userId,
-+    method: 'upi',
-+    label: upi.name || upi.upiId,
-+    details: {
-+      upi_id: upi.upiId,
-+      name: upi.name,
-+      provider: upi.provider,
-+      verified: upi.isVerified === true,
-+      qr_scanned: upi.isQrScanned === true,
-+      ...(upi.scannedAt ? { scanned_at: upi.scannedAt } : {}),
-+    },
-+  });
-+  if (error) throw error;
-+}
-+
-+export async function addCardMethod(
-+  client: SupabaseClient,
-+  userId: string,
-+  card: Omit<SavedCard, 'id'>,
-+): Promise<void> {
-+  const { error } = await client.from('saved_payment_methods').insert({
-+    user_id: userId,
-+    method: 'card',
-+    label: card.cardHolder || 'Card',
-+    details: {
-+      card_number_masked: card.cardNumber,
-+      card_holder: card.cardHolder,
-+      expiry: card.expiry,
-+      network: card.network,
-+      is_primary: card.isPrimary === true,
-+    },
-+  });
-+  if (error) throw error;
-+}
-+
-+export async function deletePaymentMethod(
-+  client: SupabaseClient,
-+  id: string,
-+): Promise<void> {
-+  const { error } = await client.from('saved_payment_methods').delete().eq('id', id);
-+  if (error) throw error;
-+}
-+
-+export function subscribeToPaymentMethods(
-+  client: SupabaseClient,
-+  userId: string,
-+  onChange: () => void,
-+): () => void {
-+  const channel = client
-+    .channel(`nxu-paymethods-${userId}`)
-+    .on(
-+      'postgres_changes',
-+      { event: '*', schema: 'public', table: 'saved_payment_methods', filter: `user_id=eq.${userId}` },
-+      () => onChange(),
-+    )
-+    .subscribe();
-+  return () => {
-+    void client.removeChannel(channel);
-+  };
-+}
-+
-+/** One-time import of device-stored UPIs/cards (used by the legacy-data migration). */
-+export async function importLegacyPaymentMethods(
-+  client: SupabaseClient,
-+  userId: string,
-+  upis: Array<Omit<SavedUpi, 'id'>>,
-+  cards: Array<Omit<SavedCard, 'id'>>,
-+): Promise<void> {
-+  const rows: Record<string, unknown>[] = [];
-+  for (const upi of upis) {
-+    if (!upi?.upiId) continue;
-+    rows.push({
-+      user_id: userId,
-+      method: 'upi',
-+      label: upi.name || upi.upiId,
-+      details: {
-+        upi_id: upi.upiId,
-+        name: upi.name ?? '',
-+        provider: upi.provider ?? '',
-+        verified: upi.isVerified === true,
-+        qr_scanned: upi.isQrScanned === true,
-+      },
-+    });
-+  }
-+  for (const card of cards) {
-+    if (!card?.cardNumber) continue;
-+    rows.push({
-+      user_id: userId,
-+      method: 'card',
-+      label: card.cardHolder || 'Card',
-+      details: {
-+        card_number_masked: card.cardNumber,
-+        card_holder: card.cardHolder ?? '',
-+        expiry: card.expiry ?? '',
-+        network: card.network ?? 'visa',
-+        is_primary: card.isPrimary === true,
-+      },
-+    });
-+  }
-+  if (!rows.length) return;
-+  const { error } = await client.from('saved_payment_methods').insert(rows);
-+  if (error) throw error;
-+}
-diff --git a/src/lib/reviewsRepository.ts b/src/lib/reviewsRepository.ts
-new file mode 100644
-index 0000000..9112e96
---- /dev/null
-+++ b/src/lib/reviewsRepository.ts
-@@ -0,0 +1,121 @@
-+// Customer service reviews — persisted to the SHARED Supabase project's
-+// `customer_reviews` table so they survive refresh and show on every device.
-+//
-+// The table may not exist yet on the shared schema (it is a Phase-1 schema
-+// addition; see db/customer_reviews.sql). Every call therefore degrades
-+// gracefully: if the table is missing (Postgres 42P01 / PGRST205) the
-+// repository returns "nothing stored" instead of failing the UI — the app
-+// keeps working with session-scoped reviews until ops runs the DDL.
-+
-+import type { SupabaseClient } from '@supabase/supabase-js';
-+import type { ServiceReview } from '../types';
-+
-+interface ReviewRow {
-+  id: string;
-+  user_id: string;
-+  salon_id: string;
-+  service_id?: string | null;
-+  service_name: string;
-+  author: string;
-+  rating: number;
-+  comment: string;
-+  verified_booking?: boolean;
-+  booking_id?: string | null;
-+  created_at?: string | null;
-+}
-+
-+/** True for Postgres "relation does not exist" style errors. */
-+const isMissingTableError = (error: { code?: string; message?: string } | null): boolean => {
-+  if (!error) return false;
-+  return (
-+    error.code === '42P01' ||
-+    error.code === 'PGRST205' ||
-+    /could not find a table|relation .* does not exist/i.test(error.message || '')
-+  );
-+};
-+
-+export async function loadReviews(
-+  client: SupabaseClient,
-+  userId: string,
-+): Promise<ServiceReview[]> {
-+  const { data, error } = await client
-+    .from('customer_reviews')
-+    .select('*')
-+    .eq('user_id', userId)
-+    .order('created_at', { ascending: false });
-+
-+  if (error) {
-+    if (isMissingTableError(error)) return [];
-+    throw error;
-+  }
-+
-+  const rows = (data ?? []) as ReviewRow[];
-+  return rows.map((r) => ({
-+    id: r.id,
-+    salonId: r.salon_id,
-+    serviceId: r.service_id ?? undefined,
-+    serviceName: r.service_name,
-+    author: r.author,
-+    rating: r.rating,
-+    date: r.created_at ? new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '',
-+    comment: r.comment,
-+    verifiedBooking: r.verified_booking ?? false,
-+    bookingId: r.booking_id ?? undefined,
-+  }));
-+}
-+
-+/** Upsert one review; idempotent by id (double-taps cannot duplicate rows). */
-+export async function saveReview(
-+  client: SupabaseClient,
-+  userId: string,
-+  review: ServiceReview,
-+): Promise<void> {
-+  const { error } = await client.from('customer_reviews').upsert(
-+    {
-+      id: review.id,
-+      user_id: userId,
-+      salon_id: review.salonId,
-+      service_id: review.serviceId ?? null,
-+      service_name: review.serviceName,
-+      author: review.author,
-+      rating: review.rating,
-+      comment: review.comment,
-+      verified_booking: review.verifiedBooking ?? false,
-+      booking_id: review.bookingId ?? null,
-+      created_at: new Date().toISOString(),
-+    },
-+    { onConflict: 'id' },
-+  );
-+
-+  if (error) {
-+    // Table not provisioned yet → keep the review in session state only.
-+    if (isMissingTableError(error)) {
-+      console.warn('Reviews table not provisioned yet — review kept session-only. Run db/customer_reviews.sql.');
-+      return;
-+    }
-+    throw error;
-+  }
-+}
-+
-+/** Realtime: any review added on another device refires onChange. */
-+export function subscribeToReviews(
-+  client: SupabaseClient,
-+  userId: string,
-+  onChange: () => void,
-+): () => void {
-+  const channel = client.channel(`nxu-reviews-${userId}`);
-+  channel.on(
-+    'postgres_changes',
-+    {
-+      event: '*',
-+      schema: 'public',
-+      table: 'customer_reviews',
-+      filter: `user_id=eq.${userId}`,
-+    },
-+    () => onChange(),
-+  );
-+  channel.subscribe();
-+  return () => {
-+    void client.removeChannel(channel);
-+  };
-+}
-diff --git a/src/lib/salonRepository.ts b/src/lib/salonRepository.ts
-new file mode 100644
-index 0000000..41a15e5
---- /dev/null
-+++ b/src/lib/salonRepository.ts
-@@ -0,0 +1,185 @@
-+// Live salon discovery data layer (Phase 1 – Step 2).
-+// Reads ONLY existing anon-readable tables: salons, services, salon_public_websites.
-+// No new DB objects. Maps DB rows onto the existing UI `Salon` type.
-+// Fields with no real source yet (rating/review counts/distance) are returned
-+// as 0 + isNew=true so the UI can show a "New" tag and hide fake badges (D2-approved).
-+
-+import type { SupabaseClient } from '@supabase/supabase-js';
-+import { Salon, Service, Staff } from '../types';
-+import { BANNER_URL } from '../data/mockData';
-+
-+const FETCH_LIMIT = 50;
-+
-+interface SalonRow {
-+  id: string;
-+  slug: string | null;
-+  name: string | null;
-+  description: string | null;
-+  business_category: string | null;
-+  gender_category: string | null;
-+  phone: string | null;
-+  address: string | null;
-+  area: string | null;
-+  city: string | null;
-+  state: string | null;
-+}
-+
-+interface ServiceRow {
-+  id: string;
-+  salon_id: string;
-+  name: string | null;
-+  description: string | null;
-+  duration_minutes: number | null;
-+  price_paise: number | null;
-+}
-+
-+interface PublicSiteRow {
-+  salon_id: string;
-+  config: any;
-+}
-+
-+const toGenderCategory = (
-+  raw: string | null,
-+): Salon['genderCategory'] => {
-+  const v = (raw || '').toLowerCase();
-+  if (v.includes('unisex')) return 'Unisex';
-+  if (v.includes('women') || v.includes('female') || v.includes('ladies')) return 'Women Only';
-+  if (v.includes('men') || v.includes('male') || v.includes('gents')) return 'Men Only';
-+  return undefined;
-+};
-+
-+const formatTime = (hhmm: string): string => {
-+  const m = /^(\d{1,2}):(\d{2})/.exec(hhmm || '');
-+  if (!m) return hhmm || '';
-+  let h = parseInt(m[1], 10);
-+  const suffix = h >= 12 ? 'PM' : 'AM';
-+  h = h % 12 === 0 ? 12 : h % 12;
-+  return `${h}:${m[2]} ${suffix}`;
-+};
-+
-+const stringArray = (value: unknown): string[] =>
-+  Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && v.length > 0) : [];
-+
-+const mapService = (row: ServiceRow): Service => ({
-+  id: row.id,
-+  name: row.name || 'Service',
-+  durationMinutes: row.duration_minutes ?? 30,
-+  price: (row.price_paise ?? 0) / 100,
-+  category: 'Salon',
-+  description: row.description || undefined,
-+});
-+
-+const mapStaff = (value: unknown, index: number): Staff => {
-+  const v = (value || {}) as Record<string, unknown>;
-+  return {
-+    id: typeof v.id === 'string' && v.id ? v.id : `staff-${index}`,
-+    name: typeof v.name === 'string' && v.name ? v.name : 'Professional',
-+    role: typeof v.role === 'string' && v.role ? v.role : 'Stylist',
-+    rating: typeof v.rating === 'number' ? v.rating : 0,
-+    reviewsCount: typeof v.reviewsCount === 'number' ? v.reviewsCount : 0,
-+    avatar: typeof v.avatar === 'string' ? v.avatar : '',
-+  };
-+};
-+
-+const mapOffers = (value: unknown): Salon['offers'] => {
-+  if (!Array.isArray(value)) return [];
-+  return value
-+    .map((raw, i) => {
-+      const v = (raw || {}) as Record<string, unknown>;
-+      const title = typeof v.title === 'string' ? v.title : '';
-+      const code = typeof v.code === 'string' ? v.code : '';
-+      if (!title || !code) return null;
-+      return {
-+        id: typeof v.id === 'string' && v.id ? v.id : `offer-${i}`,
-+        title,
-+        code,
-+        discountPercent: typeof v.discountPercent === 'number' ? v.discountPercent : undefined,
-+        amountOff: typeof v.amountOff === 'number' ? v.amountOff : undefined,
-+      };
-+    })
-+    .filter((o): o is NonNullable<typeof o> => o !== null);
-+};
-+
-+export async function fetchPublicSalons(client: SupabaseClient): Promise<Salon[]> {
-+  const [salonsRes, servicesRes, sitesRes] = await Promise.all([
-+    client
-+      .from('salons')
-+      .select('id, slug, name, description, business_category, gender_category, phone, address, area, city, state')
-+      .limit(FETCH_LIMIT),
-+    client
-+      .from('services')
-+      .select('id, salon_id, name, description, duration_minutes, price_paise')
-+      .eq('is_active', true)
-+      .eq('is_bookable_online', true)
-+      .is('deleted_at', null),
-+    client.from('salon_public_websites').select('salon_id, config'),
-+  ]);
-+
-+  if (salonsRes.error) throw salonsRes.error;
-+  if (servicesRes.error) throw servicesRes.error;
-+  if (sitesRes.error) throw sitesRes.error;
-+
-+  const servicesBySalon = new Map<string, Service[]>();
-+  for (const row of (servicesRes.data || []) as ServiceRow[]) {
-+    const list = servicesBySalon.get(row.salon_id) || [];
-+    list.push(mapService(row));
-+    servicesBySalon.set(row.salon_id, list);
-+  }
-+
-+  const siteBySalon = new Map<string, any>();
-+  for (const row of (sitesRes.data || []) as PublicSiteRow[]) {
-+    siteBySalon.set(row.salon_id, row.config || {});
-+  }
-+
-+  return ((salonsRes.data || []) as SalonRow[]).map((row) => {
-+    const cfg = siteBySalon.get(row.id) || {};
-+    const profile = (cfg.profile || {}) as Record<string, unknown>;
-+    const services = servicesBySalon.get(row.id) || [];
-+    const photos = stringArray(cfg.photos);
-+    const staff = Array.isArray(cfg.staff) ? (cfg.staff as unknown[]).map(mapStaff) : [];
-+    const hours =
-+      profile.opening_hours &&
-+      typeof (profile.opening_hours as any).opens === 'string' &&
-+      typeof (profile.opening_hours as any).closes === 'string'
-+        ? `${formatTime((profile.opening_hours as any).opens)} – ${formatTime((profile.opening_hours as any).closes)}`
-+        : '';
-+    const image =
-+      (typeof profile.cover_url === 'string' && profile.cover_url) ||
-+      (typeof profile.logo_url === 'string' && profile.logo_url) ||
-+      photos[0] ||
-+      BANNER_URL;
-+    const prices = services.map((s) => s.price).filter((p) => p > 0);
-+    const category = row.business_category || 'Salon';
-+
-+    return {
-+      id: row.id,
-+      name: row.name || 'Salon',
-+      type: category,
-+      category,
-+      area: row.area || '',
-+      city: row.city || '',
-+      distanceKm: 0, // no geo source yet — UI hides the distance badge for 0
-+      rating: 0, // no ratings source yet — UI shows "New" instead of a fake score
-+      reviewCount: 0,
-+      reviewsCount: 0,
-+      verified: siteBySalon.has(row.id),
-+      isNew: true, // every live salon is new until a real ratings source exists
-+      image,
-+      gallery: photos.length > 0 ? photos : [image],
-+      startingPrice: prices.length > 0 ? Math.min(...prices) : 0,
-+      tags: [row.business_category, toGenderCategory(row.gender_category)].filter(
-+        (t): t is string => !!t,
-+      ),
-+      genderCategory: toGenderCategory(row.gender_category),
-+      address: row.address || '',
-+      hours,
-+      description: row.description || '',
-+      phone: row.phone || undefined,
-+      bookingUrl: undefined,
-+      amenities: [],
-+      offers: mapOffers(cfg.offers),
-+      services,
-+      staff,
-+    } satisfies Salon;
-+  });
-+}
-diff --git a/src/lib/settingsRepository.ts b/src/lib/settingsRepository.ts
-new file mode 100644
-index 0000000..0b0602b
---- /dev/null
-+++ b/src/lib/settingsRepository.ts
-@@ -0,0 +1,145 @@
-+// Customer settings — one row per user in customer_settings (settings jsonb).
-+// One device edits → Supabase Realtime pushes to every logged-in device.
-+
-+import type { SupabaseClient } from '@supabase/supabase-js';
-+
-+export interface CustomerSettings {
-+  push_notifications: boolean;
-+  booking_updates: boolean;
-+  appointment_reminders: boolean;
-+  rewards_updates: boolean;
-+  offers_promotions: boolean;
-+  email_notifications: boolean;
-+  auto_location: boolean;
-+  autoplay_ambiance: boolean;
-+  display_mode: 'device' | 'light' | 'dark';
-+  language: string;
-+}
-+
-+export const SETTINGS_DEFAULTS: CustomerSettings = {
-+  push_notifications: true,
-+  booking_updates: true,
-+  appointment_reminders: true,
-+  rewards_updates: true,
-+  offers_promotions: true,
-+  email_notifications: true,
-+  auto_location: true,
-+  autoplay_ambiance: false,
-+  display_mode: 'device',
-+  language: 'english',
-+};
-+
-+const BOOL_KEYS: Array<keyof CustomerSettings> = [
-+  'push_notifications',
-+  'booking_updates',
-+  'appointment_reminders',
-+  'rewards_updates',
-+  'offers_promotions',
-+  'email_notifications',
-+  'auto_location',
-+  'autoplay_ambiance',
-+];
-+
-+export function normalizeSettings(raw: unknown): CustomerSettings {
-+  const source = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-+  const merged: CustomerSettings = { ...SETTINGS_DEFAULTS };
-+  for (const key of BOOL_KEYS) {
-+    if (typeof source[key] === 'boolean') {
-+      (merged as unknown as Record<string, unknown>)[key] = source[key];
-+    }
-+  }
-+  const mode = source.display_mode;
-+  merged.display_mode = mode === 'light' || mode === 'dark' ? mode : 'device';
-+  merged.language = typeof source.language === 'string' && source.language ? source.language : 'english';
-+  return merged;
-+}
-+
-+const isMissingTableError = (error: { code?: string; message?: string } | null): boolean => {
-+  if (!error) return false;
-+  return (
-+    error.code === '42P01' ||
-+    error.code === 'PGRST205' ||
-+    /could not find a table|relation .* does not exist/i.test(error.message || '')
-+  );
-+};
-+
-+export async function loadSettings(
-+  client: SupabaseClient,
-+  userId: string,
-+): Promise<{ settings: CustomerSettings; exists: boolean }> {
-+  const { data, error } = await client
-+    .from('customer_settings')
-+    .select('settings')
-+    .eq('user_id', userId)
-+    .maybeSingle();
-+  if (error) {
-+    if (isMissingTableError(error)) return { settings: SETTINGS_DEFAULTS, exists: false };
-+    throw error;
-+  }
-+  return { settings: normalizeSettings(data?.settings), exists: Boolean(data) };
-+}
-+
-+/** Single-row upsert (PK user_id) — one settings row per customer, never duplicates. */
-+export async function saveSettings(
-+  client: SupabaseClient,
-+  userId: string,
-+  settings: CustomerSettings,
-+): Promise<void> {
-+  const { error } = await client
-+    .from('customer_settings')
-+    .upsert({ user_id: userId, settings }, { onConflict: 'user_id' });
-+  if (error) throw error;
-+}
-+
-+export function subscribeToSettings(
-+  client: SupabaseClient,
-+  userId: string,
-+  onChange: (settings: CustomerSettings) => void,
-+): () => void {
-+  const channel = client
-+    .channel(`nxu-settings-${userId}`)
-+    .on(
-+      'postgres_changes',
-+      { event: '*', schema: 'public', table: 'customer_settings', filter: `user_id=eq.${userId}` },
-+      (payload) => {
-+        const row = payload.new as { settings?: unknown } | null;
-+        if (row) onChange(normalizeSettings(row.settings));
-+      },
-+    )
-+    .subscribe();
-+  return () => {
-+    void client.removeChannel(channel);
-+  };
-+}
-+
-+/** One-time import of pre-unification localStorage toggles into a settings object. */
-+export function settingsFromLegacyLocalStorage(read: (key: string) => string | null): Partial<CustomerSettings> {
-+  const out: Partial<CustomerSettings> = {};
-+  const bool = (key: string): boolean | undefined => {
-+    const raw = read(key);
-+    if (raw === 'true') return true;
-+    if (raw === 'false') return false;
-+    return undefined;
-+  };
-+  const push = bool('settings_push_notifs');
-+  if (push !== undefined) out.push_notifications = push;
-+  const booking = bool('settings_booking_updates');
-+  if (booking !== undefined) out.booking_updates = booking;
-+  const reminders = bool('settings_appt_reminders');
-+  if (reminders !== undefined) out.appointment_reminders = reminders;
-+  const rewards = bool('settings_rewards_updates');
-+  if (rewards !== undefined) out.rewards_updates = rewards;
-+  const offers = bool('settings_offers_promo');
-+  if (offers !== undefined) out.offers_promotions = offers;
-+  const email = bool('settings_email_notifs');
-+  if (email !== undefined) out.email_notifications = email;
-+  const autoLoc = bool('settings_use_loc_auto');
-+  if (autoLoc !== undefined) out.auto_location = autoLoc;
-+  const autoPlay = bool('autoplay_ambiance');
-+  if (autoPlay !== undefined) out.autoplay_ambiance = autoPlay;
-+  const mode = read('settings_display_mode');
-+  if (mode === 'light' || mode === 'dark') out.display_mode = mode;
-+  const lang = read('settings_language');
-+  if (lang) out.language = lang;
-+  return out;
-+}
-diff --git a/src/lib/supportRepository.ts b/src/lib/supportRepository.ts
-new file mode 100644
-index 0000000..2c2f6d5
---- /dev/null
-+++ b/src/lib/supportRepository.ts
-@@ -0,0 +1,109 @@
-+// Support tickets + app feedback — synced to existing/new tables.
-+// tickets: existing support_tickets (created_by = customer)
-+// feedback: new customer_feedback (owner-approved)
-+
-+import type { SupabaseClient } from '@supabase/supabase-js';
-+
-+export interface SupportTicket {
-+  id: string;
-+  subject: string;
-+  category: string;
-+  description: string;
-+  status: string;
-+  createdAt: string;
-+}
-+
-+const TICKET_COLUMNS = 'id, subject, category, description, status, created_at';
-+
-+const isMissingTableError = (error: { code?: string; message?: string } | null): boolean => {
-+  if (!error) return false;
-+  return (
-+    error.code === '42P01' ||
-+    error.code === 'PGRST205' ||
-+    /could not find a table|relation .* does not exist/i.test(error.message || '')
-+  );
-+};
-+
-+export async function loadSupportTickets(
-+  client: SupabaseClient,
-+  userId: string,
-+): Promise<SupportTicket[]> {
-+  const { data, error } = await client
-+    .from('support_tickets')
-+    .select(TICKET_COLUMNS)
-+    .eq('created_by', userId)
-+    .order('created_at', { ascending: false })
-+    .limit(50);
-+  if (error) {
-+    if (isMissingTableError(error)) return [];
-+    throw error;
-+  }
-+  return (data ?? []).map((row: any) => ({
-+    id: String(row.id),
-+    subject: String(row.subject ?? 'Support request'),
-+    category: String(row.category ?? 'general'),
-+    description: String(row.description ?? ''),
-+    status: String(row.status ?? 'open'),
-+    createdAt: String(row.created_at ?? ''),
-+  }));
-+}
-+
-+export async function createSupportTicket(
-+  client: SupabaseClient,
-+  userId: string,
-+  input: { subject: string; category: string; description: string },
-+): Promise<SupportTicket> {
-+  const { data, error } = await client
-+    .from('support_tickets')
-+    .insert({
-+      created_by: userId,
-+      subject: input.subject.trim(),
-+      category: input.category.trim() || 'general',
-+      description: input.description.trim(),
-+      status: 'open',
-+      priority: 'normal',
-+    })
-+    .select(TICKET_COLUMNS)
-+    .single();
-+  if (error) throw error;
-+  return {
-+    id: String(data.id),
-+    subject: String(data.subject ?? 'Support request'),
-+    category: String(data.category ?? 'general'),
-+    description: String(data.description ?? ''),
-+    status: String(data.status ?? 'open'),
-+    createdAt: String(data.created_at ?? ''),
-+  };
-+}
-+
-+export function subscribeToSupportTickets(
-+  client: SupabaseClient,
-+  userId: string,
-+  onChange: () => void,
-+): () => void {
-+  const channel = client
-+    .channel(`nxu-support-${userId}`)
-+    .on(
-+      'postgres_changes',
-+      { event: '*', schema: 'public', table: 'support_tickets', filter: `created_by=eq.${userId}` },
-+      () => onChange(),
-+    )
-+    .subscribe();
-+  return () => {
-+    void client.removeChannel(channel);
-+  };
-+}
-+
-+export async function submitFeedback(
-+  client: SupabaseClient,
-+  userId: string,
-+  rating: number,
-+  message: string,
-+): Promise<void> {
-+  const { error } = await client.from('customer_feedback').insert({
-+    user_id: userId,
-+    rating: rating >= 1 && rating <= 5 ? rating : null,
-+    message: message.trim(),
-+  });
-+  if (error) throw error;
-+}
-diff --git a/src/types.ts b/src/types.ts
-index b32d654..85c06ca 100644
---- a/src/types.ts
-+++ b/src/types.ts
-@@ -146,6 +146,7 @@ export interface ServiceReview {
-   date: string;
-   comment: string;
-   verifiedBooking?: boolean;
-+  bookingId?: string;
+-      if (proposalErr) throw proposalErr;
+-      await onSubmitted();
+-    } catch (err: any) {
+-      setMessage(err.message || 'Failed to submit proposal');
+-    } finally {
+-      setBusy(false);
+-    }
+-  };
+-
+-  return (
+-    <form onSubmit={submit} className="flex flex-col gap-4 animate-in slide-in-from-bottom duration-300">
+-      <div className="bg-white p-6 rounded-[28px] border border-[#e8e8e8] shadow-sm flex flex-col gap-4">
+-        <h3 className="font-bold text-[#26181c]">Salon Identity</h3>
+-        <div className="flex flex-col gap-1.5">
+-          <label className="text-[10px] font-bold text-[#8c7077] uppercase ml-1">Salon Name</label>
+-          <input required value={businessName} onChange={e => setBusinessName(e.target.value)} className="bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl px-4 py-3 text-sm" />
+-        </div>
+-        <div className="flex flex-col gap-1.5">
+-          <label className="text-[10px] font-bold text-[#8c7077] uppercase ml-1">Owner Email</label>
+-          <input required type="email" value={ownerEmail} onChange={e => setOwnerEmail(e.target.value)} className="bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl px-4 py-3 text-sm" />
+-        </div>
+-        <div className="flex flex-col gap-1.5">
+-          <label className="text-[10px] font-bold text-[#8c7077] uppercase ml-1">Phone</label>
+-          <input required value={phone} onChange={e => setPhone(e.target.value)} className="bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl px-4 py-3 text-sm" />
+-        </div>
+-      </div>
+-
+-      <div className="bg-white p-6 rounded-[28px] border border-[#e8e8e8] shadow-sm flex flex-col gap-4">
+-        <h3 className="font-bold text-[#26181c]">Location & Details</h3>
+-        <div className="grid grid-cols-2 gap-3">
+-           <div className="flex flex-col gap-1.5">
+-            <label className="text-[10px] font-bold text-[#8c7077] uppercase ml-1">City</label>
+-            <input required value={city} onChange={e => setCity(e.target.value)} className="bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl px-4 py-3 text-sm" />
+-          </div>
+-          <div className="flex flex-col gap-1.5">
+-            <label className="text-[10px] font-bold text-[#8c7077] uppercase ml-1">Area</label>
+-            <input required value={area} onChange={e => setArea(e.target.value)} className="bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl px-4 py-3 text-sm" />
+-          </div>
+-        </div>
+-        <div className="flex flex-col gap-1.5">
+-          <label className="text-[10px] font-bold text-[#8c7077] uppercase ml-1">Description</label>
+-          <textarea required rows={3} value={description} onChange={e => setDescription(e.target.value)} className="bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl px-4 py-3 text-sm resize-none" />
+-        </div>
+-      </div>
+-
+-      {message && <p className="text-xs text-rose-600 font-bold px-2">{message}</p>}
+-
+-      <button
+-        type="submit"
+-        disabled={busy}
+-        className="w-full h-14 bg-[#e6007e] text-white rounded-2xl font-bold active:scale-95 transition-all shadow-md disabled:opacity-70"
+-      >
+-        {busy ? 'Submitting...' : 'Submit Website Proposal'}
+-      </button>
+-    </form>
+-  );
+-}
+diff --git a/src/components/OwnerDashboard.tsx b/src/components/OwnerDashboard.tsx
+deleted file mode 100644
+index 8bd5d59..0000000
+--- a/src/components/OwnerDashboard.tsx
++++ /dev/null
+@@ -1,280 +0,0 @@
+-import React, { useState, useEffect, useCallback } from 'react';
+-import { supabase } from '../lib/supabaseClient';
+-import { Screen } from '../types';
+-
+-interface OwnerDashboardProps {
+-  user: any;
+-  onNavigate: (screen: Screen) => void;
+-  onLogout: () => void;
+-}
+-
+-type Proposal = {
+-  id: string;
+-  onboarding_application_id: string;
+-  salon_id: string | null;
+-  owner_user_id: string | null;
+-  owner_email: string | null;
+-  status: string;
+-  payload: Record<string, any>;
+-  version: number;
+-  owner_notes: string | null;
+-  submitted_at: string | null;
+-  published_at: string | null;
+-  updated_at: string;
+-};
+-
+-export const OwnerDashboard: React.FC<OwnerDashboardProps> = ({
+-  user,
+-  onNavigate,
+-  onLogout,
+-}) => {
+-  const [activeTab, setActiveTab] = useState<'overview' | 'proposals' | 'settings'>('overview');
+-  const [proposals, setProposals] = useState<Proposal[]>([]);
+-  const [loading, setLoading] = useState(true);
+-  const [ownerReady, setOwnerReady] = useState(true);
+-  const [busyId, setBusyId] = useState("");
+-  const [error, setError] = useState("");
+-
+-  const loadProposals = useCallback(async () => {
+-    setLoading(true);
+-    try {
+-      if (!supabase) return;
+-      
+-      // Check if owner has a salon registered
+-      const { data: salons, error: salonError } = await supabase.from('salons').select('id').limit(1);
+-      if (salonError) throw salonError;
+-      setOwnerReady(salons && salons.length > 0);
+-
+-      const { data, error: queryError } = await supabase
+-        .from('salon_setup_proposals')
+-        .select('*')
+-        .order('updated_at', { ascending: false });
+-      
+-      if (queryError) throw queryError;
+-      setProposals(data || []);
+-    } catch (err: any) {
+-      console.error('Error loading proposals:', err);
+-      setError('Failed to load website proposals.');
+-    } finally {
+-      setLoading(false);
+-    }
+-  }, []);
+-
+-  useEffect(() => {
+-    loadProposals();
+-  }, [loadProposals]);
+-
+-  const reviewProposal = async (proposalId: string, action: string) => {
+-    setBusyId(proposalId);
+-    setError("");
+-    try {
+-      if (!supabase) return;
+-      const { error: rpcError } = await supabase.rpc('review_salon_setup', {
+-        p_proposal_id: proposalId,
+-        p_action: action,
+-        p_notes: action === 'request_changes' ? "Changes requested from the dashboard." : null
+-      });
+-      if (rpcError) throw rpcError;
+-      await loadProposals();
+-    } catch (err: any) {
+-      setError(err.message || "Failed to review proposal.");
+-    } finally {
+-      setBusyId("");
+-    }
+-  };
+-
+-  return (
+-    <div className="flex flex-col w-full max-w-md mx-auto pb-32 animate-in fade-in duration-200">
+-      <div className="flex flex-col gap-6 p-6">
+-        <header className="flex flex-col gap-1">
+-          <span className="text-[12px] font-bold text-[#e6007e] uppercase tracking-widest">Shop Owner</span>
+-          <h1 className="text-2xl font-extrabold text-[#26181c]">Welcome, {user.user_metadata?.full_name || 'Owner'}</h1>
+-          <p className="text-sm text-[#5a3f47]">Review proposals and manage your salon storefront.</p>
+-        </header>
+-
+-        {!ownerReady ? (
+-          <OwnerSetup onReady={loadProposals} />
+-        ) : (
+-          <>
+-            {/* Tab Navigation */}
+-            <div className="flex bg-[#f8eff3] p-1 rounded-2xl gap-1">
+-              <button
+-                onClick={() => setActiveTab('overview')}
+-                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${
+-                  activeTab === 'overview' ? 'bg-white text-[#e6007e] shadow-sm' : 'text-[#5a3f47]'
+-                }`}
+-              >
+-                Overview
+-              </button>
+-              <button
+-                onClick={() => setActiveTab('proposals')}
+-                className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${
+-                  activeTab === 'proposals' ? 'bg-white text-[#e6007e] shadow-sm' : 'text-[#5a3f47]'
+-                }`}
+-              >
+-                Proposals ({proposals.filter(p => p.status === 'submitted').length})
+-              </button>
+-            </div>
+-
+-            {activeTab === 'overview' && (
+-              <div className="flex flex-col gap-4">
+-                <div className="grid grid-cols-2 gap-4">
+-                  <div className="bg-white p-4 rounded-2xl border border-[#e8e8e8] shadow-sm">
+-                    <span className="text-[10px] font-bold text-[#8c7077] uppercase">Daily Bookings</span>
+-                    <p className="text-2xl font-bold text-[#26181c]">0</p>
+-                  </div>
+-                  <div className="bg-white p-4 rounded-2xl border border-[#e8e8e8] shadow-sm">
+-                    <span className="text-[10px] font-bold text-[#8c7077] uppercase">Daily Revenue</span>
+-                    <p className="text-2xl font-bold text-[#26181c]">₹0</p>
+-                  </div>
+-                </div>
+-
+-                <div className="bg-[#26181c] p-6 rounded-[24px] text-white shadow-lg">
+-                  <h3 className="font-bold text-lg mb-1">Store Status</h3>
+-                  <div className="flex items-center gap-2 text-emerald-400">
+-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+-                    <p className="text-sm font-bold uppercase tracking-wider">Live on Nexora</p>
+-                  </div>
+-                  <button 
+-                    onClick={() => onNavigate('home')}
+-                    className="mt-4 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold transition-colors border border-white/20"
+-                  >
+-                    View Public Catalog
+-                  </button>
+-                </div>
+-              </div>
+-            )}
+-
+-            {activeTab === 'proposals' && (
+-              <div className="flex flex-col gap-4">
+-                {loading ? (
+-                  <p className="text-center py-10 text-[#8c7077]">Loading proposals...</p>
+-                ) : proposals.length === 0 ? (
+-                  <div className="bg-white p-10 rounded-2xl border border-[#e8e8e8] text-center">
+-                    <span className="material-symbols-outlined text-4xl text-[#e0bec6] mb-2">mark_email_unread</span>
+-                    <p className="text-sm font-semibold text-[#5a3f47]">No pending proposals from Growth Partners.</p>
+-                  </div>
+-                ) : (
+-                  proposals.map(proposal => (
+-                    <div key={proposal.id} className="bg-white p-5 rounded-[24px] border border-[#e8e8e8] shadow-sm flex flex-col gap-4">
+-                      <div className="flex justify-between items-start">
+-                        <div>
+-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider ${
+-                            proposal.status === 'published' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+-                          }`}>
+-                            {proposal.status}
+-                          </span>
+-                          <h3 className="font-bold text-[#26181c] text-lg mt-1">{proposal.payload?.profile?.name || 'New Salon Setup'}</h3>
+-                          <p className="text-[11px] text-[#5a3f47]">{proposal.owner_email}</p>
+-                        </div>
+-                      </div>
+-
+-                      <div className="bg-[#fcf9f8] p-3 rounded-xl border border-dashed border-[#e8e8e8]">
+-                        <p className="text-[11px] text-[#5a3f47] italic">"{proposal.payload?.profile?.description?.slice(0, 100)}..."</p>
+-                      </div>
+-
+-                      <div className="flex gap-2">
+-                         {proposal.status === 'submitted' && (
+-                           <button 
+-                             disabled={busyId === proposal.id}
+-                             onClick={() => reviewProposal(proposal.id, 'approve')}
+-                             className="flex-1 h-10 bg-white border border-[#e8e8e8] rounded-xl text-xs font-bold hover:bg-slate-50"
+-                           >
+-                             Approve
+-                           </button>
+-                         )}
+-                         {(proposal.status === 'submitted' || proposal.status === 'approved') && (
+-                           <button 
+-                             disabled={busyId === proposal.id}
+-                             onClick={() => reviewProposal(proposal.id, 'publish')}
+-                             className="flex-1 h-10 bg-[#e6007e] text-white rounded-xl text-xs font-bold shadow-md hover:bg-[#c9006e]"
+-                           >
+-                             {busyId === proposal.id ? 'Processing...' : 'Approve & Publish'}
+-                           </button>
+-                         )}
+-                      </div>
+-                      
+-                      {error && proposal.id === busyId && <p className="text-[10px] text-rose-600 font-bold">{error}</p>}
+-                    </div>
+-                  ))
+-                )}
+-              </div>
+-            )}
+-          </>
+-        )}
+-
+-        <button 
+-          onClick={onLogout}
+-          className="mt-4 text-rose-600 text-xs font-bold border border-rose-100 py-3 rounded-xl hover:bg-rose-50 transition-colors"
+-        >
+-          Sign Out
+-        </button>
+-      </div>
+-    </div>
+-  );
+-};
+-
+-function OwnerSetup({ onReady }: { onReady: () => Promise<void> }) {
+-  const [name, setName] = useState("");
+-  const [category, setCategory] = useState("Salon");
+-  const [phone, setPhone] = useState("");
+-  const [busy, setBusy] = useState(false);
+-  const [message, setMessage] = useState("");
+-
+-  const submit = async (e: React.FormEvent) => {
+-    e.preventDefault();
+-    setBusy(true);
+-    setMessage("");
+-    try {
+-      if (!supabase) throw new Error("Supabase not configured");
+-      const { error } = await supabase.rpc('bootstrap_shop_owner', {
+-        p_business_name: name.trim(),
+-        p_business_category: category.trim(),
+-        p_contact_number: phone.trim() || null
+-      });
+-      if (error) throw error;
+-      await onReady();
+-    } catch (err: any) {
+-      setMessage(err.message || 'Failed to connect workspace');
+-    } finally {
+-      setBusy(false);
+-    }
+-  };
+-
+-  return (
+-    <form onSubmit={submit} className="bg-white p-6 rounded-[28px] border border-[#e8e8e8] shadow-sm flex flex-col gap-4">
+-      <h3 className="font-bold text-[#26181c]">Connect Your Salon Workspace</h3>
+-      <p className="text-xs text-[#5a3f47]">Set up your owner account to manage proposals and live bookings.</p>
+-      
+-      <div className="flex flex-col gap-1.5">
+-        <label className="text-[10px] font-bold text-[#8c7077] uppercase ml-1">Business Name</label>
+-        <input required value={name} onChange={e => setName(e.target.value)} className="bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl px-4 py-3 text-sm" />
+-      </div>
+-      
+-      <div className="flex flex-col gap-1.5">
+-        <label className="text-[10px] font-bold text-[#8c7077] uppercase ml-1">Category</label>
+-        <select value={category} onChange={e => setCategory(e.target.value)} className="bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl px-4 py-3 text-sm">
+-          <option value="Salon">Salon</option>
+-          <option value="Spa">Spa</option>
+-          <option value="Tattoo Studio">Tattoo Studio</option>
+-          <option value="Clinic">Clinic</option>
+-        </select>
+-      </div>
+-
+-      <div className="flex flex-col gap-1.5">
+-        <label className="text-[10px] font-bold text-[#8c7077] uppercase ml-1">Phone</label>
+-        <input value={phone} onChange={e => setPhone(e.target.value)} className="bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl px-4 py-3 text-sm" />
+-      </div>
+-
+-      {message && <p className="text-xs text-rose-600 font-bold">{message}</p>}
+-
+-      <button
+-        type="submit"
+-        disabled={busy}
+-        className="w-full h-12 bg-[#26181c] text-white rounded-xl font-bold active:scale-95 transition-all shadow-md disabled:opacity-70 mt-2"
+-      >
+-        {busy ? 'Connecting...' : 'Connect Owner Workspace'}
+-      </button>
+-    </form>
+-  );
+-}
+diff --git a/src/lib/authRoles.ts b/src/lib/authRoles.ts
+index e7dcfd6..fa94305 100644
+--- a/src/lib/authRoles.ts
++++ b/src/lib/authRoles.ts
+@@ -1,4 +1,5 @@
+-import type { Screen, UserRole } from '../types';
++import type { UserRole } from '../types';
++
+ 
+ export const PLATFORM_ROLES = [
+   'customer',
+@@ -27,8 +28,3 @@ export function roleLabel(value: string | null | undefined): string {
+     .join(' ');
  }
  
- export interface WaitlistEntry {
+-export function dashboardScreenForRole(role: PlatformRole): Screen {
+-  if (role === 'business_user') return 'owner-dashboard';
+-  if (role === 'growth_partner') return 'gp-dashboard';
+-  return 'home';
+-}
+diff --git a/src/lib/salonRepository.ts b/src/lib/salonRepository.ts
+index 41a15e5..74c9bc1 100644
+--- a/src/lib/salonRepository.ts
++++ b/src/lib/salonRepository.ts
+@@ -153,6 +153,7 @@ export async function fetchPublicSalons(client: SupabaseClient): Promise<Salon[]
+ 
+     return {
+       id: row.id,
++      slug: row.slug || undefined,
+       name: row.name || 'Salon',
+       type: category,
+       category,
+diff --git a/src/main.tsx b/src/main.tsx
+index 520d9f4..7c7938a 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -4,6 +4,14 @@ import App from './App.tsx';
+ import { ErrorBoundary } from './components/ErrorBoundary.tsx';
+ import './index.css';
+ 
++const viteEnv = (import.meta as ImportMeta & { env: { BASE_URL: string; PROD?: boolean; VITE_CANONICAL_ORIGIN?: string } }).env;
++const portalBase = viteEnv.BASE_URL;
++const canonicalOrigin = viteEnv.VITE_CANONICAL_ORIGIN?.replace(/\/$/, '');
++if (viteEnv.PROD && canonicalOrigin && window.location.origin !== canonicalOrigin) {
++  const path = window.location.pathname.startsWith(portalBase) ? window.location.pathname : portalBase;
++  window.location.replace(`${canonicalOrigin}${path}${window.location.search}${window.location.hash}`);
++}
++
+ createRoot(document.getElementById('root')!).render(
+   <StrictMode>
+     <ErrorBoundary>
+@@ -12,10 +20,10 @@ createRoot(document.getElementById('root')!).render(
+   </StrictMode>,
+ );
+ 
+-// Register Service Worker
++// Register only inside the Customer portal base path.
+ if ('serviceWorker' in navigator) {
+   window.addEventListener('load', () => {
+-    navigator.serviceWorker.register('/sw.js')
++    navigator.serviceWorker.register(`${portalBase}sw.js`, { scope: portalBase })
+       .then(registration => {
+         console.log('SW registered: ', registration);
+       })
+diff --git a/src/types.ts b/src/types.ts
+index ec92464..bdf5888 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -15,8 +15,6 @@ export type Screen =
+   | 'saved-addresses'
+   | 'support'
+   | 'settings'
+-  | 'owner-dashboard'
+-  | 'gp-dashboard'
+   | 'terms'
+   | 'privacy'
+   | 'cancellation';
+@@ -61,6 +59,7 @@ export interface Staff {
+ 
+ export interface Salon {
+   id: string;
++  slug?: string;
+   name: string;
+   type?: string;
+   category?: string;
 diff --git a/vite.config.ts b/vite.config.ts
-index fc23e76..ad405e3 100644
+index fc23e76..6927b5c 100644
 --- a/vite.config.ts
 +++ b/vite.config.ts
-@@ -12,6 +12,9 @@ export default defineConfig(() => {
-       },
-     },
-     server: {
-+      host: '0.0.0.0',
-+      // Allow preview/proxy hosts (e.g. sandbox preview domains).
-+      allowedHosts: true as const,
-       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
-       hmr: process.env.DISABLE_HMR !== 'true',
+@@ -5,6 +5,8 @@ import {defineConfig} from 'vite';
+ 
+ export default defineConfig(() => {
+   return {
++    // Mounted by Nexora main website at /app/customer/.
++    base: process.env.VITE_APP_BASE_PATH || '/',
+     plugins: [react(), tailwindcss()],
+     resolve: {
+       alias: {
 -- 
 2.39.5
 
