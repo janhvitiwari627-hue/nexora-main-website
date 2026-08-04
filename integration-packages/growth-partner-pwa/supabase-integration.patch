@@ -1,0 +1,887 @@
+From c7338277523c2e6ca2dd841ea1de061b81bb76d8 Mon Sep 17 00:00:00 2001
+From: Arena Integration Bot <arena-bot@users.noreply.github.com>
+Date: Tue, 4 Aug 2026 10:08:29 +0000
+Subject: [PATCH] =?UTF-8?q?feat:=20Supabase=20from=20scratch=20=E2=80=94?=
+ =?UTF-8?q?=20real=20auth=20replaces=20fake=20localStorage=20auth,=20live?=
+ =?UTF-8?q?=20GP=20data?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- NEW src/lib/supabaseClient.ts: client locked to shared project
+  qwaehqsmodekbgvnaavz (hostname + key validation, env-driven)
+- NEW src/lib/gpRepository.ts: growth_partners resolution, growth-partner
+  role guard (user_roles + profiles.platform_role), shop_attributions
+  (attributed shops), growth_partner_commissions summary (held/payable/paid
+  per locked rules #3 + #4: 10% of platform fee, 7-day hold), proposal status
+- LoginForm: real Supabase email/password sign-in + sign-up (metadata:
+  name/mobile/city/partner_code/signup_role); fake localStorage accounts,
+  device-local duplicate check and setTimeout auto-login removed; permanent
+  Growth Partner role enforced at login
+- App.tsx: session-driven auth state (getSession + onAuthStateChange)
+  replaces localStorage 'isAuthenticated'; fake DEFAULT_PARTNER_PROFILE and
+  DEFAULT_DASHBOARD_CACHE seeding removed; logout = supabase.auth.signOut();
+  config-error + loading gates added
+- Dashboard: partner name from the live partner record, available earnings =
+  payable commissions, shop counts from live attributions (no more hardcoded
+  ₹8,400 / 250 shops)
+- Verified: tsc --noEmit clean, vite build clean
+---
+ .env.example                 |   6 +
+ package.json                 |   1 +
+ src/App.tsx                  |  78 ++++++++----
+ src/components/Dashboard.tsx |  80 ++++++------
+ src/components/LoginForm.tsx | 171 +++++++++++++++++---------
+ src/lib/gpRepository.ts      | 228 +++++++++++++++++++++++++++++++++++
+ src/lib/supabaseClient.ts    | 104 ++++++++++++++++
+ vite.config.ts               |   2 +
+ 8 files changed, 552 insertions(+), 118 deletions(-)
+ create mode 100644 src/lib/gpRepository.ts
+ create mode 100644 src/lib/supabaseClient.ts
+
+diff --git a/.env.example b/.env.example
+index 7a550fe..7b7dc69 100644
+--- a/.env.example
++++ b/.env.example
+@@ -7,3 +7,9 @@ GEMINI_API_KEY="MY_GEMINI_API_KEY"
+ # AI Studio automatically injects this at runtime with the Cloud Run service URL.
+ # Used for self-referential links, OAuth callbacks, and API endpoints.
+ APP_URL="MY_APP_URL"
++
++# --- Nexora Supabase (shared project qwaehqsmodekbgvnaavz) -----------------
++# Supabase Dashboard → Project qwaehqsmodekbgvnaavz → Settings → API.
++# The app refuses to boot against any other Supabase project.
++VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co
++VITE_SUPABASE_ANON_KEY=PASTE_REAL_ANON_KEY_HERE
+diff --git a/package.json b/package.json
+index 6775798..cf8e3f9 100644
+--- a/package.json
++++ b/package.json
+@@ -13,6 +13,7 @@
+   },
+   "dependencies": {
+     "@google/genai": "^2.4.0",
++    "@supabase/supabase-js": "^2.110.8",
+     "@tailwindcss/vite": "^4.1.14",
+     "@vitejs/plugin-react": "^5.0.4",
+     "dotenv": "^17.2.3",
+diff --git a/src/App.tsx b/src/App.tsx
+index 6c00e44..a8c23c6 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -8,6 +8,7 @@ import TicketDetailsScreen from './components/dashboard/TicketDetailsScreen';
+ import NewTicketScreen from './components/dashboard/NewTicketScreen';
+ import HelpArticleScreen from './components/dashboard/HelpArticleScreen';
+ import OfflineNotificationBanner from './components/OfflineNotificationBanner';
++import { supabase, supabaseConfigError } from './lib/supabaseClient';
+ 
+ // Heavy route-level screens are code-split so the initial bundle only carries
+ // the login + dashboard path instead of every screen in the app.
+@@ -88,15 +89,36 @@ function ScreenLoader() {
+ export default function App() {
+   const swipeRef = useRef<HTMLDivElement>(null);
+ 
+-  // Read the auth flag during initialisation. Doing this in an effect made the
+-  // login screen flash for one frame on every reload for already-signed-in users.
+-  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+-    try {
+-      return localStorage.getItem('isAuthenticated') === 'true';
+-    } catch {
+-      return false;
++  // Real Supabase session drives the auth state (replaces the fake
++  // localStorage 'isAuthenticated' flag).
++  const [isLoggedIn, setIsLoggedIn] = useState(false);
++  const [authReady, setAuthReady] = useState(false);
++
++  useEffect(() => {
++    if (!supabase) {
++      setAuthReady(true);
++      return;
+     }
+-  });
++    let cancelled = false;
++    supabase.auth
++      .getSession()
++      .then(({ data }) => {
++        if (!cancelled) {
++          setIsLoggedIn(Boolean(data.session));
++          setAuthReady(true);
++        }
++      })
++      .catch(() => {
++        if (!cancelled) setAuthReady(true);
++      });
++    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
++      setIsLoggedIn(Boolean(session));
++    });
++    return () => {
++      cancelled = true;
++      sub.subscription.unsubscribe();
++    };
++  }, []);
+   const [currentPage, setCurrentPage] = useState('dashboard');
+   const [history, setHistory] = useState<string[]>(['dashboard']);
+   const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
+@@ -104,19 +126,8 @@ export default function App() {
+   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
+   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+ 
+-  // Initialize persistent storage layer in localStorage
+-  useEffect(() => {
+-    try {
+-      if (!localStorage.getItem('nexora_partner_profile')) {
+-        localStorage.setItem('nexora_partner_profile', JSON.stringify(DEFAULT_PARTNER_PROFILE));
+-      }
+-      if (!localStorage.getItem('nexora_dashboard_cache')) {
+-        localStorage.setItem('nexora_dashboard_cache', JSON.stringify(DEFAULT_DASHBOARD_CACHE));
+-      }
+-    } catch (err) {
+-      console.warn('Unable to access localStorage for persistent user cache:', err);
+-    }
+-  }, []);
++  // No more fake seeded demo profile / dashboard cache — the dashboard reads
++  // the signed-in partner's live data from Supabase.
+ 
+   useEffect(() => {
+     let syncTimer: ReturnType<typeof setTimeout> | undefined;
+@@ -209,12 +220,31 @@ export default function App() {
+   });
+ 
+ 
++  if (supabaseConfigError) {
++    return (
++      <div className="min-h-screen bg-[#fcf9f8] flex items-center justify-center p-6">
++        <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 text-center shadow-sm">
++          <h1 className="mb-2 text-lg font-bold text-[#1b1c1b]">Configuration required</h1>
++          <p className="text-sm leading-6 text-gray-600">{supabaseConfigError}</p>
++        </div>
++      </div>
++    );
++  }
++
++  if (!authReady) {
++    return (
++      <div className="min-h-screen bg-[#fcf9f8] flex flex-col items-center justify-center p-6 gap-3">
++        <div className="w-9 h-9 rounded-full border-2 border-pink-200 border-t-primary animate-spin" />
++        <p className="text-xs font-semibold text-gray-400">Loading Nexora Growth Partner…</p>
++      </div>
++    );
++  }
++
+   if (!isLoggedIn) {
+     return (
+       <div className="min-h-screen bg-[#fcf9f8] flex items-center justify-center p-6">
+         <div className="w-full max-w-md">
+           <LoginForm onLoginSuccess={() => {
+-            localStorage.setItem('isAuthenticated', 'true');
+             setIsLoggedIn(true);
+           }} />
+         </div>
+@@ -307,8 +337,8 @@ export default function App() {
+         onBack={goBack} 
+         onNavigate={navigateTo} 
+         onLogout={() => {
+-          localStorage.removeItem('isAuthenticated');
+           setIsLoggedIn(false);
++          void supabase?.auth.signOut();
+         }} 
+       />;
+     }
+@@ -360,8 +390,8 @@ export default function App() {
+       isSyncing={isSyncing}
+       onNavigate={navigateTo}
+       onLogout={() => {
+-        localStorage.removeItem('isAuthenticated');
+         setIsLoggedIn(false);
++        void supabase?.auth.signOut();
+       }} />;
+   };
+ 
+diff --git a/src/components/Dashboard.tsx b/src/components/Dashboard.tsx
+index e399ab5..c0c042e 100644
+--- a/src/components/Dashboard.tsx
++++ b/src/components/Dashboard.tsx
+@@ -1,5 +1,11 @@
+ import React, { useState, useEffect } from 'react';
+ import { getItem } from '../utils/db';
++import { supabase } from '../lib/supabaseClient';
++import {
++  resolveGrowthPartner,
++  fetchMyAttributions,
++  fetchCommissionSummary,
++} from '../lib/gpRepository';
+ 
+ import DashboardHeader from './dashboard/DashboardHeader';
+ import EarningsCard from './dashboard/EarningsCard';
+@@ -16,52 +22,54 @@ import { Plus } from 'lucide-react';
+ import GrowthTip from './dashboard/GrowthTip';
+ 
+ export default function Dashboard({ onLogout, onNavigate, isOnline = true, isSyncing = false }: { onLogout: () => void, onNavigate: (page: string) => void, isOnline?: boolean, isSyncing?: boolean }) {
+-  const [currentShops, setCurrentShops] = useState(250);
+-  const totalShops = 250;
+-  const [availableAmount, setAvailableAmount] = useState(8400);
+-  const [partnerName, setPartnerName] = useState('Rahul Verma');
++  // Live figures from the shared Supabase project (replaces the hardcoded
++  // demo values + localStorage/IndexedDB cache).
++  const [currentShops, setCurrentShops] = useState(0);
++  const [totalShops, setTotalShops] = useState(0);
++  const [availableAmount, setAvailableAmount] = useState(0);
++  const [partnerName, setPartnerName] = useState('Growth Partner');
+ 
+   useEffect(() => {
++    let cancelled = false;
+     const loadData = async () => {
++      if (!supabase) return;
+       try {
+-        const savedProfile = localStorage.getItem('nexora_partner_profile');
+-        if (savedProfile) {
+-          const parsed = JSON.parse(savedProfile);
+-          if (parsed.name) {
+-            setPartnerName(parsed.name);
+-          }
+-        }
++        const { data } = await supabase.auth.getUser();
++        const user = data.user;
++        if (!user || cancelled) return;
+ 
+-        // 1. Try reading from nexora_dashboard_cache in localStorage first
+-        const savedDashboardCache = localStorage.getItem('nexora_dashboard_cache');
+-        if (savedDashboardCache) {
+-          const parsedCache = JSON.parse(savedDashboardCache);
+-          if (parsedCache.availableAmount !== undefined) {
+-            setAvailableAmount(parsedCache.availableAmount);
+-          }
+-          if (parsedCache.qualifyingShopsCount !== undefined) {
+-            setCurrentShops(parsedCache.qualifyingShopsCount);
+-          }
+-        }
++        const partner = await resolveGrowthPartner(supabase, user.id);
++        if (cancelled) return;
++        if (partner) {
++          const name = (partner.full_name ?? partner.name ?? user.user_metadata?.full_name) as
++            | string
++            | undefined;
++          if (name) setPartnerName(String(name));
+ 
+-        // 2. Read IndexedDB items if present
+-        const cachedEarnings = await getItem<any>('earnings_data');
+-        if (cachedEarnings && cachedEarnings.availableAmount !== undefined) {
+-          setAvailableAmount(cachedEarnings.availableAmount);
+-        }
+-        
+-        const cachedShopsData = await getItem<any[]>('myshops_data');
+-        if (cachedShopsData) {
+-          const qualifying = cachedShopsData.filter(s => s.status === 'Qualifying').length;
+-          if (qualifying > 0) {
+-            setCurrentShops(qualifying);
+-          }
++          const [attributions, summary] = await Promise.all([
++            fetchMyAttributions(supabase, String(partner.id)),
++            fetchCommissionSummary(supabase, String(partner.id)),
++          ]);
++          if (cancelled) return;
++          const active = attributions.filter((a) => a.status === 'active');
++          setCurrentShops(active.length);
++          setTotalShops(attributions.length);
++          // "Available" = commissions released from the 7-day hold (payable).
++          setAvailableAmount(Math.round(summary.payablePaise / 100));
++          return;
+         }
++
++        // No growth_partners row yet — fall back to the auth profile name.
++        const metaName = user.user_metadata?.full_name;
++        if (metaName) setPartnerName(String(metaName));
+       } catch (err) {
+-        console.error('Failed to load cached dashboard data:', err);
++        console.warn('Failed to load live dashboard data:', err);
+       }
+     };
+-    loadData();
++    void loadData();
++    return () => {
++      cancelled = true;
++    };
+   }, []);
+   
+   return (
+diff --git a/src/components/LoginForm.tsx b/src/components/LoginForm.tsx
+index 36c7753..a85b3d3 100644
+--- a/src/components/LoginForm.tsx
++++ b/src/components/LoginForm.tsx
+@@ -15,6 +15,8 @@ import {
+   ShieldCheck,
+ } from 'lucide-react';
+ import { createNumericRef } from '../utils/id';
++import { supabase, supabaseConfigError } from '../lib/supabaseClient';
++import { isGrowthPartnerRole } from '../lib/gpRepository';
+ 
+ type AuthMode = 'login' | 'signup';
+ 
+@@ -112,23 +114,77 @@ export default function LoginForm({ onLoginSuccess }: { onLoginSuccess: () => vo
+     setSuErrors({});
+   };
+ 
++  const [authBusy, setAuthBusy] = useState(false);
++
+   // ---------------- Login submit ----------------
+-  const handleLogin = (e: React.FormEvent) => {
++  const handleLogin = async (e: React.FormEvent) => {
+     e.preventDefault();
++    if (authBusy) return;
++
+     const usernameError = validateUsername(username);
+-    const passwordError = checkPasswordStrength(password);
++    if (usernameError || !password) {
++      setErrors({
++        username: usernameError,
++        password: !password ? 'Please enter your password.' : '',
++      });
++      return;
++    }
++
++    if (!supabase) {
++      setErrors({ username: supabaseConfigError || 'Supabase is not configured.', password: '' });
++      return;
++    }
+ 
+-    if (usernameError || passwordError) {
+-      setErrors({ username: usernameError, password: passwordError });
++    if (!isValidEmail(username)) {
++      setErrors({
++        username: 'Please sign in with the email address you registered with.',
++        password: '',
++      });
+       return;
+     }
+ 
+-    if (rememberMe) {
+-      localStorage.setItem('rememberedUsername', username);
+-    } else {
+-      localStorage.removeItem('rememberedUsername');
++    setAuthBusy(true);
++    setMessage(null);
++    try {
++      const { data, error } = await supabase.auth.signInWithPassword({
++        email: username.trim().toLowerCase(),
++        password,
++      });
++      if (error) {
++        setErrors({ username: '', password: 'Invalid email or password. Please try again.' });
++        return;
++      }
++      const userId = data.user?.id;
++      if (!userId) {
++        setErrors({ username: '', password: 'Sign-in failed. Please try again.' });
++        return;
++      }
++
++      // Permanent-role guard: only Growth Partners may enter this app.
++      const roleCheck = await isGrowthPartnerRole(supabase, userId);
++      if (!roleCheck.allowed) {
++        await supabase.auth.signOut();
++        setErrors({
++          username: '',
++          password: roleCheck.foundRole
++            ? `This account is registered as "${roleCheck.foundRole}" and cannot access the Growth Partner app.`
++            : 'This account does not have a Growth Partner role assigned yet.',
++        });
++        return;
++      }
++
++      if (rememberMe) {
++        localStorage.setItem('rememberedUsername', username);
++      } else {
++        localStorage.removeItem('rememberedUsername');
++      }
++      onLoginSuccess();
++    } catch (err) {
++      console.warn('Sign-in failed:', err);
++      setErrors({ username: '', password: 'Sign-in failed. Check your connection and try again.' });
++    } finally {
++      setAuthBusy(false);
+     }
+-    onLoginSuccess();
+   };
+ 
+   // ---------------- Sign up submit ----------------
+@@ -160,72 +216,71 @@ export default function LoginForm({ onLoginSuccess }: { onLoginSuccess: () => vo
+     return next;
+   };
+ 
+-  const handleSignup = (e: React.FormEvent) => {
++  const handleSignup = async (e: React.FormEvent) => {
+     e.preventDefault();
+     const found = validateSignup();
+     setSuErrors(found);
+     if (Object.keys(found).length > 0) return;
+ 
+-    // Reject a duplicate registration on this device.
+-    let existing: Array<{ mobile?: string; email?: string }> = [];
+-    try {
+-      const raw = localStorage.getItem(REGISTERED_PARTNERS_KEY);
+-      const parsed = raw ? JSON.parse(raw) : [];
+-      if (Array.isArray(parsed)) existing = parsed;
+-    } catch {
+-      existing = [];
+-    }
+-
+     const mobile = suMobile.trim();
+     const email = suEmail.trim().toLowerCase();
+-    const clash = existing.find(
+-      (p) => p.mobile === mobile || (p.email || '').toLowerCase() === email
+-    );
+-    if (clash) {
+-      setSuErrors({
+-        mobile: clash.mobile === mobile ? 'This mobile number is already registered.' : undefined,
+-        email: (clash.email || '').toLowerCase() === email ? 'This email is already registered.' : undefined,
+-      });
+-      return;
+-    }
+ 
+     setSuSubmitting(true);
+ 
+     const name = suName.trim().replace(/\s+/g, ' ');
+     const city = suCity.trim();
+-    const profile = {
+-      name,
+-      mobile,
+-      email,
+-      city,
+-      agentCode: buildAgentCode(city),
+-      upiId: '',
+-      joinedDate: new Date().toLocaleDateString('en-IN', {
+-        day: '2-digit',
+-        month: 'short',
+-        year: 'numeric',
+-      }),
+-      status: 'Active Partner',
+-    };
+ 
+     try {
+-      // Overwrite the seeded demo profile so the dashboard greets the new
+-      // partner rather than the placeholder account.
+-      localStorage.setItem(PARTNER_PROFILE_KEY, JSON.stringify(profile));
+-      localStorage.setItem(
+-        REGISTERED_PARTNERS_KEY,
+-        JSON.stringify([...existing, { mobile, email, name }])
+-      );
+-      localStorage.setItem('rememberedUsername', mobile);
+-    } catch (err) {
+-      console.warn('Unable to persist the new partner profile:', err);
+-    }
++      if (!supabase) {
++        setSuErrors({ email: supabaseConfigError || 'Supabase is not configured.' });
++        setSuSubmitting(false);
++        return;
++      }
++      // Real account in the shared Nexora project. The Growth Partner role is
++      // assigned by Nexora ops (permanent roles are locked server-side).
++      const { data, error } = await supabase.auth.signUp({
++        email,
++        password: suPassword,
++        options: {
++          data: {
++            full_name: name,
++            mobile,
++            city,
++            partner_code: buildAgentCode(city),
++            signup_role: 'growth_partner',
++          },
++        },
++      });
++      if (error) {
++        setSuErrors({
++          email: error.message.includes('already registered')
++            ? 'This email is already registered. Please sign in instead.'
++            : `Sign-up failed: ${error.message}`,
++        });
++        setSuSubmitting(false);
++        return;
++      }
++
++      localStorage.setItem('rememberedUsername', email);
++
++      if (!data.session) {
++        // Email confirmation required before first sign-in.
++        setMessage({
++          type: 'success',
++          text: 'Account created! Check your email to confirm your address, then sign in.',
++        });
++        setSuSubmitting(false);
++        switchMode('login');
++        return;
++      }
+ 
+-    // Brief pause so the button's pending state is visible.
+-    setTimeout(() => {
+       setSuSubmitting(false);
+       onLoginSuccess();
+-    }, 900);
++    } catch (err) {
++      console.warn('Sign-up failed:', err);
++      setSuErrors({ email: 'Sign-up failed. Check your connection and try again.' });
++      setSuSubmitting(false);
++    }
+   };
+ 
+   const handleOpenForgot = () => {
+diff --git a/src/lib/gpRepository.ts b/src/lib/gpRepository.ts
+new file mode 100644
+index 0000000..51f7d6d
+--- /dev/null
++++ b/src/lib/gpRepository.ts
+@@ -0,0 +1,228 @@
++// Growth Partner data layer — NEW (Phase 1).
++// Reads the shared Supabase project (qwaehqsmodekbgvnaavz):
++//   - growth_partners            partner identity (locked rule #3 actor)
++//   - shop_attributions          which shops are attributed to this partner
++//   - growth_partner_commissions 10% of platform fee per booking, 7-day hold
++//                                (locked rules #3 + #4 — enforced server-side)
++//   - salon_setup_proposals      website setups this partner prepared
++// All money movement (hold release, payouts) happens server-side; this layer
++// is read-only for ledgers. No service_role anywhere.
++
++import type { SupabaseClient } from '@supabase/supabase-js';
++
++export interface GrowthPartnerRow {
++  id: string;
++  user_id: string | null;
++  [key: string]: unknown;
++}
++
++export interface GpAttribution {
++  id: string;
++  salon_id: string;
++  status: string;
++  attribution_method: string | null;
++  effective_from: string | null;
++  salon_name?: string;
++  salon_city?: string;
++  salon_area?: string;
++}
++
++export interface CommissionSummary {
++  heldPaise: number;
++  payablePaise: number;
++  paidPaise: number;
++  heldCount: number;
++  payableCount: number;
++  paidCount: number;
++  nextReleaseDate: string | null;
++}
++
++export interface GpProposal {
++  id: string;
++  salon_id: string | null;
++  status: string;
++  updated_at: string | null;
++}
++
++const isMissingRelationError = (error: { code?: string; message?: string } | null): boolean => {
++  if (!error) return false;
++  return (
++    error.code === '42P01' ||
++    error.code === 'PGRST205' ||
++    /could not find a (table|schema)|relation .* does not exist/i.test(error.message || '')
++  );
++};
++
++/**
++ * Resolve the growth_partners row for the signed-in auth user.
++ * Returns null when the account has no partner record yet (role not assigned).
++ */
++export async function resolveGrowthPartner(
++  client: SupabaseClient,
++  userId: string,
++): Promise<GrowthPartnerRow | null> {
++  const { data, error } = await client
++    .from('growth_partners')
++    .select('*')
++    .eq('user_id', userId)
++    .maybeSingle();
++  if (error) {
++    if (isMissingRelationError(error)) return null;
++    throw error;
++  }
++  return (data as GrowthPartnerRow | null) ?? null;
++}
++
++/**
++ * Role guard: only permanent growth partners may use this app. Checks
++ * user_roles first, then profiles.platform_role (district_partner is the
++ * legacy label for the same role).
++ */
++export async function isGrowthPartnerRole(
++  client: SupabaseClient,
++  userId: string,
++): Promise<{ allowed: boolean; foundRole: string | null }> {
++  const GP_ROLES = new Set(['growth_partner', 'district_partner']);
++  try {
++    const { data, error } = await client
++      .from('user_roles')
++      .select('role')
++      .eq('user_id', userId);
++    if (!error && Array.isArray(data) && data.length > 0) {
++      const roles = data.map((r: any) => String(r.role));
++      const match = roles.find((r) => GP_ROLES.has(r));
++      if (match) return { allowed: true, foundRole: match };
++      return { allowed: false, foundRole: roles[0] ?? null };
++    }
++  } catch {
++    // fall through to profiles check
++  }
++  try {
++    const { data, error } = await client
++      .from('profiles')
++      .select('platform_role')
++      .eq('id', userId)
++      .maybeSingle();
++    if (!error && data?.platform_role) {
++      const role = String(data.platform_role);
++      return { allowed: GP_ROLES.has(role), foundRole: role };
++    }
++  } catch {
++    // no role source available
++  }
++  return { allowed: false, foundRole: null };
++}
++
++/** Shops attributed to this partner (active attributions + salon basics). */
++export async function fetchMyAttributions(
++  client: SupabaseClient,
++  partnerId: string,
++): Promise<GpAttribution[]> {
++  const { data, error } = await client
++    .from('shop_attributions')
++    .select('id, salon_id, status, attribution_method, effective_from')
++    .eq('growth_partner_id', partnerId)
++    .order('effective_from', { ascending: false });
++  if (error) {
++    if (isMissingRelationError(error)) return [];
++    throw error;
++  }
++  const rows = (data ?? []) as GpAttribution[];
++
++  const salonIds = Array.from(new Set(rows.map((r) => r.salon_id).filter(Boolean)));
++  if (salonIds.length > 0) {
++    try {
++      const { data: salons } = await client
++        .from('salons')
++        .select('id, name, city, area')
++        .in('id', salonIds);
++      const byId = new Map((salons ?? []).map((s: any) => [s.id, s]));
++      for (const row of rows) {
++        const salon = byId.get(row.salon_id);
++        if (salon) {
++          row.salon_name = salon.name;
++          row.salon_city = salon.city;
++          row.salon_area = salon.area;
++        }
++      }
++    } catch {
++      // salon labels are decorative — never block the ledger on them
++    }
++  }
++  return rows;
++}
++
++/**
++ * Commission ledger summary (locked rules #3/#4):
++ *  - held:    earning inside its 7-day hold window
++ *  - payable: hold elapsed, awaiting the payout run
++ *  - paid:    settled
++ */
++export async function fetchCommissionSummary(
++  client: SupabaseClient,
++  partnerId: string,
++): Promise<CommissionSummary> {
++  const { data, error } = await client
++    .from('growth_partner_commissions')
++    .select('commission_paise, status, hold_until')
++    .eq('growth_partner_id', partnerId)
++    .order('hold_until', { ascending: true });
++  if (error) {
++    if (isMissingRelationError(error)) {
++      return {
++        heldPaise: 0,
++        payablePaise: 0,
++        paidPaise: 0,
++        heldCount: 0,
++        payableCount: 0,
++        paidCount: 0,
++        nextReleaseDate: null,
++      };
++    }
++    throw error;
++  }
++
++  const summary: CommissionSummary = {
++    heldPaise: 0,
++    payablePaise: 0,
++    paidPaise: 0,
++    heldCount: 0,
++    payableCount: 0,
++    paidCount: 0,
++    nextReleaseDate: null,
++  };
++  for (const row of data ?? []) {
++    const amount = Number(row.commission_paise ?? 0);
++    if (row.status === 'held') {
++      summary.heldPaise += amount;
++      summary.heldCount += 1;
++      if (!summary.nextReleaseDate && row.hold_until) summary.nextReleaseDate = String(row.hold_until);
++    } else if (row.status === 'payable') {
++      summary.payablePaise += amount;
++      summary.payableCount += 1;
++    } else if (row.status === 'paid') {
++      summary.paidPaise += amount;
++      summary.paidCount += 1;
++    }
++    // void / clawed_back are excluded — they never belong to the partner
++  }
++  return summary;
++}
++
++/** Website setup proposals prepared by this partner (status tracking only —
++ *  the Shop Owner app performs the review via review_salon_setup). */
++export async function fetchMyProposals(
++  client: SupabaseClient,
++  partnerId: string,
++): Promise<GpProposal[]> {
++  const { data, error } = await client
++    .from('salon_setup_proposals')
++    .select('id, salon_id, status, updated_at')
++    .eq('growth_partner_id', partnerId)
++    .order('updated_at', { ascending: false });
++  if (error) {
++    if (isMissingRelationError(error)) return [];
++    throw error;
++  }
++  return (data ?? []) as GpProposal[];
++}
+diff --git a/src/lib/supabaseClient.ts b/src/lib/supabaseClient.ts
+new file mode 100644
+index 0000000..c98ff1b
+--- /dev/null
++++ b/src/lib/supabaseClient.ts
+@@ -0,0 +1,104 @@
++// Supabase client for the Growth Partner PWA.
++// NEW (Phase 1): this app previously had zero Supabase integration and a fake
++// localStorage auth. It now connects to the shared Nexora project
++// qwaehqsmodekbgvnaavz and refuses any other project (hostname validated).
++//
++// Configure via VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY (see .env.example).
++
++import { createClient } from '@supabase/supabase-js';
++
++const SUPABASE_PROJECT_REF = 'qwaehqsmodekbgvnaavz';
++const EXPECTED_SUPABASE_HOSTNAME = `${SUPABASE_PROJECT_REF}.supabase.co`;
++
++type SupabaseConfigResult =
++  | { isValid: true; url: string; anonKey: string; error: null }
++  | { isValid: false; url: null; anonKey: null; error: string };
++
++const isBrowserSafeSupabaseKey = (key: string): boolean => {
++  if (key.startsWith('sb_publishable_')) {
++    return key.length > 'sb_publishable_'.length;
++  }
++  const jwtParts = key.split('.');
++  if (jwtParts.length !== 3) return false;
++  try {
++    const base64UrlPayload = jwtParts[1];
++    const base64Payload = base64UrlPayload
++      .replace(/-/g, '+')
++      .replace(/_/g, '/')
++      .padEnd(Math.ceil(base64UrlPayload.length / 4) * 4, '=');
++    const payload = JSON.parse(atob(base64Payload)) as { role?: unknown };
++    return payload.role === 'anon';
++  } catch {
++    return false;
++  }
++};
++
++export const validateSupabaseConfig = (
++  rawUrl: unknown,
++  rawAnonKey: unknown,
++): SupabaseConfigResult => {
++  const url = typeof rawUrl === 'string' ? rawUrl.trim() : '';
++  const anonKey = typeof rawAnonKey === 'string' ? rawAnonKey.trim() : '';
++
++  if (!url || !anonKey) {
++    return {
++      isValid: false,
++      url: null,
++      anonKey: null,
++      error:
++        'Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in the hosting environment.',
++    };
++  }
++
++  let parsedUrl: URL;
++  try {
++    parsedUrl = new URL(url);
++  } catch {
++    return {
++      isValid: false,
++      url: null,
++      anonKey: null,
++      error: 'Supabase configuration is invalid. Check the deployment environment variables.',
++    };
++  }
++
++  if (
++    parsedUrl.protocol !== 'https:' ||
++    parsedUrl.hostname !== EXPECTED_SUPABASE_HOSTNAME ||
++    parsedUrl.username ||
++    parsedUrl.password ||
++    (parsedUrl.pathname !== '/' && parsedUrl.pathname !== '') ||
++    parsedUrl.search ||
++    parsedUrl.hash
++  ) {
++    return {
++      isValid: false,
++      url: null,
++      anonKey: null,
++      error: `Supabase configuration must use the approved ${SUPABASE_PROJECT_REF} project.`,
++    };
++  }
++
++  if (!isBrowserSafeSupabaseKey(anonKey)) {
++    return {
++      isValid: false,
++      url: null,
++      anonKey: null,
++      error: 'Supabase configuration contains an invalid browser key.',
++    };
++  }
++
++  return { isValid: true, url: parsedUrl.origin, anonKey, error: null };
++};
++
++const viteEnv = (import.meta as ImportMeta & {
++  env?: Record<string, string | undefined>;
++}).env;
++
++const config = validateSupabaseConfig(
++  viteEnv?.VITE_SUPABASE_URL,
++  viteEnv?.VITE_SUPABASE_ANON_KEY,
++);
++
++export const supabaseConfigError = config.isValid ? null : config.error;
++export const supabase = config.isValid ? createClient(config.url, config.anonKey) : null;
+diff --git a/vite.config.ts b/vite.config.ts
+index c9748ca..187e5d2 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -28,6 +28,8 @@ export default defineConfig(() => {
+       chunkSizeWarningLimit: 700,
+     },
+     server: {
++      // Allow preview/proxy hosts (e.g. sandbox preview domains).
++      allowedHosts: true as const,
+       // HMR is disabled in AI Studio via DISABLE_HMR env var.
+       // Do not modify—file watching is disabled to prevent flickering during agent edits.
+       hmr: process.env.DISABLE_HMR !== 'true',
+-- 
+2.39.5
+
