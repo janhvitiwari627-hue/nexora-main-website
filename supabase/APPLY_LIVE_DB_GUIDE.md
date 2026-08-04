@@ -21,6 +21,7 @@ Open https://supabase.com/dashboard/project/qwaehqsmodekbgvnaavz/sql/new and run
 6. `supabase/migrations/20260802_customer_phase1_schema.sql` - Phase 1 Customer: customer_settings, saved_payment_methods, customer_feedback, support_tickets created_by, reviews columns, rewards, wallet_transactions, credit_wallet(), credit_reward_points()
 7. `supabase/migrations/20260803_profiles_auto_create_fix.sql` - Fix account creation for customer/business_user/growth_partner, handle_new_user trigger, backfill missing profiles, RLS
 8. `supabase/migrations/20260804_shop_owner_phase2_full.sql` - Phase 2 Shop Owner full: salons/services/staff/offers/salon_hours/bookings/salon_public_websites RLS owner own only, is_salon_visible_in_customer_app()
+9. `supabase/migrations/20260805_permanent_profile_role_guard.sql` - v3 permanent `profiles.platform_role` guard; ordinary authenticated clients cannot insert/promote owner or partner roles or mutate an assigned role
 
 ## Verification After Apply
 
@@ -31,8 +32,9 @@ select * from public.verify_business_rules();
 -- Should show 1 row per existing auth user without profile before, now backfilled
 select count(*) from public.profiles;
 
--- Should show trigger exists
+-- Should show auth trigger and permanent role guard
 select tgname from pg_trigger where tgrelid='auth.users'::regclass and tgname='on_auth_user_created';
+select tgname from pg_trigger where tgrelid='public.profiles'::regclass and tgname='trg_profiles_platform_role_guard';
 
 -- Customer Phase 1 tables now exist
 select table_name from information_schema.tables where table_schema='public' and table_name in ('customer_settings','saved_payment_methods','customer_feedback','rewards','wallet_transactions');

@@ -13,7 +13,8 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
 const localBindingConfig = {
   main: "./worker/index.ts",
-  compatibility_flags: ["nodejs_compat"],
+  // compatibility_flags are already declared in wrangler.json; defining them
+  // here as well makes Miniflare reject the preview config as a duplicate.
   d1_databases: d1
     ? [
         {
@@ -46,7 +47,8 @@ export default defineConfig(async () => {
   return {
     server: {
       host: "0.0.0.0",
-      allowedHosts: ["terminal.local"],
+      // Arena previews are proxied under a generated host, not terminal.local.
+      allowedHosts: true as const,
       ...(isCodexSeatbeltSandbox
         ? { watch: { useFsEvents: false, usePolling: true } }
         : {}),

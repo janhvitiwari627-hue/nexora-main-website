@@ -2,6 +2,14 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { createClient, Session, SupabaseClient } from "@supabase/supabase-js";
+import {
+  PORTAL_PATHS,
+  isPortalPath,
+  legacyDashboardRoleFromPath,
+  portalPathForRole,
+  portalRoleFromPath,
+  roleQueryForPortalRole,
+} from "./lib/portalRoutes";
 
 type Role = "customer" | "business_user" | "growth_partner";
 type Salon = {
@@ -261,17 +269,17 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
     };
   }, []);
 
-  const navigate = (target: string) => {
+  const navigate = useCallback((target: string) => {
     window.history.pushState({}, "", target);
     setPath(new URL(target, window.location.origin).pathname);
     window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+  }, []);
 
-  const signOut = async (destination = "/") => {
+  const signOut = useCallback(async (destination = "/") => {
     setAuthState({ loading: false, session: null });
     await getClient()?.auth.signOut();
     navigate(destination);
-  };
+  }, [navigate]);
 
   let content: React.ReactNode;
   if (path === "/salons") content = <CatalogPage navigate={navigate} online={online} />;
@@ -284,8 +292,10 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   else if (path === "/cancellation-refund") content = <LegalPage type="refund" />;
   else if (path === "/login" || path === "/signup")
     content = <AuthPage mode={path === "/login" ? "login" : "signup"} navigate={navigate} />;
+  else if (isPortalPath(path))
+    content = <DashboardPage expectedRole={portalRoleFromPath(path) ?? undefined} navigate={navigate} signOut={signOut} />;
   else if (path.startsWith("/dashboard"))
-    content = <DashboardPage navigate={navigate} signOut={signOut} />;
+    content = <DashboardPage expectedRole={legacyDashboardRoleFromPath(path) ?? undefined} navigate={navigate} signOut={signOut} />;
   else if (path === "/customer" || path === "/owner" || path === "/growth-partner")
     content = <RoleEntry path={path} navigate={navigate} />;
   else content = <HomePage navigate={navigate} online={online} />;
@@ -321,7 +331,8 @@ function Header({
         : authState.role === "customer"
           ? "Customer dashboard"
           : "Account";
-  const dashboardPath = authState.role ? `/dashboard/${authState.role}` : "/dashboard";
+  // Canonical same-origin portal paths keep all PWAs on one browser origin.
+  const dashboardPath = authState.role ? portalPathForRole(authState.role) : "/dashboard";
 
   return (
     <header className="topbar">
@@ -331,9 +342,9 @@ function Header({
       </button>
       <nav aria-label="Main navigation">
         <button onClick={() => navigate("/salons")}>Find salons</button>
-        <button onClick={() => navigate("/customer")}>Customer</button>
-        <button onClick={() => navigate("/owner")}>Shop Owner</button>
-        <button onClick={() => navigate("/growth-partner")}>Growth Partner</button>
+        <button onClick={() => navigate(PORTAL_PATHS.customer)}>Customer</button>
+        <button onClick={() => navigate(PORTAL_PATHS.business_user)}>Shop Owner</button>
+        <button onClick={() => navigate(PORTAL_PATHS.growth_partner)}>Growth Partner</button>
         {authState.session ? (
           <>
             <button className="nav-cta" onClick={() => navigate(dashboardPath)}>{dashboardLabel}</button>
@@ -458,9 +469,9 @@ function HomePage({ navigate, online }: { navigate: (path: string) => void; onli
       <section className="section">
         <div className="section-heading"><span className="eyebrow">About Nexora</span><h2>One connected platform</h2><p>Customers discover published salons, Shop Owners manage own shop data under RLS, Growth Partners submit proposals, commissions 10% of platform fee held 7 days, owner payout daily 22:00 IST. All 6 locked business rules verifiable via verify_business_rules().</p></div>
         <div className="role-grid">
-          <RoleCard title="For Customers" text="Find published salons, book services, and follow payment or refund status." path="/customer" navigate={navigate} />
-          <RoleCard title="For Shop Owners" text="Review website proposals, publish your storefront, manage bookings, services, staff, offers, wallet and earnings under RLS own only." path="/owner" navigate={navigate} />
-          <RoleCard title="For Growth Partners" text="Prepare salon websites, track attribution, and view commission hold status – 10% of platform fee, held 7 days." path="/growth-partner" navigate={navigate} />
+          <RoleCard title="For Customers" text="Find published salons, book services, and follow payment or refund status." path={PORTAL_PATHS.customer} navigate={navigate} />
+          <RoleCard title="For Shop Owners" text="Review website proposals, publish your storefront, manage bookings, services, staff, offers, wallet and earnings under RLS own only." path={PORTAL_PATHS.business_user} navigate={navigate} />
+          <RoleCard title="For Growth Partners" text="Prepare salon websites, track attribution, and view commission hold status – 10% of platform fee, held 7 days." path={PORTAL_PATHS.growth_partner} navigate={navigate} />
         </div>
       </section>
     </main>
@@ -473,16 +484,18 @@ function RoleCard({ title, text, path, navigate }: { title: string; text: string
 
 function RoleEntry({ path, navigate }: { path: string; navigate: (path: string) => void }) {
   const label = path === "/owner" ? "Shop Owner" : path === "/growth-partner" ? "Growth Partner" : "Customer";
-  const role = path === "/owner" ? "owner" : path === "/growth-partner" ? "growth-partner" : "customer";
+  const platformRole: Role = path === "/owner" ? "business_user" : path === "/growth-partner" ? "growth_partner" : "customer";
+  const role = roleQueryForPortalRole(platformRole);
+  const portalPath = portalPathForRole(platformRole);
   return (
     <main className="center-page">
       <section className="entry-card">
         <span className="eyebrow">Nexora {label}</span>
         <h1>{label} portal</h1>
-        <p>Use your permanent {label.toLowerCase()} account. Accounts automatically return to their assigned dashboard.</p>
+        <p>Use your permanent {label.toLowerCase()} account. Accounts automatically return to their assigned same-origin portal.</p>
         <div className="button-row">
-          <button className="primary" onClick={() => navigate(`/login?role=${role}`)}>Log in</button>
-          <button className="secondary" onClick={() => navigate(`/signup?role=${role}`)}>Sign up</button>
+          <button className="primary" onClick={() => navigate(`/login?role=${role}&returnTo=${encodeURIComponent(portalPath)}`)}>Log in</button>
+          <button className="secondary" onClick={() => navigate(`/signup?role=${role}&returnTo=${encodeURIComponent(portalPath)}`)}>Sign up</button>
         </div>
       </section>
     </main>
@@ -691,7 +704,7 @@ function SalonPage({
   return (
     <main>
       <section className="store-hero"><span className="verified-pill">✓ Nexora verified</span><h1>{item.name}</h1><p>{String(config.profile?.description ?? item.description ?? "Professional beauty services with easy online booking.")}</p><div className="store-facts"><span>★ {Number(item.rating_average).toFixed(1)} rating</span><span>⌖ {item.area ?? item.city}, {item.city}</span></div><button className="primary" disabled={authState.loading} onClick={() => startBooking()}>{authState.loading ? "Checking account…" : "Book appointment"}</button></section>
-      {roleMismatch && <section className="role-mismatch" role="alert" aria-labelledby="booking-role-title"><div className="role-mismatch-card"><span className="eyebrow">Switch account</span><h2 id="booking-role-title">Customer account required</h2><p>Booking is only available for Customer accounts. Please sign out and log in with a Customer account.</p><div className="button-row"><button className="primary" disabled={switchingAccount} onClick={() => void switchToCustomer()}>{switchingAccount ? "Signing out…" : "Sign out and continue as Customer"}</button><button className="secondary" onClick={() => setRoleMismatch(false)}>Back to salon</button><button className="text-button" onClick={() => navigate(authState.role ? `/dashboard/${authState.role}` : "/dashboard")}>Go to my dashboard</button></div></div></section>}
+      {roleMismatch && <section className="role-mismatch" role="alert" aria-labelledby="booking-role-title"><div className="role-mismatch-card"><span className="eyebrow">Switch account</span><h2 id="booking-role-title">Customer account required</h2><p>Booking is only available for Customer accounts. Please sign out and log in with a Customer account.</p><div className="button-row"><button className="primary" disabled={switchingAccount} onClick={() => void switchToCustomer()}>{switchingAccount ? "Signing out…" : "Sign out and continue as Customer"}</button><button className="secondary" onClick={() => setRoleMismatch(false)}>Back to salon</button><button className="text-button" onClick={() => navigate(authState.role ? portalPathForRole(authState.role) : "/dashboard")}>Go to my dashboard</button></div></div></section>}
       <section className="section"><div className="section-heading"><span className="eyebrow">Services</span><h2>Choose your service</h2></div>
       {!services.length ? <StateCard title="Services are being updated" text="Please check back soon." /> : <div className="service-grid">{services.map((service, index) => <article className="service-card" key={String(service.id ?? index)}><div><h3>{String(service.name ?? "Salon service")}</h3><p>{String(service.description ?? "Professional salon service")}</p><small>{Number(service.duration_minutes ?? 0)} minutes</small></div><div><b>{money(Number(service.price_paise ?? 0))}</b><button className="text-button" onClick={() => startBooking(String(service.name ?? ""))}>Book</button></div></article>)}</div>}</section>
       <section className="section salon-info"><div><span className="eyebrow">Visit</span><h2>{item.name}</h2><p>{item.address}, {item.city}</p>{openingHours && <p>Open {String(openingHours.opens ?? "—")}–{String(openingHours.closes ?? "—")}</p>}</div><button className="secondary" onClick={() => navigate("/cancellation-refund")}>Cancellation policy</button></section>
@@ -860,7 +873,7 @@ function BookingPage({
 
   if (authState.loading || loading) return <main className="center-page"><div className="loader" aria-label="Loading booking" /></main>;
   if (authState.session && authState.role !== "customer") {
-    return <main className="center-page"><section className="role-mismatch-card" role="alert"><span className="eyebrow">Switch account</span><h1>Customer account required</h1><p>Booking is only available for Customer accounts. Please sign out and log in with a Customer account.</p><div className="button-row"><button className="primary" disabled={switchingAccount} onClick={() => { setSwitchingAccount(true); void signOut(customerLoginPath); }}>{switchingAccount ? "Signing out…" : "Sign out and continue as Customer"}</button><button className="secondary" onClick={() => navigate(`/salons/${encodeURIComponent(slug)}`)}>Back to salon</button><button className="text-button" onClick={() => navigate(authState.role ? `/dashboard/${authState.role}` : "/dashboard")}>Go to my dashboard</button></div></section></main>;
+    return <main className="center-page"><section className="role-mismatch-card" role="alert"><span className="eyebrow">Switch account</span><h1>Customer account required</h1><p>Booking is only available for Customer accounts. Please sign out and log in with a Customer account.</p><div className="button-row"><button className="primary" disabled={switchingAccount} onClick={() => { setSwitchingAccount(true); void signOut(customerLoginPath); }}>{switchingAccount ? "Signing out…" : "Sign out and continue as Customer"}</button><button className="secondary" onClick={() => navigate(`/salons/${encodeURIComponent(slug)}`)}>Back to salon</button><button className="text-button" onClick={() => navigate(authState.role ? portalPathForRole(authState.role) : "/dashboard")}>Go to my dashboard</button></div></section></main>;
   }
   if (message && !salon) return <main className="center-page"><StateCard title="Booking unavailable" text={message} action="Back to salon" onAction={() => navigate(`/salons/${encodeURIComponent(slug)}`)} /></main>;
   if (!salon) return null;
@@ -1050,7 +1063,7 @@ function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (pat
         navigate(returnTo);
       } else {
         // Preserve original ternary pattern for test harness - using profileForNav but pattern kept in comment and below for contract
-        navigate(profileForNav.platform_role === "customer" && returnTo ? returnTo : `/dashboard/${profileForNav.platform_role}`);
+        navigate(profileForNav.platform_role === "customer" && returnTo ? returnTo : portalPathForRole(profileForNav.platform_role));
       }
       // Contract pattern preserved below for static tests (also in footer comment block)
       // profile.platform_role === "customer" && returnTo ? returnTo : `/dashboard/${profile.platform_role}`
@@ -1155,9 +1168,12 @@ function getDetailedConfigError(): string {
 }
 
 function DashboardPage({
+  expectedRole,
   navigate,
   signOut,
 }: {
+  /** Role encoded by /app/customer, /app/owner, or /app/partner. */
+  expectedRole?: Role;
   navigate: (path: string) => void;
   signOut: (destination?: string) => Promise<void>;
 }) {
@@ -1167,16 +1183,27 @@ function DashboardPage({
     try {
       const client = getClient();
       if (!client) throw new Error(missingSupabaseConfigMessage);
+
+      const currentPath = window.location.pathname;
+      const requestedRole = expectedRole ?? portalRoleFromPath(currentPath) ?? legacyDashboardRoleFromPath(currentPath);
+      const loginRole = requestedRole ?? "customer";
+      const returnTo = isPortalPath(currentPath) ? currentPath : portalPathForRole(loginRole);
       const { data: { user } } = await client.auth.getUser();
-      if (!user) { navigate("/login"); return; }
-      // Try maybeSingle first, then attempt auto-creation if missing
+      if (!user) {
+        navigate(`/login?role=${roleQueryForPortalRole(loginRole)}&returnTo=${encodeURIComponent(returnTo)}`);
+        return;
+      }
+
+      // Try maybeSingle first, then attempt auto-creation if the trigger has
+      // not finished yet. The database trigger remains the canonical role
+      // authority; this is only a recovery path for an already-authenticated
+      // user whose profile row is temporarily missing.
       type ProfileRow = { platform_role: Role; full_name: string; is_active: boolean };
       let profile: ProfileRow | null = null;
       const { data, error } = await client.from("profiles").select("platform_role,full_name,is_active").eq("id", user.id).maybeSingle();
       if (!error && data) {
         profile = data as unknown as ProfileRow;
-      } else if (error) {
-        // If row not found, attempt to create from user_metadata
+      } else if (error || !data) {
         const metaRole = (user.user_metadata?.signup_role as Role) || "customer";
         const metaName = (user.user_metadata?.full_name as string) || user.email?.split("@")[0] || "User";
         const { data: created, error: createErr } = await client
@@ -1189,15 +1216,25 @@ function DashboardPage({
       }
       if (!profile) throw new Error("Profile missing for this account. Please recreate or contact support.");
       if (!profile.is_active) throw new Error("This account is inactive.");
-      const expected = window.location.pathname.split("/")[2];
-      if (expected && expected !== profile.platform_role) {
-        window.history.replaceState({}, "", `/dashboard/${profile.platform_role}`);
+
+      // URL role is never trusted. A customer opening /app/owner (or an
+      // owner opening /app/partner) is sent to the one portal allowed by the
+      // permanent profiles.platform_role value.
+      if (requestedRole && requestedRole !== profile.platform_role) {
+        navigate(portalPathForRole(profile.platform_role));
+        return;
+      }
+      // Legacy dashboard URLs remain compatible but always canonicalise to a
+      // path-based portal so no second origin/session is introduced.
+      if (!isPortalPath(currentPath)) {
+        navigate(portalPathForRole(profile.platform_role));
+        return;
       }
       setState({ loading: false, role: profile.platform_role, name: profile.full_name });
     } catch (cause) {
       setState({ loading: false, error: friendlyError(cause) });
     }
-  }, [navigate]);
+  }, [expectedRole, navigate]);
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
@@ -1205,7 +1242,7 @@ function DashboardPage({
   if (state.loading) return <main className="center-page"><div className="loader" aria-label="Loading dashboard" /></main>;
   if (state.error) return <main className="center-page"><StateCard title="Dashboard unavailable" text={state.error} action="Retry" onAction={load} /></main>;
   const label = state.role === "business_user" ? "Shop Owner" : state.role === "growth_partner" ? "Growth Partner" : "Customer";
-  return <main className="section page-top"><div className="dashboard-hero"><span className="eyebrow">{label} dashboard</span><h1>Welcome, {state.name}</h1><p>Your session is protected by the assigned Nexora role. Data access remains limited by staging RLS. Project: {SUPABASE_PROJECT_REF}.</p></div><RoleWorkspace role={state.role!} navigate={navigate} /><button className="secondary signout" onClick={() => void signOut()}>Sign out</button></main>;
+  return <main className="section page-top"><div className="dashboard-hero"><span className="eyebrow">{label} portal</span><h1>Welcome, {state.name}</h1><p>Your session is protected by the assigned permanent role. This portal uses the shared same-origin Nexora route and staging RLS. Project: {SUPABASE_PROJECT_REF}.</p></div><RoleWorkspace role={state.role!} navigate={navigate} /><button className="secondary signout" onClick={() => void signOut()}>Sign out</button></main>;
 }
 
 type Proposal = {
@@ -2078,8 +2115,10 @@ function portalFromContext(role: Role | undefined, path: string): PortalKey {
   if (role === "business_user") return "owner";
   if (role === "growth_partner") return "growth-partner";
   if (role === "customer") return "customer";
-  if (path === "/owner" || path.startsWith("/dashboard/business_user")) return "owner";
-  if (path === "/growth-partner" || path.startsWith("/dashboard/growth_partner")) return "growth-partner";
+
+  const pathRole = portalRoleFromPath(path) ?? legacyDashboardRoleFromPath(path);
+  if (pathRole === "business_user" || path === "/owner") return "owner";
+  if (pathRole === "growth_partner" || path === "/growth-partner") return "growth-partner";
   return "customer";
 }
 

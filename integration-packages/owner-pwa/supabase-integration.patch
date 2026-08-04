@@ -1,6 +1,6 @@
-From 869e6d8fa9e527dd2fcc8554034cb0f980c07b6f Mon Sep 17 00:00:00 2001
+From 9bbd90904dd967b77f34189fab828e8ad6cfeabe Mon Sep 17 00:00:00 2001
 From: Arena Integration Bot <arena-bot@users.noreply.github.com>
-Date: Tue, 4 Aug 2026 09:56:32 +0000
+Date: Tue, 4 Aug 2026 11:52:34 +0000
 Subject: [PATCH] =?UTF-8?q?feat:=20Supabase=20Phase-2=20integration=20?=
  =?UTF-8?q?=E2=80=94=20replace=20localStorage=20business=20data=20+=20prop?=
  =?UTF-8?q?osal=20review=20system?=
@@ -8,30 +8,8 @@ MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-- New lib/ownerRepository.ts: RLS-scoped data layer (salons via
-  organization_members, services/staff/offers CRUD, bookings + status,
-  owner_payouts read-only, reviews, salon_setup_proposals + review_salon_setup
-  RPC, published website visibility)
-- New lib/useOwnerContext.ts: shared owner/salon resolution hook
-- NEW ProposalReview screen: review GP-prepared website setups —
-  approve / request changes / reject / publish (server-side publish sets
-  verified + online bookings + shop attribution)
-- Dashboard: live pending-proposals card + live today-bookings count
-- Bookings: live salon bookings replace hardcoded demo bookings
-- Services (list/new/detail): live services CRUD replaces nexora_services
-  localStorage + hardcoded menu
-- Staff (management/new/detail): live staff replaces nexora_staff_list
-  localStorage + demo team
-- Wallet: live owner_payouts (balance = settled, pending = unsettled);
-  withdraw replaced with honest 'auto payout daily 10 PM IST' notice
-  (locked business rule #5)
-- Reviews: live reviews table replaces hardcoded reviews
-- Profile: business identity (name/address/city) persists to the salons row
-- Verified: tsc --noEmit clean, vite build clean
-
-Device-local keys intentionally kept (no backend tables): theme/language/
-install flags, notification toggles, reply templates, offline form drafts.
 ---
+ .env.example                    |   3 +
  src/App.tsx                     |   3 +
  src/lib/ownerRepository.ts      | 459 ++++++++++++++++++++++++++++++++
  src/lib/useOwnerContext.ts      |  55 ++++
@@ -48,12 +26,23 @@ install flags, notification toggles, reply templates, offline form drafts.
  src/screens/StaffManagement.tsx | 126 +++++----
  src/screens/Wallet.tsx          |  89 ++++---
  src/types.ts                    |   5 +-
- vite.config.ts                  |   3 +
- 17 files changed, 1387 insertions(+), 408 deletions(-)
+ vite.config.ts                  |   5 +
+ 18 files changed, 1392 insertions(+), 408 deletions(-)
  create mode 100644 src/lib/ownerRepository.ts
  create mode 100644 src/lib/useOwnerContext.ts
  create mode 100644 src/screens/ProposalReview.tsx
 
+diff --git a/.env.example b/.env.example
+index 986554b..67e6080 100644
+--- a/.env.example
++++ b/.env.example
+@@ -4,3 +4,6 @@ VITE_SUPABASE_ANON_KEY=
+ 
+ # Gemini AI Configuration
+ GEMINI_API_KEY=
++
++# Use /app/owner/ when proxied behind the Nexora main website.
++VITE_APP_BASE_PATH=/app/owner/
 diff --git a/src/App.tsx b/src/App.tsx
 index fcb8916..2d2d2f7 100644
 --- a/src/App.tsx
@@ -2272,10 +2261,19 @@ index df53fa8..8a26c74 100644
  
  export interface Theme {
 diff --git a/vite.config.ts b/vite.config.ts
-index ba2eada..92256cc 100644
+index ba2eada..0c6a7db 100644
 --- a/vite.config.ts
 +++ b/vite.config.ts
-@@ -99,6 +99,9 @@ export default defineConfig(() => {
+@@ -6,6 +6,8 @@ import { VitePWA } from 'vite-plugin-pwa';
+ 
+ export default defineConfig(() => {
+   return {
++    // Mounted by Nexora main website at /app/owner/.
++    base: process.env.VITE_APP_BASE_PATH || '/',
+     plugins: [
+       react(), 
+       tailwindcss(),
+@@ -99,6 +101,9 @@ export default defineConfig(() => {
        },
      },
      server: {

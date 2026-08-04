@@ -42,7 +42,10 @@ test("main website uses only the shared Supabase env variables", () => {
   assert.match(mainApp, /viteEnv\.VITE_SUPABASE_URL \?\?/);
   assert.match(mainApp, /process\.env\.NEXT_PUBLIC_SUPABASE_ANON_KEY/);
   assert.match(mainApp, /viteEnv\.VITE_SUPABASE_ANON_KEY/);
-  assert.doesNotMatch(mainApp, /VITE_PUBLIC_SUPABASE|SUPABASE_URLS|SECONDARY_SUPABASE/);
+  // VITE_PUBLIC_ is a supported alias for deployments; only secondary or
+  // unapproved project variables are forbidden.
+  assert.doesNotMatch(mainApp, /SUPABASE_URLS|SECONDARY_SUPABASE/);
+  assert.match(mainApp, /VITE_PUBLIC_SUPABASE_URL/);
 });
 
 // ---------------------------------------------------------------------------

@@ -45,7 +45,7 @@ Now Full Customer Dashboard with 9 tabs:
 - Published Salons: CatalogStrip live marketplace, verified=true, is_active=true, is_published=true
 
 ### Live DB Migrations Apply Script:
-- Created `supabase/APPLY_LIVE_DB_GUIDE.md` – order to apply 8 migrations via Dashboard SQL Editor, with verification queries
+- Created `supabase/APPLY_LIVE_DB_GUIDE.md` – order to apply 9 migrations via Dashboard SQL Editor, with verification queries
 - Created `scripts/apply_phase1_phase2_live_db.sh` – bash script that applies all missing migrations via psql connection string, then verifies verify_business_rules(), trigger on_auth_user_created, tables existence
 - Migrations in order:
   1. 20260729_complete_salon_proposal_publish – review_salon_setup publish + attribution
@@ -56,6 +56,7 @@ Now Full Customer Dashboard with 9 tabs:
   6. 20260802_customer_phase1_schema – customer_settings, saved_payment_methods, customer_feedback, support_tickets.created_by, reviews columns, rewards, wallet_transactions, credit_wallet(), credit_reward_points()
   7. 20260803_profiles_auto_create_fix – owner auth permanent business_user, handle_new_user trigger, backfill missing profiles, RLS
   8. 20260804_shop_owner_phase2_full – Phase 2 full: salons/services/staff/offers/salon_hours/bookings/salon_public_websites RLS owner own only, is_salon_visible_in_customer_app()
+  9. 20260805_permanent_profile_role_guard – v3 permanent platform role protection for profiles.platform_role
 
 ## Verification
 

@@ -1,6 +1,6 @@
-From c7338277523c2e6ca2dd841ea1de061b81bb76d8 Mon Sep 17 00:00:00 2001
+From e2867a7ddb317b9b947e6eb591095e8df25ccfe8 Mon Sep 17 00:00:00 2001
 From: Arena Integration Bot <arena-bot@users.noreply.github.com>
-Date: Tue, 4 Aug 2026 10:08:29 +0000
+Date: Tue, 4 Aug 2026 11:52:40 +0000
 Subject: [PATCH] =?UTF-8?q?feat:=20Supabase=20from=20scratch=20=E2=80=94?=
  =?UTF-8?q?=20real=20auth=20replaces=20fake=20localStorage=20auth,=20live?=
  =?UTF-8?q?=20GP=20data?=
@@ -8,42 +8,24 @@ MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
 Content-Transfer-Encoding: 8bit
 
-- NEW src/lib/supabaseClient.ts: client locked to shared project
-  qwaehqsmodekbgvnaavz (hostname + key validation, env-driven)
-- NEW src/lib/gpRepository.ts: growth_partners resolution, growth-partner
-  role guard (user_roles + profiles.platform_role), shop_attributions
-  (attributed shops), growth_partner_commissions summary (held/payable/paid
-  per locked rules #3 + #4: 10% of platform fee, 7-day hold), proposal status
-- LoginForm: real Supabase email/password sign-in + sign-up (metadata:
-  name/mobile/city/partner_code/signup_role); fake localStorage accounts,
-  device-local duplicate check and setTimeout auto-login removed; permanent
-  Growth Partner role enforced at login
-- App.tsx: session-driven auth state (getSession + onAuthStateChange)
-  replaces localStorage 'isAuthenticated'; fake DEFAULT_PARTNER_PROFILE and
-  DEFAULT_DASHBOARD_CACHE seeding removed; logout = supabase.auth.signOut();
-  config-error + loading gates added
-- Dashboard: partner name from the live partner record, available earnings =
-  payable commissions, shop counts from live attributions (no more hardcoded
-  ₹8,400 / 250 shops)
-- Verified: tsc --noEmit clean, vite build clean
 ---
- .env.example                 |   6 +
+ .env.example                 |   9 ++
  package.json                 |   1 +
  src/App.tsx                  |  78 ++++++++----
  src/components/Dashboard.tsx |  80 ++++++------
  src/components/LoginForm.tsx | 171 +++++++++++++++++---------
  src/lib/gpRepository.ts      | 228 +++++++++++++++++++++++++++++++++++
  src/lib/supabaseClient.ts    | 104 ++++++++++++++++
- vite.config.ts               |   2 +
- 8 files changed, 552 insertions(+), 118 deletions(-)
+ vite.config.ts               |   4 +
+ 8 files changed, 557 insertions(+), 118 deletions(-)
  create mode 100644 src/lib/gpRepository.ts
  create mode 100644 src/lib/supabaseClient.ts
 
 diff --git a/.env.example b/.env.example
-index 7a550fe..7b7dc69 100644
+index 7a550fe..bf45126 100644
 --- a/.env.example
 +++ b/.env.example
-@@ -7,3 +7,9 @@ GEMINI_API_KEY="MY_GEMINI_API_KEY"
+@@ -7,3 +7,12 @@ GEMINI_API_KEY="MY_GEMINI_API_KEY"
  # AI Studio automatically injects this at runtime with the Cloud Run service URL.
  # Used for self-referential links, OAuth callbacks, and API endpoints.
  APP_URL="MY_APP_URL"
@@ -53,6 +35,9 @@ index 7a550fe..7b7dc69 100644
 +# The app refuses to boot against any other Supabase project.
 +VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co
 +VITE_SUPABASE_ANON_KEY=PASTE_REAL_ANON_KEY_HERE
++
++# Use /app/partner/ when proxied behind the Nexora main website.
++VITE_APP_BASE_PATH=/app/partner/
 diff --git a/package.json b/package.json
 index 6775798..cf8e3f9 100644
 --- a/package.json
@@ -870,10 +855,19 @@ index 0000000..c98ff1b
 +export const supabaseConfigError = config.isValid ? null : config.error;
 +export const supabase = config.isValid ? createClient(config.url, config.anonKey) : null;
 diff --git a/vite.config.ts b/vite.config.ts
-index c9748ca..187e5d2 100644
+index c9748ca..902d428 100644
 --- a/vite.config.ts
 +++ b/vite.config.ts
-@@ -28,6 +28,8 @@ export default defineConfig(() => {
+@@ -5,6 +5,8 @@ import {defineConfig} from 'vite';
+ 
+ export default defineConfig(() => {
+   return {
++    // Mounted by Nexora main website at /app/partner/.
++    base: process.env.VITE_APP_BASE_PATH || '/',
+     plugins: [react(), tailwindcss()],
+     resolve: {
+       alias: {
+@@ -28,6 +30,8 @@ export default defineConfig(() => {
        chunkSizeWarningLimit: 700,
      },
      server: {
