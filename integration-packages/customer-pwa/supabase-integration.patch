@@ -1,30 +1,240 @@
-From ef3525a7e52b4844e5265e7b52300ff30e46d630 Mon Sep 17 00:00:00 2001
+From 0cae28b44372669e61856aa530d4efdf8a061e6f Mon Sep 17 00:00:00 2001
 From: Arena Integration Bot <arena-bot@users.noreply.github.com>
-Date: Tue, 4 Aug 2026 11:53:39 +0000
-Subject: [PATCH] fix: keep Customer PWA production-only and mount it under
- /app/customer
+Date: Tue, 4 Aug 2026 13:20:35 +0000
+Subject: [PATCH] feat: mount Customer PWA and consume public booking handoff
 
 ---
- .env.example         |  3 ++
- src/App.tsx          | 66 +++++++-------------------------------------
- src/lib/authRoles.ts |  8 ++----
- src/types.ts         |  2 --
- vite.config.ts       |  2 ++
- 5 files changed, 17 insertions(+), 64 deletions(-)
+ .env.example               |   5 ++
+ index.html                 |   4 +-
+ public/manifest.json       |  31 +++-------
+ public/sw.js               | 119 ++++++-------------------------------
+ src/App.tsx                |  86 +++++++++------------------
+ src/lib/authRoles.ts       |   8 +--
+ src/lib/salonRepository.ts |   1 +
+ src/main.tsx               |  12 +++-
+ src/types.ts               |   3 +-
+ vite.config.ts             |   2 +
+ 10 files changed, 76 insertions(+), 195 deletions(-)
 
 diff --git a/.env.example b/.env.example
-index e3f77ea..8aba0b0 100644
+index e3f77ea..adcbc03 100644
 --- a/.env.example
 +++ b/.env.example
-@@ -3,3 +3,6 @@ VITE_SUPABASE_ANON_KEY=
+@@ -3,3 +3,8 @@ VITE_SUPABASE_ANON_KEY=
  
  # Set both variables in the hosting environment before building or deploying the app.
  GEMINI_API_KEY=
 +
 +# Use /app/customer/ when proxied behind the Nexora main website.
 +VITE_APP_BASE_PATH=/app/customer/
++# Optional production raw-deployment redirect target (the apex origin).
++# VITE_CANONICAL_ORIGIN=https://your-apex-domain.example
+diff --git a/index.html b/index.html
+index 7ff27ad..678776c 100644
+--- a/index.html
++++ b/index.html
+@@ -4,7 +4,7 @@
+     <meta charset="UTF-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+     <title>Nexora - Luxury Salon & Spa Booking</title>
+-    <link rel="manifest" href="/manifest.json" />
++    <link rel="manifest" href="%BASE_URL%manifest.json" />
+     <meta name="theme-color" content="#e6007e" />
+     <link rel="preconnect" href="https://fonts.googleapis.com" />
+     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+@@ -13,7 +13,7 @@
+   </head>
+   <body class="bg-[#fff8f8] text-[#26181c] font-['Inter',sans-serif] antialiased selection:bg-[#fde7f3] selection:text-[#e6007e]">
+     <div id="root"></div>
+-    <script type="module" src="/src/main.tsx"></script>
++    <script type="module" src="%BASE_URL%src/main.tsx"></script>
+   </body>
+ </html>
+ 
+diff --git a/public/manifest.json b/public/manifest.json
+index ec665b6..da713e7 100644
+--- a/public/manifest.json
++++ b/public/manifest.json
+@@ -1,32 +1,17 @@
+ {
+-  "id": "/",
+-  "name": "Nexora - Luxury Salon & Spa Booking",
++  "id": "/app/customer/",
++  "name": "Nexora Customer",
+   "short_name": "Nexora",
+-  "description": "Premium salon and spa booking experience.",
+-  "start_url": "/",
+-  "scope": "/",
++  "description": "Customer account, salon discovery, booking, history, reviews and support.",
++  "start_url": "./",
++  "scope": "./",
+   "display": "standalone",
+   "orientation": "portrait",
+   "background_color": "#fff8f8",
+   "theme_color": "#e6007e",
+   "icons": [
+-    {
+-      "src": "/icons/icon-192.png",
+-      "sizes": "192x192",
+-      "type": "image/png",
+-      "purpose": "any"
+-    },
+-    {
+-      "src": "/icons/icon-512.png",
+-      "sizes": "512x512",
+-      "type": "image/png",
+-      "purpose": "any"
+-    },
+-    {
+-      "src": "/icons/icon-512-maskable.png",
+-      "sizes": "512x512",
+-      "type": "image/png",
+-      "purpose": "maskable"
+-    }
++    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
++    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
++    { "src": "icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+   ]
+ }
+diff --git a/public/sw.js b/public/sw.js
+index 8d5b009..ca4c5f9 100644
+--- a/public/sw.js
++++ b/public/sw.js
+@@ -1,115 +1,30 @@
+-const CACHE_NAME = 'nexora-v4';
+-const SYNC_APPOINTMENTS = 'sync-appointments';
+-
+-// Assets to cache immediately on install
++const PORTAL_SCOPE = new URL(self.registration.scope).pathname.replace(/\/?$/, '/');
++const CACHE_NAME = `nexora-customer-${PORTAL_SCOPE.replace(/[^a-z0-9]/gi, '-')}`;
++const portalUrl = (relativePath) => new URL(relativePath.replace(/^\/+/, ''), self.registration.scope).toString();
+ const PRECACHE_ASSETS = [
+-  '/',
+-  '/index.html',
+-  '/manifest.json',
+-  '/icons/icon-192.png',
+-  '/icons/icon-512.png',
+-  '/icons/icon-512-maskable.png'
++  portalUrl(''),
++  portalUrl('index.html'),
++  portalUrl('manifest.json'),
++  portalUrl('icons/icon-192.png'),
++  portalUrl('icons/icon-512.png'),
++  portalUrl('icons/icon-512-maskable.png'),
+ ];
+ 
+ self.addEventListener('install', (event) => {
+-  event.waitUntil(
+-    caches.open(CACHE_NAME).then((cache) => {
+-      return cache.addAll(PRECACHE_ASSETS);
+-    })
+-  );
++  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_ASSETS)).catch(() => undefined));
+   self.skipWaiting();
+ });
+ 
+ self.addEventListener('activate', (event) => {
+-  event.waitUntil(
+-    caches.keys().then((cacheNames) => {
+-      return Promise.all(
+-        cacheNames.map((cacheName) => {
+-          if (cacheName !== CACHE_NAME) {
+-            return caches.delete(cacheName);
+-          }
+-        })
+-      );
+-    })
+-  );
+-  self.clients.claim();
+-});
+-
+-// Background Sync Handler
+-self.addEventListener('sync', (event) => {
+-  if (event.tag === SYNC_APPOINTMENTS) {
+-    event.waitUntil(syncAppointments());
+-  }
+-});
+-
+-async function syncAppointments() {
+-  // Customer bookings live server-side (Supabase) and the app reads them with the
+-  // user's session. No offline booking payload is fabricated here; when a real
+-  // customer bookings read endpoint exists, this can sync genuine data.
+-  console.log('[SW] Background sync: nothing to apply — server is the source of truth.');
+-}
+-
+-// Message Event Handler for direct sync
+-self.addEventListener('message', (event) => {
+-  if (event.data && event.data.type === 'SYNC_NOW') {
+-    event.waitUntil(syncAppointments());
+-  }
++  event.waitUntil(caches.keys().then((names) => Promise.all(names.filter((name) => name.startsWith('nexora-customer-') && name !== CACHE_NAME).map((name) => caches.delete(name)))).then(() => self.clients.claim()));
+ });
+ 
+-// Fetch Handler
+ self.addEventListener('fetch', (event) => {
++  if (event.request.method !== 'GET') return;
+   const url = new URL(event.request.url);
+-
+-  // 1. Stale-While-Revalidate for API responses
+-  if (url.pathname.startsWith('/api/') || url.hostname.includes('api')) {
+-    event.respondWith(
+-      caches.open(CACHE_NAME).then((cache) => {
+-        return cache.match(event.request).then((cachedResponse) => {
+-          const fetchPromise = fetch(event.request).then((networkResponse) => {
+-            if (networkResponse && networkResponse.status === 200) {
+-              cache.put(event.request, networkResponse.clone());
+-            }
+-            return networkResponse;
+-          }).catch(() => cachedResponse);
+-          
+-          return cachedResponse || fetchPromise;
+-        });
+-      })
+-    );
+-    return;
+-  }
+-
+-  // 2. Cache-First for static assets (JS, CSS, fonts, images)
+-  const staticExtensions = ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.woff', '.woff2', '.ttf', '.eot'];
+-  const isStaticAsset = staticExtensions.some(ext => url.pathname.endsWith(ext)) || 
+-                       url.hostname.includes('fonts.googleapis.com') || 
+-                       url.hostname.includes('fonts.gstatic.com') ||
+-                       url.pathname.includes('/assets/');
+-
+-  if (isStaticAsset) {
+-    event.respondWith(
+-      caches.match(event.request).then((cachedResponse) => {
+-        if (cachedResponse) return cachedResponse;
+-        
+-        return fetch(event.request).then((networkResponse) => {
+-          if (!networkResponse || networkResponse.status !== 200) return networkResponse;
+-          
+-          const responseToCache = networkResponse.clone();
+-          caches.open(CACHE_NAME).then((cache) => {
+-            cache.put(event.request, responseToCache);
+-          });
+-          return networkResponse;
+-        });
+-      })
+-    );
+-    return;
+-  }
+-
+-  // 3. Default Strategy: Network with Cache Fallback (for index.html)
+-  event.respondWith(
+-    fetch(event.request).catch(() => {
+-      return caches.match(event.request) || caches.match('/');
+-    })
+-  );
++  if (url.origin !== self.location.origin || !url.pathname.startsWith(PORTAL_SCOPE)) return;
++  event.respondWith(fetch(event.request).then((response) => {
++    if (response.ok) caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone()));
++    return response;
++  }).catch(() => caches.match(event.request).then((cached) => cached || caches.match(portalUrl('index.html')))));
+ });
+-
 diff --git a/src/App.tsx b/src/App.tsx
-index 1e836bf..b87f207 100644
+index 1e836bf..0dbc1a5 100644
 --- a/src/App.tsx
 +++ b/src/App.tsx
 @@ -44,10 +44,8 @@ import { AddUpiModal, SavedUpi } from './components/AddUpiModal';
@@ -89,7 +299,49 @@ index 1e836bf..b87f207 100644
        } else {
          setUser(null);
          setProfile(null);
-@@ -960,10 +939,6 @@ export default function App() {
+@@ -222,6 +201,11 @@ export default function App() {
+   const [selectedSalon, setSelectedSalon] = useState<Salon | null>(null);
+   const [selectedServices, setSelectedServices] = useState<Service[]>([]);
+   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
++  const [discoveryHandoff] = useState(() => {
++    const params = new URLSearchParams(window.location.search);
++    return { salon: params.get('salon'), salonSlug: params.get('salonSlug'), service: params.get('service') };
++  });
++  const [handoffHandled, setHandoffHandled] = useState(false);
+ 
+   // Live salon discovery: fetched from Supabase once per app load (no mock data).
+   useEffect(() => {
+@@ -756,9 +740,10 @@ export default function App() {
+     }
+   };
+ 
+-  const handleSelectSalon = async (salon: Salon) => {
++  const handleSelectSalon = async (salon: Salon, serviceName?: string) => {
+     setSelectedSalon(salon);
+-    setSelectedServices(salon.services.length > 0 ? [salon.services[0]] : []);
++    const handoffService = serviceName ? salon.services.find((service) => service.name === serviceName) : null;
++    setSelectedServices(handoffService ? [handoffService] : salon.services.length > 0 ? [salon.services[0]] : []);
+     setSelectedStaff(salon.staff.length > 0 ? salon.staff[0] : null);
+ 
+     if (supabase && user) {
+@@ -772,6 +757,16 @@ export default function App() {
+     setCurrentScreen('salon-detail');
+   };
+ 
++  // Main Website passes a public salon id/slug and optional service context.
++  // Resolve it against the live approved catalog before opening the detail view.
++  useEffect(() => {
++    if (handoffHandled || salonsLoading || (!discoveryHandoff.salon && !discoveryHandoff.salonSlug)) return;
++    const match = salons.find((salon) => salon.id === discoveryHandoff.salon || salon.slug === discoveryHandoff.salonSlug);
++    if (!match) return;
++    setHandoffHandled(true);
++    void handleSelectSalon(match, discoveryHandoff.service || undefined);
++  }, [discoveryHandoff, handoffHandled, salons, salonsLoading]);
++
+   const handleToggleService = (service: Service) => {
+     setSelectedServices((prev) => {
+       const exists = prev.some((s) => s.id === service.id);
+@@ -960,10 +955,6 @@ export default function App() {
          return 'Help Home';
        case 'settings':
          return 'App Settings';
@@ -100,7 +352,7 @@ index 1e836bf..b87f207 100644
        case 'terms':
          return 'Terms & Conditions';
        case 'privacy':
-@@ -988,7 +963,7 @@ export default function App() {
+@@ -988,7 +979,7 @@ export default function App() {
      currentScreen === 'cancellation';
    const unreadCount = notifications.filter((n) => !n.read).length;
  
@@ -109,7 +361,7 @@ index 1e836bf..b87f207 100644
      return (
        <div className="min-h-screen bg-[#fff8f8] text-[#26181c] flex items-center justify-center p-6">
          <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 text-center shadow-sm">
-@@ -1277,27 +1252,6 @@ export default function App() {
+@@ -1277,27 +1268,6 @@ export default function App() {
              />
            )}
  
@@ -137,7 +389,7 @@ index 1e836bf..b87f207 100644
  
            {currentScreen === 'terms' && (
              <LegalScreen type="terms" onBack={handleBack} />
-@@ -1311,7 +1265,7 @@ export default function App() {
+@@ -1311,7 +1281,7 @@ export default function App() {
              <LegalScreen type="cancellation" onBack={handleBack} />
            )}
  
@@ -166,8 +418,52 @@ index e7dcfd6..fa94305 100644
 -  if (role === 'growth_partner') return 'gp-dashboard';
 -  return 'home';
 -}
+diff --git a/src/lib/salonRepository.ts b/src/lib/salonRepository.ts
+index 41a15e5..74c9bc1 100644
+--- a/src/lib/salonRepository.ts
++++ b/src/lib/salonRepository.ts
+@@ -153,6 +153,7 @@ export async function fetchPublicSalons(client: SupabaseClient): Promise<Salon[]
+ 
+     return {
+       id: row.id,
++      slug: row.slug || undefined,
+       name: row.name || 'Salon',
+       type: category,
+       category,
+diff --git a/src/main.tsx b/src/main.tsx
+index 520d9f4..7c7938a 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -4,6 +4,14 @@ import App from './App.tsx';
+ import { ErrorBoundary } from './components/ErrorBoundary.tsx';
+ import './index.css';
+ 
++const viteEnv = (import.meta as ImportMeta & { env: { BASE_URL: string; PROD?: boolean; VITE_CANONICAL_ORIGIN?: string } }).env;
++const portalBase = viteEnv.BASE_URL;
++const canonicalOrigin = viteEnv.VITE_CANONICAL_ORIGIN?.replace(/\/$/, '');
++if (viteEnv.PROD && canonicalOrigin && window.location.origin !== canonicalOrigin) {
++  const path = window.location.pathname.startsWith(portalBase) ? window.location.pathname : portalBase;
++  window.location.replace(`${canonicalOrigin}${path}${window.location.search}${window.location.hash}`);
++}
++
+ createRoot(document.getElementById('root')!).render(
+   <StrictMode>
+     <ErrorBoundary>
+@@ -12,10 +20,10 @@ createRoot(document.getElementById('root')!).render(
+   </StrictMode>,
+ );
+ 
+-// Register Service Worker
++// Register only inside the Customer portal base path.
+ if ('serviceWorker' in navigator) {
+   window.addEventListener('load', () => {
+-    navigator.serviceWorker.register('/sw.js')
++    navigator.serviceWorker.register(`${portalBase}sw.js`, { scope: portalBase })
+       .then(registration => {
+         console.log('SW registered: ', registration);
+       })
 diff --git a/src/types.ts b/src/types.ts
-index ec92464..3472728 100644
+index ec92464..bdf5888 100644
 --- a/src/types.ts
 +++ b/src/types.ts
 @@ -15,8 +15,6 @@ export type Screen =
@@ -179,6 +475,14 @@ index ec92464..3472728 100644
    | 'terms'
    | 'privacy'
    | 'cancellation';
+@@ -61,6 +59,7 @@ export interface Staff {
+ 
+ export interface Salon {
+   id: string;
++  slug?: string;
+   name: string;
+   type?: string;
+   category?: string;
 diff --git a/vite.config.ts b/vite.config.ts
 index fc23e76..6927b5c 100644
 --- a/vite.config.ts

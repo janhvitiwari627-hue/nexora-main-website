@@ -1,8 +1,8 @@
 # Customer PWA — production cleanup and same-origin mount
 
-**Target repo:** `freewebsite859-sudo/custmer-Fresh-app-` (branch `main`)  
-**Patch:** `supabase-integration.patch` (single commit, 5 files, +17/−64)  
-**Verified:** applies cleanly to the locked repository `main` (`4eff314` base).
+**Target repo:** `freewebsite859-sudo/custmer-Fresh-app-` (branch `main`)
+**Patch:** `supabase-integration.patch`
+**Verified:** applies cleanly to the locked repository `main` (`4eff314` base), including the scoped manifest/service worker.
 
 ## Task coverage
 
@@ -16,7 +16,8 @@ production-boundary gap:
 | No demo bypass | Removes the `?demo=true` account/session path and the seeded Demo Customer |
 | Customer PWA only | Removes Owner/Growth Partner dashboard imports and render branches; non-customer roles show the role-conflict flow and are signed out |
 | No copied role routes | Removes `owner-dashboard` and `gp-dashboard` screens from the Customer `Screen` contract and role helper |
-| Same-origin mount | Vite `base` reads `VITE_APP_BASE_PATH` and `.env.example` documents `/app/customer/` |
+| Same-origin mount | Vite `base` reads `VITE_APP_BASE_PATH`; manifest/worker scope to `/app/customer/`; `.env.example` documents the mount |
+| Discovery handoff | Consumes public salon id/slug + optional service from Main Website query context and resolves it against the live catalog |
 
 The patch intentionally keeps device-only UX storage (location/install flags and
 the one-time legacy migration). It does not treat that as business data.
@@ -30,6 +31,7 @@ git checkout main
 git am /path/to/integration-packages/customer-pwa/supabase-integration.patch
 cp .env.example .env
 # For the unified main website deployment set VITE_APP_BASE_PATH=/app/customer/
+# Optionally set VITE_CANONICAL_ORIGIN for raw-deployment diagnostics.
 npm install && npx tsc --noEmit && npm run build
 ```
 
@@ -40,7 +42,9 @@ npm install && npx tsc --noEmit && npm run build
 2. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` with the host's
    publishable/anon key. Never add a service-role key to the browser build.
 3. Set `VITE_APP_BASE_PATH=/app/customer/` when the main website proxies this
-   app through `/app/customer/*`; use `/` for a standalone deployment.
+   app through `/app/customer/*`. The manifest and service worker use the same
+   base and scope, so this worker cannot intercept `/app/owner/*`,
+   `/app/partner/*`, or the public site.
 4. Apply and verify the shared customer schema migrations:
    `select * from public.verify_customer_phase1_backend();`.
 

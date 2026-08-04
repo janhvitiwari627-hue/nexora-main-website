@@ -28,7 +28,7 @@ Evidence is file:line-based. The Phase 0 frozen audit
 
 - Single client entry: `src/lib/supabaseClient.ts` — reads **only** `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`, validates hostname == `qwaehqsmodekbgvnaavz.supabase.co` and rejects anything else at startup (`validateSupabaseConfig`, L58–73); invalid config renders a loud "Configuration required" state (`supabaseConfigError`, L103–106) — no silent drift to other projects.
 - No other file in the app reads Supabase env vars. `GEMINI_API_KEY` (server.ts / api/suggest-times.ts) is an unrelated AI helper, server-side only.
-- This repo's `app/nexora-app.tsx` uses `NEXT_PUBLIC_SUPABASE_URL ?? VITE_SUPABASE_URL` (+ ANON_KEY) against the same shared project.
+- The Main Website's `app/nexora-app.tsx` uses only `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`; the Customer PWA uses only its Vite `VITE_SUPABASE_*` names.
 - The real anon key is **not** committed anywhere (placeholder `PASTE_REAL_ANON_KEY_HERE` in `docs/customer-supabaseClient.fixed.ts`) — confirmed by scanning both repos.
 
 ## Task 3 — Replace `MOCK_SALONS` with approved/published shops — ✅ PASS (already completed by PR #14/15 line of work)

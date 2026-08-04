@@ -28,7 +28,9 @@
   `VITE_SUPABASE_ANON_KEY` from deployment environment only. The previous
   hardcoded anon JWT fallback is removed.
 - `vite.config.ts` reads `VITE_APP_BASE_PATH`; use `/app/owner/` behind the
-  main website and `/` for a standalone deployment.
+  main website. VitePWA receives the same path as manifest `start_url` and
+  `scope`, so the generated worker cannot intercept another portal or the
+  public site.
 
 Device-only preferences such as theme/language/install flags may remain local.
 They are not business-data sources of truth. Unsupported storage/media or

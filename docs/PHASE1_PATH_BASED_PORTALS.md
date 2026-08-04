@@ -44,10 +44,10 @@ NEXORA_PARTNER_PWA_ORIGIN=https://<partner-pwa-origin>
 ```
 
 `next.config.ts` then proxies each PWA behind its path without changing the
-browser origin. If an origin is absent, the in-repo role-gated workspace is used
-for local development; it is not a claim that a separate PWA deployment is
-live. The PWA builds must use the matching base path (`/app/customer/`,
-`/app/owner/`, or `/app/partner/`) when mounted through these rewrites.
+browser origin. If an origin is absent, the Main Website shows an explicit
+portal-unavailable state; it never renders a copied PWA dashboard locally. The
+PWA builds must use the matching base path (`/app/customer/`, `/app/owner/`, or
+`/app/partner/`) when mounted through these rewrites.
 
 ## Verification
 

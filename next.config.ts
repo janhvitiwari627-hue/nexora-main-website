@@ -1,7 +1,6 @@
 import type { NextConfig } from "next";
 
-// Shared Supabase project – default so customer/shop owner/growth partner auth never drifts
-const DEFAULT_SUPABASE_URL = "https://qwaehqsmodekbgvnaavz.supabase.co";
+const EXPECTED_SUPABASE_URL = "https://qwaehqsmodekbgvnaavz.supabase.co";
 
 function safePortalOrigin(value: string | undefined): string | null {
   if (!value) return null;
@@ -15,9 +14,9 @@ function safePortalOrigin(value: string | undefined): string | null {
 }
 
 const nextConfig: NextConfig = {
-  // When the three PWA deployments are configured, the public website proxies
-  // them behind the canonical same-origin paths. With no origin configured,
-  // the in-repo role-gated workspace remains the explicit local fallback.
+  // The PWA deployments are mounted behind the apex domain. If a mount is not
+  // configured, the application shows an explicit unavailable state; it does
+  // not render a copied Owner/Partner/Customer dashboard implementation.
   async rewrites() {
     const portals = [
       { path: "/app/customer", origin: safePortalOrigin(process.env.NEXORA_CUSTOMER_PWA_ORIGIN) },
@@ -32,28 +31,13 @@ const nextConfig: NextConfig = {
       ]);
   },
   env: {
-    // Primary requested names: VITE_PUBLIC_ + legacy VITE_ + NEXT_PUBLIC_ + default
-    NEXT_PUBLIC_SUPABASE_URL:
-      process.env.NEXT_PUBLIC_SUPABASE_URL ??
-      process.env.VITE_PUBLIC_SUPABASE_URL ??
-      process.env.VITE_SUPABASE_URL ??
-      DEFAULT_SUPABASE_URL,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY:
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-      process.env.VITE_PUBLIC_SUPABASE_ANON_KEY ??
-      process.env.VITE_SUPABASE_ANON_KEY ??
-      "",
-    // Expose VITE_PUBLIC_ names for Vite builds (vinext) – keep same values
-    VITE_PUBLIC_SUPABASE_URL:
-      process.env.VITE_PUBLIC_SUPABASE_URL ??
-      process.env.NEXT_PUBLIC_SUPABASE_URL ??
-      process.env.VITE_SUPABASE_URL ??
-      DEFAULT_SUPABASE_URL,
-    VITE_PUBLIC_SUPABASE_ANON_KEY:
-      process.env.VITE_PUBLIC_SUPABASE_ANON_KEY ??
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-      process.env.VITE_SUPABASE_ANON_KEY ??
-      "",
+    // Main Website is Next/vinext: only NEXT_PUBLIC_* is exposed here.
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+    NEXT_PUBLIC_NEXORA_CUSTOMER_PORTAL_MOUNTED: process.env.NEXORA_CUSTOMER_PWA_ORIGIN ? "true" : "false",
+    NEXT_PUBLIC_NEXORA_OWNER_PORTAL_MOUNTED: process.env.NEXORA_OWNER_PWA_ORIGIN ? "true" : "false",
+    NEXT_PUBLIC_NEXORA_PARTNER_PORTAL_MOUNTED: process.env.NEXORA_PARTNER_PWA_ORIGIN ? "true" : "false",
+    NEXT_PUBLIC_EXPECTED_SUPABASE_URL: EXPECTED_SUPABASE_URL,
   },
 };
 

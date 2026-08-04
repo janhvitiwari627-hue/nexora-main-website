@@ -23,8 +23,9 @@
   business data; unsupported contracts show an honest unavailable/empty state.
 - Proposal review uses the existing `review_salon_setup` RPC and preserves
   attribution through publish.
-- Owner PWA supports `VITE_APP_BASE_PATH=/app/owner/` for the v3 same-origin
-  deployment.
+- Owner PWA supports `VITE_APP_BASE_PATH=/app/owner/`, receives the same value
+  as manifest `start_url`/`scope`, and optionally redirects raw deployments via
+  `VITE_CANONICAL_ORIGIN` for the v3 same-origin deployment.
 
 ## Verification
 

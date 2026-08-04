@@ -58,11 +58,14 @@ psql "postgresql://postgres.qwaehqsmodekbgvnaavz:[PASSWORD]@aws-0-ap-south-1.poo
 
 ## Env Vars Required for App
 
-```
-VITE_PUBLIC_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co
-VITE_PUBLIC_SUPABASE_ANON_KEY=eyJhbG... (anon public, NOT service_role)
-NEXT_PUBLIC_SUPABASE_URL=same
-NEXT_PUBLIC_SUPABASE_ANON_KEY=same
+```text
+# Main Website (Next/vinext)
+NEXT_PUBLIC_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon/publishable key, NOT service_role>
+
+# Customer / Owner / Growth Partner PWAs (Vite)
+VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co
+VITE_SUPABASE_ANON_KEY=<the same anon/publishable key>
 ```
 
 All 3 roles now create account on shared project, RLS ensures own data only, published data appears in Customer PWA via fetchCatalog() filter verified=true, is_active=true, is_published=true, deleted_at null.

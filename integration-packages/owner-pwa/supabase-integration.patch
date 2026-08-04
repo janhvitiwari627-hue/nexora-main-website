@@ -1,17 +1,18 @@
-From 0acb2963ff9f23a7e803e2f76b825cf742638973 Mon Sep 17 00:00:00 2001
+From 2f25c05e7a1c7b766855bebc18f562199a007f8a Mon Sep 17 00:00:00 2001
 From: Arena Integration Bot <arena-bot@users.noreply.github.com>
-Date: Tue, 4 Aug 2026 12:34:00 +0000
-Subject: [PATCH] feat: connect Owner PWA to shared Supabase and enforce owner
- role
+Date: Tue, 4 Aug 2026 13:10:12 +0000
+Subject: [PATCH] feat: complete Owner PWA same-origin Supabase integration
 
 ---
- .env.example                     |    3 +
+ .env.example                     |    5 +
  api/auth/login.ts                |    7 +-
  api/auth/signup.ts               |    7 +-
+ index.html                       |    4 +-
  src/App.tsx                      |   71 +-
  src/lib/ownerRepository.ts       |  519 ++++++++++++
  src/lib/supabase.ts              |   18 +-
  src/lib/useOwnerContext.ts       |   55 ++
+ src/main.tsx                     |    8 +
  src/screens/Bookings.tsx         |  162 ++--
  src/screens/CustomerProfile.tsx  |  850 ++------------------
  src/screens/Customers.tsx        |  216 ++---
@@ -33,23 +34,25 @@ Subject: [PATCH] feat: connect Owner PWA to shared Supabase and enforce owner
  src/screens/WebsiteDashboard.tsx |  340 +-------
  src/screens/WebsiteGallery.tsx   |  720 +----------------
  src/types.ts                     |    5 +-
- vite.config.ts                   |    5 +
- 29 files changed, 2044 insertions(+), 5060 deletions(-)
+ vite.config.ts                   |   10 +
+ 31 files changed, 2061 insertions(+), 5062 deletions(-)
  create mode 100644 src/lib/ownerRepository.ts
  create mode 100644 src/lib/useOwnerContext.ts
  create mode 100644 src/screens/ProposalReview.tsx
 
 diff --git a/.env.example b/.env.example
-index 986554b..67e6080 100644
+index 986554b..fe98fb4 100644
 --- a/.env.example
 +++ b/.env.example
-@@ -4,3 +4,6 @@ VITE_SUPABASE_ANON_KEY=
+@@ -4,3 +4,8 @@ VITE_SUPABASE_ANON_KEY=
  
  # Gemini AI Configuration
  GEMINI_API_KEY=
 +
 +# Use /app/owner/ when proxied behind the Nexora main website.
 +VITE_APP_BASE_PATH=/app/owner/
++# Optional production raw-deployment redirect target (the apex origin).
++# VITE_CANONICAL_ORIGIN=https://your-apex-domain.example
 diff --git a/api/auth/login.ts b/api/auth/login.ts
 index 4d783d1..48ae6b6 100644
 --- a/api/auth/login.ts
@@ -96,6 +99,25 @@ index d112714..85f3657 100644
    try {
      const response = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
        method: 'POST',
+diff --git a/index.html b/index.html
+index 4ef8a29..c9f3b9b 100644
+--- a/index.html
++++ b/index.html
+@@ -7,12 +7,12 @@
+     <meta name="apple-mobile-web-app-capable" content="yes" />
+     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+     <meta name="apple-mobile-web-app-title" content="Nexora" />
+-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
++    <link rel="apple-touch-icon" href="%BASE_URL%apple-touch-icon.png" />
+     <title>Nexora Salon App</title>
+   </head>
+   <body class="bg-surface font-sans text-on-surface">
+     <div id="root"></div>
+-    <script type="module" src="/src/main.tsx"></script>
++    <script type="module" src="%BASE_URL%src/main.tsx"></script>
+   </body>
+ </html>
+ 
 diff --git a/src/App.tsx b/src/App.tsx
 index fcb8916..6362d95 100644
 --- a/src/App.tsx
@@ -846,6 +868,25 @@ index 0000000..923973c
 +
 +  return { ready, userId, salons, salon: salons[0] ?? null, error, reload };
 +}
+diff --git a/src/main.tsx b/src/main.tsx
+index fb24119..85397b9 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -5,6 +5,14 @@ import './index.css';
+ import { LanguageProvider } from './contexts/LanguageContext.tsx';
+ import { ErrorBoundary } from './components/ErrorBoundary.tsx';
+ 
++const viteEnv = (import.meta as ImportMeta & { env: { BASE_URL: string; PROD?: boolean; VITE_CANONICAL_ORIGIN?: string } }).env;
++const canonicalOrigin = viteEnv.VITE_CANONICAL_ORIGIN?.replace(/\/$/, '');
++if (viteEnv.PROD && canonicalOrigin && window.location.origin !== canonicalOrigin) {
++  const portalBase = viteEnv.BASE_URL;
++  const path = window.location.pathname.startsWith(portalBase) ? window.location.pathname : portalBase;
++  window.location.replace(`${canonicalOrigin}${path}${window.location.search}${window.location.hash}`);
++}
++
+ createRoot(document.getElementById('root')!).render(
+   <StrictMode>
+     <ErrorBoundary>
 diff --git a/src/screens/Bookings.tsx b/src/screens/Bookings.tsx
 index 11d0b6a..cc302a2 100644
 --- a/src/screens/Bookings.tsx
@@ -8022,11 +8063,15 @@ index df53fa8..8a26c74 100644
  
  export interface Theme {
 diff --git a/vite.config.ts b/vite.config.ts
-index ba2eada..0c6a7db 100644
+index ba2eada..2469c46 100644
 --- a/vite.config.ts
 +++ b/vite.config.ts
-@@ -6,6 +6,8 @@ import { VitePWA } from 'vite-plugin-pwa';
+@@ -4,8 +4,12 @@ import path from 'path';
+ import {defineConfig} from 'vite';
+ import { VitePWA } from 'vite-plugin-pwa';
  
++const portalBase = process.env.VITE_APP_BASE_PATH || '/';
++
  export default defineConfig(() => {
    return {
 +    // Mounted by Nexora main website at /app/owner/.
@@ -8034,7 +8079,17 @@ index ba2eada..0c6a7db 100644
      plugins: [
        react(), 
        tailwindcss(),
-@@ -99,6 +101,9 @@ export default defineConfig(() => {
+@@ -19,6 +23,9 @@ export default defineConfig(() => {
+           theme_color: '#8e004b',
+           background_color: '#fff8f8',
+           display: 'standalone',
++          id: portalBase,
++          start_url: portalBase,
++          scope: portalBase,
+           icons: [
+             {
+               src: 'pwa-192x192.png',
+@@ -99,6 +106,9 @@ export default defineConfig(() => {
        },
      },
      server: {

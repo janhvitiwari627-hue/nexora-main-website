@@ -48,11 +48,14 @@ matching Vite base path before mounting it behind the main website's rewrites:
 VITE_APP_BASE_PATH=/app/customer/   # Customer package
 VITE_APP_BASE_PATH=/app/owner/      # Owner package
 VITE_APP_BASE_PATH=/app/partner/    # Growth Partner package
+VITE_CANONICAL_ORIGIN=https://your-apex-domain.example  # optional raw-URL redirect
 ```
 
 The main website accepts `NEXORA_CUSTOMER_PWA_ORIGIN`,
 `NEXORA_OWNER_PWA_ORIGIN`, and `NEXORA_PARTNER_PWA_ORIGIN` as server-only
 origins and proxies those deployments without changing the browser origin.
+Each patch also rewrites its manifest/assets and registers a service worker with
+its own `/app/*/` scope; the public site has no root-scope PWA worker.
 
 
 ## Backend prerequisites (already live / idempotent)

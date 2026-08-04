@@ -1,31 +1,32 @@
-From e2867a7ddb317b9b947e6eb591095e8df25ccfe8 Mon Sep 17 00:00:00 2001
+From fd67c1c65d7026853faf6ea4b267713e5c387aec Mon Sep 17 00:00:00 2001
 From: Arena Integration Bot <arena-bot@users.noreply.github.com>
-Date: Tue, 4 Aug 2026 11:52:40 +0000
-Subject: [PATCH] =?UTF-8?q?feat:=20Supabase=20from=20scratch=20=E2=80=94?=
- =?UTF-8?q?=20real=20auth=20replaces=20fake=20localStorage=20auth,=20live?=
- =?UTF-8?q?=20GP=20data?=
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+Date: Tue, 4 Aug 2026 13:10:12 +0000
+Subject: [PATCH] feat: complete Growth Partner same-origin Supabase
+ integration
 
 ---
- .env.example                 |   9 ++
+ .env.example                 |  11 ++
+ index.html                   |   8 +-
  package.json                 |   1 +
+ public/manifest.webmanifest  |  28 ++---
+ public/sw.js                 | 144 +++-------------------
  src/App.tsx                  |  78 ++++++++----
  src/components/Dashboard.tsx |  80 ++++++------
  src/components/LoginForm.tsx | 171 +++++++++++++++++---------
  src/lib/gpRepository.ts      | 228 +++++++++++++++++++++++++++++++++++
  src/lib/supabaseClient.ts    | 104 ++++++++++++++++
+ src/main.tsx                 |  16 ++-
+ vercel.json                  |   2 +-
  vite.config.ts               |   4 +
- 8 files changed, 557 insertions(+), 118 deletions(-)
+ 13 files changed, 596 insertions(+), 279 deletions(-)
  create mode 100644 src/lib/gpRepository.ts
  create mode 100644 src/lib/supabaseClient.ts
 
 diff --git a/.env.example b/.env.example
-index 7a550fe..bf45126 100644
+index 7a550fe..d9e25ee 100644
 --- a/.env.example
 +++ b/.env.example
-@@ -7,3 +7,12 @@ GEMINI_API_KEY="MY_GEMINI_API_KEY"
+@@ -7,3 +7,14 @@ GEMINI_API_KEY="MY_GEMINI_API_KEY"
  # AI Studio automatically injects this at runtime with the Cloud Run service URL.
  # Used for self-referential links, OAuth callbacks, and API endpoints.
  APP_URL="MY_APP_URL"
@@ -38,6 +39,34 @@ index 7a550fe..bf45126 100644
 +
 +# Use /app/partner/ when proxied behind the Nexora main website.
 +VITE_APP_BASE_PATH=/app/partner/
++# Optional production raw-deployment redirect target (the apex origin).
++# VITE_CANONICAL_ORIGIN=https://your-apex-domain.example
+diff --git a/index.html b/index.html
+index 3d60cd8..95eed41 100644
+--- a/index.html
++++ b/index.html
+@@ -7,10 +7,10 @@
+     <meta name="description" content="Nexora Growth Partner portal for shop onboarding, QR earnings tracking and payouts." />
+ 
+     <!-- PWA -->
+-    <link rel="manifest" href="/manifest.webmanifest" />
++    <link rel="manifest" href="%BASE_URL%manifest.webmanifest" />
+     <meta name="theme-color" content="#b90064" />
+-    <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png" />
+-    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
++    <link rel="icon" type="image/png" sizes="64x64" href="%BASE_URL%favicon-64.png" />
++    <link rel="apple-touch-icon" href="%BASE_URL%icons/icon-192.png" />
+     <meta name="apple-mobile-web-app-capable" content="yes" />
+     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+     <meta name="apple-mobile-web-app-title" content="Nexora" />
+@@ -22,6 +22,6 @@
+   </head>
+   <body>
+     <div id="root"></div>
+-    <script type="module" src="/src/main.tsx"></script>
++    <script type="module" src="%BASE_URL%src/main.tsx"></script>
+   </body>
+ </html>
 diff --git a/package.json b/package.json
 index 6775798..cf8e3f9 100644
 --- a/package.json
@@ -50,6 +79,206 @@ index 6775798..cf8e3f9 100644
      "@tailwindcss/vite": "^4.1.14",
      "@vitejs/plugin-react": "^5.0.4",
      "dotenv": "^17.2.3",
+diff --git a/public/manifest.webmanifest b/public/manifest.webmanifest
+index 5fb0dc1..c904f82 100644
+--- a/public/manifest.webmanifest
++++ b/public/manifest.webmanifest
+@@ -1,32 +1,18 @@
+ {
++  "id": "/app/partner/",
+   "name": "Nexora Growth Partner",
+   "short_name": "Nexora",
+-  "description": "Growth Partner login and management portal for shop onboarding, QR earnings and payouts.",
+-  "start_url": "/",
+-  "scope": "/",
++  "description": "Growth Partner referral, onboarding, attribution and commission portal.",
++  "start_url": "./",
++  "scope": "./",
+   "display": "standalone",
+   "orientation": "portrait",
+   "background_color": "#fcf9f8",
+   "theme_color": "#b90064",
+   "categories": ["business", "finance", "productivity"],
+   "icons": [
+-    {
+-      "src": "/icons/icon-192.png",
+-      "sizes": "192x192",
+-      "type": "image/png",
+-      "purpose": "any"
+-    },
+-    {
+-      "src": "/icons/icon-512.png",
+-      "sizes": "512x512",
+-      "type": "image/png",
+-      "purpose": "any"
+-    },
+-    {
+-      "src": "/icons/icon-maskable-512.png",
+-      "sizes": "512x512",
+-      "type": "image/png",
+-      "purpose": "maskable"
+-    }
++    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
++    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
++    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+   ]
+ }
+diff --git a/public/sw.js b/public/sw.js
+index 5358fb4..f2ee871 100644
+--- a/public/sw.js
++++ b/public/sw.js
+@@ -1,137 +1,21 @@
+-const CACHE_NAME = 'nexora-cache-v1';
+-const STATIC_ASSETS = [
+-  '/',
+-  '/index.html'
+-];
++const PORTAL_SCOPE = new URL(self.registration.scope).pathname.replace(/\/?$/, '/');
++const CACHE_NAME = `nexora-partner-${PORTAL_SCOPE.replace(/[^a-z0-9]/gi, '-')}`;
++const portalUrl = (relativePath) => new URL(relativePath.replace(/^\/+/, ''), self.registration.scope).toString();
++const STATIC_ASSETS = [portalUrl(''), portalUrl('index.html'), portalUrl('manifest.webmanifest')];
+ 
+ self.addEventListener('install', (event) => {
+-  event.waitUntil(
+-    caches.open(CACHE_NAME).then((cache) => {
+-      // Ignore errors for individual files that might not exist
+-      return Promise.allSettled(STATIC_ASSETS.map(url => cache.add(url)));
+-    }).then(() => self.skipWaiting())
+-  );
++  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS)).catch(() => undefined));
++  self.skipWaiting();
+ });
+-
+ self.addEventListener('activate', (event) => {
+-  event.waitUntil(
+-    caches.keys().then((cacheNames) => {
+-      return Promise.all(
+-        cacheNames.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name))
+-      );
+-    }).then(() => self.clients.claim())
+-  );
++  event.waitUntil(caches.keys().then((names) => Promise.all(names.filter((name) => name.startsWith('nexora-partner-') && name !== CACHE_NAME).map((name) => caches.delete(name)))).then(() => self.clients.claim()));
+ });
+-
+ self.addEventListener('fetch', (event) => {
+-  const request = event.request;
+-  const url = new URL(request.url);
+-
+-  // Stale-While-Revalidate strategy for API responses
+-  if (url.pathname.startsWith('/api/')) {
+-    event.respondWith(
+-      caches.match(request).then((cachedResponse) => {
+-        const fetchPromise = fetch(request).then((networkResponse) => {
+-          const responseClone = networkResponse.clone();
+-          caches.open(CACHE_NAME).then((cache) => {
+-            cache.put(request, responseClone);
+-          });
+-          return networkResponse;
+-        });
+-        return cachedResponse || fetchPromise;
+-      })
+-    );
+-    return;
+-  }
+-
+-  // Cache-First strategy for static assets (CSS, fonts, images)
+-  const isStaticAsset = 
+-    request.destination === 'style' || 
+-    request.destination === 'font' || 
+-    request.destination === 'image' || 
+-    request.destination === 'script' ||
+-    url.pathname.match(/\.(css|woff|woff2|ttf|eot|png|jpg|jpeg|svg|gif|webp|js)$/i);
+-
+-  if (isStaticAsset) {
+-    event.respondWith(
+-      caches.match(request).then((cachedResponse) => {
+-        if (cachedResponse) {
+-          return cachedResponse;
+-        }
+-        return fetch(request).then((networkResponse) => {
+-          const responseClone = networkResponse.clone();
+-          caches.open(CACHE_NAME).then((cache) => {
+-            cache.put(request, responseClone);
+-          });
+-          return networkResponse;
+-        });
+-      })
+-    );
+-    return;
+-  }
+-
+-  // Default fallback (Network first, then cache)
+-  event.respondWith(
+-    fetch(request).catch(() => caches.match(request))
+-  );
+-});
+-
+-self.addEventListener('sync', (event) => {
+-  if (event.tag === 'sync-appointments') {
+-    event.waitUntil(syncAppointments());
+-  }
++  if (event.request.method !== 'GET') return;
++  const url = new URL(event.request.url);
++  if (url.origin !== self.location.origin || !url.pathname.startsWith(PORTAL_SCOPE)) return;
++  event.respondWith(fetch(event.request).then((response) => {
++    if (response.ok) caches.open(CACHE_NAME).then((cache) => cache.put(event.request, response.clone()));
++    return response;
++  }).catch(() => caches.match(event.request).then((cached) => cached || caches.match(portalUrl('index.html')))));
+ });
+-
+-async function syncAppointments() {
+-  try {
+-    // Fetch updated bookings from the server API
+-    const response = await fetch('/api/bookings');
+-    if (!response.ok) {
+-      throw new Error('Network response was not ok');
+-    }
+-    const bookings = await response.json();
+-
+-    // Update the 'nexora_bookings' entry in IndexedDB
+-    await updateBookingsInIndexedDB(bookings);
+-
+-    // Send a 'SYNC_COMPLETE' message via BroadcastChannel
+-    const channel = new BroadcastChannel('nexora_sync_channel');
+-    channel.postMessage({ type: 'SYNC_COMPLETE', payload: bookings });
+-    channel.close();
+-  } catch (error) {
+-    console.error('Background sync for appointments failed:', error);
+-  }
+-}
+-
+-function updateBookingsInIndexedDB(bookings) {
+-  return new Promise((resolve, reject) => {
+-    const request = indexedDB.open('nexora_db', 1);
+-
+-    request.onupgradeneeded = (event) => {
+-      const db = event.target.result;
+-      if (!db.objectStoreNames.contains('store')) {
+-        db.createObjectStore('store');
+-      }
+-    };
+-
+-    request.onsuccess = (event) => {
+-      const db = event.target.result;
+-      if (!db.objectStoreNames.contains('store')) {
+-        // If the store doesn't exist but we didn't upgrade, just resolve (prevent errors in edge cases)
+-        resolve();
+-        return;
+-      }
+-
+-      const transaction = db.transaction('store', 'readwrite');
+-      const store = transaction.objectStore('store');
+-      const putRequest = store.put(bookings, 'nexora_bookings');
+-
+-      putRequest.onsuccess = () => resolve();
+-      putRequest.onerror = () => reject(putRequest.error);
+-    };
+-
+-    request.onerror = () => {
+-      reject(request.error);
+-    };
+-  });
+-}
 diff --git a/src/App.tsx b/src/App.tsx
 index 6c00e44..a8c23c6 100644
 --- a/src/App.tsx
@@ -854,6 +1083,53 @@ index 0000000..c98ff1b
 +
 +export const supabaseConfigError = config.isValid ? null : config.error;
 +export const supabase = config.isValid ? createClient(config.url, config.anonKey) : null;
+diff --git a/src/main.tsx b/src/main.tsx
+index a68ffab..6cb14f8 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -9,18 +9,24 @@ if (!rootElement) {
+   throw new Error('Root container #root was not found in index.html');
+ }
+ 
++const viteEnv = (import.meta as ImportMeta & { env: { BASE_URL: string; PROD?: boolean; VITE_CANONICAL_ORIGIN?: string } }).env;
++const portalBase = viteEnv.BASE_URL;
++const canonicalOrigin = viteEnv.VITE_CANONICAL_ORIGIN?.replace(/\/$/, '');
++if (viteEnv.PROD && canonicalOrigin && window.location.origin !== canonicalOrigin) {
++  const path = window.location.pathname.startsWith(portalBase) ? window.location.pathname : portalBase;
++  window.location.replace(`${canonicalOrigin}${path}${window.location.search}${window.location.hash}`);
++}
++
+ createRoot(rootElement).render(
+   <StrictMode>
+     <App />
+   </StrictMode>,
+ );
+ 
+-// Register the service worker that ships in /public/sw.js. Without this the
+-// offline cache, background sync and the PWA install prompt never activate,
+-// which made the "Install App" modal a no-op.
+-if ('serviceWorker' in navigator && import.meta.env.PROD) {
++// Register only within the Growth Partner portal base path.
++if ('serviceWorker' in navigator && viteEnv.PROD) {
+   window.addEventListener('load', () => {
+-    navigator.serviceWorker.register('/sw.js').catch((err) => {
++    navigator.serviceWorker.register(`${portalBase}sw.js`, { scope: portalBase }).catch((err) => {
+       console.warn('Service worker registration failed:', err);
+     });
+   });
+diff --git a/vercel.json b/vercel.json
+index 7be78be..b58da98 100644
+--- a/vercel.json
++++ b/vercel.json
+@@ -20,7 +20,7 @@
+         },
+         {
+           "key": "Service-Worker-Allowed",
+-          "value": "/"
++          "value": "/app/partner/"
+         }
+       ]
+     },
 diff --git a/vite.config.ts b/vite.config.ts
 index c9748ca..902d428 100644
 --- a/vite.config.ts
