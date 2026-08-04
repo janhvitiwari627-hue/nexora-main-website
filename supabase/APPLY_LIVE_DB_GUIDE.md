@@ -22,6 +22,7 @@ Open https://supabase.com/dashboard/project/qwaehqsmodekbgvnaavz/sql/new and run
 7. `supabase/migrations/20260803_profiles_auto_create_fix.sql` - Fix account creation for customer/business_user/growth_partner, handle_new_user trigger, backfill missing profiles, RLS
 8. `supabase/migrations/20260804_shop_owner_phase2_full.sql` - Phase 2 Shop Owner full: salons/services/staff/offers/salon_hours/bookings/salon_public_websites RLS owner own only, is_salon_visible_in_customer_app()
 9. `supabase/migrations/20260805_permanent_profile_role_guard.sql` - v3 permanent `profiles.platform_role` guard; ordinary authenticated clients cannot insert/promote owner or partner roles or mutate an assigned role
+10. `supabase/migrations/20260806_growth_partner_identity.sql` - server-owned Growth Partner identity/referral-code bootstrap, allowed only for active `profiles.platform_role = 'growth_partner'`
 
 ## Verification After Apply
 

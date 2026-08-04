@@ -21,6 +21,7 @@ migrations=(
   "supabase/migrations/20260803_profiles_auto_create_fix.sql"
   "supabase/migrations/20260804_shop_owner_phase2_full.sql"
   "supabase/migrations/20260805_permanent_profile_role_guard.sql"
+  "supabase/migrations/20260806_growth_partner_identity.sql"
 )
 
 for f in "${migrations[@]}"; do

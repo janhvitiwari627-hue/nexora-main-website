@@ -2,7 +2,7 @@
 
 **Target repo:** `diamondpeomotion-cyber/pink-growth-partner-aap-` (branch `main`)
 **Patch:** `supabase-integration.patch`
-**Verified:** applies cleanly to locked `main` (`26c0f56` base), including
+**Verified:** applies cleanly to the current locked `main` (`2832af2` base), including
 path-scoped manifest/worker; `tsc --noEmit` and `vite build` pass.
 
 ## Task coverage

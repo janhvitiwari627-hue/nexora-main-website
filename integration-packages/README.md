@@ -12,7 +12,7 @@ exactly what changes and how to deploy.
 |---|---|---|---|
 | `customer-pwa/` | `freewebsite859-sudo/custmer-Fresh-app-` | Production-only Customer PWA; remove demo/role-dashboard branches; mount at `/app/customer/` | ✅ Ready (verified: applies to locked repo main) |
 | `owner-pwa/` | `promptaivideo4-coder/PINK-NEXORA-AAP-` | Phase 2: live owner workspace, role gate, env-only auth, proposal review, honest server states | ✅ Ready (verified: applies to locked main, tsc + build clean) |
-| `growth-partner-pwa/` | `diamondpeomotion-cyber/pink-growth-partner-aap-` | Supabase from scratch: real auth replaces fake localStorage auth | ✅ Ready (verified: applies on fresh checkout, tsc + build clean) |
+| `growth-partner-pwa/` | `diamondpeomotion-cyber/pink-growth-partner-aap-` | Phase 3: live Auth, server referral identity, attribution, proposal submission, commissions, scoped PWA | ✅ Ready (verified: applies to current locked main, tsc + build clean) |
 
 ## Why patches instead of direct PRs?
 
