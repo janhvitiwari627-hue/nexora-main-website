@@ -10,9 +10,9 @@ exactly what changes and how to deploy.
 
 | Package | Target repo | Task | Status |
 |---|---|---|---|
-| `customer-pwa/` | `janhvitiwari627-hue/Free-Website-costumer-pwa-app-` | Remove MOCK_SALONS; live settings / reviews / payment methods / support | ✅ Ready (verified: tsc + build clean on fresh clone) |
-| `owner-pwa/` | `promptaivideo4-coder/PINK-NEXORA-AAP-` | Replace localStorage with Supabase; proposal review system | 🚧 In progress |
-| `growth-partner-pwa/` | `diamondpeomotion-cyber/pink-growth-partner-aap-` | Supabase from scratch: real auth replaces fake localStorage auth | 🚧 In progress |
+| `customer-pwa/` | `janhvitiwari627-hue/Free-Website-costumer-pwa-app-` | Remove MOCK_SALONS; live settings / reviews / payment methods / support | ✅ Ready (verified: applies on fresh clone, tsc + build clean) |
+| `owner-pwa/` | `promptaivideo4-coder/PINK-NEXORA-AAP-` | Replace localStorage with Supabase; proposal review system | ✅ Ready (verified: applies on fresh clone, tsc + build clean) |
+| `growth-partner-pwa/` | `diamondpeomotion-cyber/pink-growth-partner-aap-` | Supabase from scratch: real auth replaces fake localStorage auth | ✅ Ready (verified: applies on fresh checkout, tsc + build clean) |
 
 ## Why patches instead of direct PRs?
 

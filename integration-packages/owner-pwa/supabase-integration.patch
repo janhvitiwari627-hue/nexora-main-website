@@ -1,0 +1,2290 @@
+From 869e6d8fa9e527dd2fcc8554034cb0f980c07b6f Mon Sep 17 00:00:00 2001
+From: Arena Integration Bot <arena-bot@users.noreply.github.com>
+Date: Tue, 4 Aug 2026 09:56:32 +0000
+Subject: [PATCH] =?UTF-8?q?feat:=20Supabase=20Phase-2=20integration=20?=
+ =?UTF-8?q?=E2=80=94=20replace=20localStorage=20business=20data=20+=20prop?=
+ =?UTF-8?q?osal=20review=20system?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- New lib/ownerRepository.ts: RLS-scoped data layer (salons via
+  organization_members, services/staff/offers CRUD, bookings + status,
+  owner_payouts read-only, reviews, salon_setup_proposals + review_salon_setup
+  RPC, published website visibility)
+- New lib/useOwnerContext.ts: shared owner/salon resolution hook
+- NEW ProposalReview screen: review GP-prepared website setups —
+  approve / request changes / reject / publish (server-side publish sets
+  verified + online bookings + shop attribution)
+- Dashboard: live pending-proposals card + live today-bookings count
+- Bookings: live salon bookings replace hardcoded demo bookings
+- Services (list/new/detail): live services CRUD replaces nexora_services
+  localStorage + hardcoded menu
+- Staff (management/new/detail): live staff replaces nexora_staff_list
+  localStorage + demo team
+- Wallet: live owner_payouts (balance = settled, pending = unsettled);
+  withdraw replaced with honest 'auto payout daily 10 PM IST' notice
+  (locked business rule #5)
+- Reviews: live reviews table replaces hardcoded reviews
+- Profile: business identity (name/address/city) persists to the salons row
+- Verified: tsc --noEmit clean, vite build clean
+
+Device-local keys intentionally kept (no backend tables): theme/language/
+install flags, notification toggles, reply templates, offline form drafts.
+---
+ src/App.tsx                     |   3 +
+ src/lib/ownerRepository.ts      | 459 ++++++++++++++++++++++++++++++++
+ src/lib/useOwnerContext.ts      |  55 ++++
+ src/screens/Bookings.tsx        |  97 ++++---
+ src/screens/Dashboard.tsx       |  70 ++++-
+ src/screens/NewService.tsx      |  67 +++--
+ src/screens/NewStaff.tsx        |  45 ++--
+ src/screens/Profile.tsx         |  36 ++-
+ src/screens/ProposalReview.tsx  | 303 +++++++++++++++++++++
+ src/screens/Reviews.tsx         | 110 +++-----
+ src/screens/ServiceDetail.tsx   | 114 +++++---
+ src/screens/ServicesList.tsx    | 134 ++++------
+ src/screens/StaffDetail.tsx     |  79 ++++--
+ src/screens/StaffManagement.tsx | 126 +++++----
+ src/screens/Wallet.tsx          |  89 ++++---
+ src/types.ts                    |   5 +-
+ vite.config.ts                  |   3 +
+ 17 files changed, 1387 insertions(+), 408 deletions(-)
+ create mode 100644 src/lib/ownerRepository.ts
+ create mode 100644 src/lib/useOwnerContext.ts
+ create mode 100644 src/screens/ProposalReview.tsx
+
+diff --git a/src/App.tsx b/src/App.tsx
+index fcb8916..2d2d2f7 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -33,6 +33,7 @@ import CancellationRefundPolicy from './screens/CancellationRefundPolicy';
+ import RoleConflict from './screens/RoleConflict';
+ import ResetPassword from './screens/ResetPassword';
+ import Marketing from './screens/Marketing';
++import ProposalReview from './screens/ProposalReview';
+ import { ThemeProvider } from './contexts/ThemeContext';
+ import { OfflineSyncProvider } from './contexts/OfflineSyncContext';
+ import AddToHomeScreenPrompt from './components/AddToHomeScreenPrompt';
+@@ -311,6 +312,8 @@ export default function App() {
+         return <ServerError navigate={navigate} />;
+       case 'marketing':
+         return <Marketing navigate={navigate} />;
++      case 'proposal-review':
++        return <ProposalReview navigate={navigate} />;
+       default:
+         return <Dashboard navigate={navigate} />;
+     }
+diff --git a/src/lib/ownerRepository.ts b/src/lib/ownerRepository.ts
+new file mode 100644
+index 0000000..bb40c27
+--- /dev/null
++++ b/src/lib/ownerRepository.ts
+@@ -0,0 +1,459 @@
++// Owner data layer — replaces localStorage business data with the shared
++// Supabase project (qwaehqsmodekbgvnaavz).
++//
++// All reads/writes are RLS-scoped server-side:
++//   - owners see/manage only salons they own (organization_members role=owner)
++//     via private.can_manage_salon_settings() policies (20260804 migration)
++//   - money rows (payouts) are read-only here; settlement runs server-side
++//     daily at 22:00 IST (locked business rule #5)
++// No service_role, no secrets — anon/publishable key + auth.uid() only.
++
++import type { SupabaseClient } from '@supabase/supabase-js';
++
++export interface OwnerSalon {
++  id: string;
++  slug: string | null;
++  name: string;
++  description: string | null;
++  address: string | null;
++  area: string | null;
++  city: string | null;
++  business_category: string | null;
++  cover_image_path: string | null;
++  rating_average: number;
++  review_count: number;
++  verified: boolean;
++  is_active: boolean;
++  accepts_online_bookings: boolean;
++  starting_price_paise: number | null;
++  organization_id: string | null;
++}
++
++export interface OwnerService {
++  id: string;
++  salon_id: string;
++  name: string;
++  description: string | null;
++  duration_minutes: number;
++  price_paise: number;
++  is_active: boolean;
++  is_bookable_online: boolean;
++}
++
++export interface OwnerStaff {
++  id: string;
++  salon_id: string;
++  name: string;
++  role: string | null;
++  bio: string | null;
++  is_active: boolean;
++}
++
++export interface OwnerBooking {
++  id: string;
++  salon_id: string;
++  customer_id: string | null;
++  appointment_start: string;
++  status: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'no_show';
++  total_amount_paise: number;
++  advance_amount_paise: number;
++  created_at: string;
++  customer?: { full_name: string | null; email: string | null } | null;
++}
++
++export interface OwnerOffer {
++  id: string;
++  salon_id: string;
++  title: string;
++  description: string | null;
++  discount_type: string | null;
++  discount_value: number | null;
++  is_active: boolean;
++}
++
++export interface OwnerPayout {
++  id: string;
++  salon_id: string;
++  run_date: string;
++  booking_count: number;
++  gross_paise: number;
++  platform_fee_paise: number;
++  amount_paise: number;
++  status: string;
++  payout_reference: string | null;
++  created_at: string;
++}
++
++export interface SalonReview {
++  id: string;
++  salon_id: string | null;
++  rating: number | null;
++  comment: string | null;
++  author: string | null;
++  verified: boolean;
++  created_at: string | null;
++}
++
++export interface SetupProposal {
++  id: string;
++  onboarding_application_id: string | null;
++  salon_id: string | null;
++  owner_user_id: string | null;
++  owner_email: string | null;
++  growth_partner_id: string | null;
++  status: string;
++  payload: Record<string, unknown> | null;
++  version: number | null;
++  owner_notes: string | null;
++  submitted_at: string | null;
++  published_at: string | null;
++  updated_at: string | null;
++}
++
++const isMissingRelationError = (error: { code?: string; message?: string } | null): boolean => {
++  if (!error) return false;
++  return (
++    error.code === '42P01' ||
++    error.code === 'PGRST205' ||
++    /could not find a (table|schema)|relation .* does not exist/i.test(error.message || '')
++  );
++};
++
++// ---------------------------------------------------------------------------
++// Salon resolution — the owner's shops via organization_members.
++// ---------------------------------------------------------------------------
++export async function resolveOwnerSalons(
++  client: SupabaseClient,
++  userId: string,
++): Promise<OwnerSalon[]> {
++  let orgIds: string[] = [];
++  const { data: memberships, error: memError } = await client
++    .from('organization_members')
++    .select('organization_id')
++    .eq('user_id', userId)
++    .eq('role', 'owner')
++    .eq('status', 'active');
++  if (memError && !isMissingRelationError(memError)) throw memError;
++  orgIds = (memberships ?? []).map((m: any) => m.organization_id).filter(Boolean);
++
++  const SALON_COLUMNS =
++    'id, slug, name, description, address, area, city, business_category, cover_image_path, rating_average, review_count, verified, is_active, accepts_online_bookings, starting_price_paise, organization_id';
++
++  if (orgIds.length > 0) {
++    const { data, error } = await client
++      .from('salons')
++      .select(SALON_COLUMNS)
++      .in('organization_id', orgIds)
++      .limit(20);
++    if (error) throw error;
++    if ((data ?? []).length > 0) return (data ?? []) as OwnerSalon[];
++  }
++
++  // Fallback: RLS already limits this to manageable/verified salons.
++  const { data, error } = await client.from('salons').select(SALON_COLUMNS).limit(20);
++  if (error) throw error;
++  return (data ?? []) as OwnerSalon[];
++}
++
++export async function updateSalonProfile(
++  client: SupabaseClient,
++  salonId: string,
++  patch: Partial<
++    Pick<
++      OwnerSalon,
++      'name' | 'description' | 'address' | 'area' | 'city' | 'business_category' | 'cover_image_path'
++    >
++  >,
++): Promise<void> {
++  const { error } = await client.from('salons').update(patch).eq('id', salonId);
++  if (error) throw error;
++}
++
++// ---------------------------------------------------------------------------
++// Services CRUD.
++// ---------------------------------------------------------------------------
++const SERVICE_COLUMNS =
++  'id, salon_id, name, description, duration_minutes, price_paise, is_active, is_bookable_online';
++
++export async function fetchServices(
++  client: SupabaseClient,
++  salonId: string,
++): Promise<OwnerService[]> {
++  const { data, error } = await client
++    .from('services')
++    .select(SERVICE_COLUMNS)
++    .eq('salon_id', salonId)
++    .order('name');
++  if (error) {
++    if (isMissingRelationError(error)) return [];
++    throw error;
++  }
++  return (data ?? []) as OwnerService[];
++}
++
++export async function createService(
++  client: SupabaseClient,
++  input: {
++    salonId: string;
++    name: string;
++    description?: string;
++    durationMinutes: number;
++    pricePaise: number;
++    isBookableOnline?: boolean;
++  },
++): Promise<OwnerService> {
++  const { data, error } = await client
++    .from('services')
++    .insert({
++      salon_id: input.salonId,
++      name: input.name.trim(),
++      description: input.description?.trim() || null,
++      duration_minutes: input.durationMinutes,
++      price_paise: input.pricePaise,
++      is_active: true,
++      is_bookable_online: input.isBookableOnline !== false,
++    })
++    .select(SERVICE_COLUMNS)
++    .single();
++  if (error) throw error;
++  return data as OwnerService;
++}
++
++export async function updateService(
++  client: SupabaseClient,
++  serviceId: string,
++  patch: Partial<{
++    name: string;
++    description: string | null;
++    duration_minutes: number;
++    price_paise: number;
++    is_active: boolean;
++    is_bookable_online: boolean;
++  }>,
++): Promise<void> {
++  const { error } = await client.from('services').update(patch).eq('id', serviceId);
++  if (error) throw error;
++}
++
++export async function deleteService(client: SupabaseClient, serviceId: string): Promise<void> {
++  const { error } = await client.from('services').delete().eq('id', serviceId);
++  if (error) throw error;
++}
++
++// ---------------------------------------------------------------------------
++// Staff CRUD.
++// ---------------------------------------------------------------------------
++const STAFF_COLUMNS = 'id, salon_id, name, role, bio, is_active';
++
++export async function fetchStaff(client: SupabaseClient, salonId: string): Promise<OwnerStaff[]> {
++  const { data, error } = await client
++    .from('staff')
++    .select(STAFF_COLUMNS)
++    .eq('salon_id', salonId)
++    .order('name');
++  if (error) {
++    if (isMissingRelationError(error)) return [];
++    throw error;
++  }
++  return (data ?? []) as OwnerStaff[];
++}
++
++export async function createStaff(
++  client: SupabaseClient,
++  input: { salonId: string; name: string; role?: string; bio?: string },
++): Promise<OwnerStaff> {
++  const { data, error } = await client
++    .from('staff')
++    .insert({
++      salon_id: input.salonId,
++      name: input.name.trim(),
++      role: input.role?.trim() || null,
++      bio: input.bio?.trim() || null,
++      is_active: true,
++    })
++    .select(STAFF_COLUMNS)
++    .single();
++  if (error) throw error;
++  return data as OwnerStaff;
++}
++
++export async function updateStaff(
++  client: SupabaseClient,
++  staffId: string,
++  patch: Partial<{ name: string; role: string | null; bio: string | null; is_active: boolean }>,
++): Promise<void> {
++  const { error } = await client.from('staff').update(patch).eq('id', staffId);
++  if (error) throw error;
++}
++
++// ---------------------------------------------------------------------------
++// Bookings — the salon's real bookings (RLS: owner-managed salons only).
++// ---------------------------------------------------------------------------
++const BOOKING_COLUMNS =
++  'id, salon_id, customer_id, appointment_start, status, total_amount_paise, advance_amount_paise, created_at';
++
++export async function fetchBookings(
++  client: SupabaseClient,
++  salonId: string,
++): Promise<OwnerBooking[]> {
++  const { data, error } = await client
++    .from('bookings')
++    .select(BOOKING_COLUMNS)
++    .eq('salon_id', salonId)
++    .order('appointment_start', { ascending: false })
++    .limit(100);
++  if (error) {
++    if (isMissingRelationError(error)) return [];
++    throw error;
++  }
++  const bookings = (data ?? []) as OwnerBooking[];
++
++  // Best-effort customer names via profiles (select-only).
++  const customerIds = Array.from(
++    new Set(bookings.map((b) => b.customer_id).filter((id): id is string => Boolean(id))),
++  );
++  if (customerIds.length > 0) {
++    try {
++      const { data: profiles } = await client
++        .from('profiles')
++        .select('id, full_name, email')
++        .in('id', customerIds);
++      const byId = new Map((profiles ?? []).map((p: any) => [p.id, p]));
++      for (const booking of bookings) {
++        if (booking.customer_id) booking.customer = byId.get(booking.customer_id) ?? null;
++      }
++    } catch {
++      // names are decorative — never block bookings on them
++    }
++  }
++  return bookings;
++}
++
++export async function updateBookingStatus(
++  client: SupabaseClient,
++  bookingId: string,
++  status: OwnerBooking['status'],
++): Promise<void> {
++  const { error } = await client.from('bookings').update({ status }).eq('id', bookingId);
++  if (error) throw error;
++}
++
++// ---------------------------------------------------------------------------
++// Offers CRUD.
++// ---------------------------------------------------------------------------
++export async function fetchOffers(client: SupabaseClient, salonId: string): Promise<OwnerOffer[]> {
++  const { data, error } = await client
++    .from('offers')
++    .select('id, salon_id, title, description, discount_type, discount_value, is_active')
++    .eq('salon_id', salonId)
++    .order('created_at', { ascending: false });
++  if (error) {
++    if (isMissingRelationError(error)) return [];
++    throw error;
++  }
++  return (data ?? []) as OwnerOffer[];
++}
++
++// ---------------------------------------------------------------------------
++// Payouts — READ ONLY (locked rule: settlement runs daily at 22:00 IST).
++// ---------------------------------------------------------------------------
++export async function fetchOwnerPayouts(
++  client: SupabaseClient,
++  salonId: string,
++): Promise<OwnerPayout[]> {
++  const { data, error } = await client
++    .from('owner_payouts')
++    .select(
++      'id, salon_id, run_date, booking_count, gross_paise, platform_fee_paise, amount_paise, status, payout_reference, created_at',
++    )
++    .eq('salon_id', salonId)
++    .order('run_date', { ascending: false })
++    .limit(50);
++  if (error) {
++    if (isMissingRelationError(error)) return [];
++    throw error;
++  }
++  return (data ?? []) as OwnerPayout[];
++}
++
++// ---------------------------------------------------------------------------
++// Reviews for the salon.
++// ---------------------------------------------------------------------------
++export async function fetchSalonReviews(
++  client: SupabaseClient,
++  salonId: string,
++): Promise<SalonReview[]> {
++  const { data, error } = await client
++    .from('reviews')
++    .select('id, salon_id, rating, comment, author, verified, created_at')
++    .eq('salon_id', salonId)
++    .order('created_at', { ascending: false })
++    .limit(100);
++  if (error) {
++    if (isMissingRelationError(error)) return [];
++    throw error;
++  }
++  return (data ?? []) as SalonReview[];
++}
++
++// ---------------------------------------------------------------------------
++// Website setup proposals — the owner review system.
++// Proposals are prepared upstream (Growth Partner / onboarding); the owner
++// reviews them and calls review_salon_setup() to approve / request changes /
++// reject / publish. Publishing writes the live salon + website rows and the
++// shop attribution server-side.
++// ---------------------------------------------------------------------------
++const PROPOSAL_COLUMNS =
++  'id, onboarding_application_id, salon_id, owner_user_id, owner_email, growth_partner_id, status, payload, version, owner_notes, submitted_at, published_at, updated_at';
++
++export async function fetchOwnerProposals(
++  client: SupabaseClient,
++  salonIds: string[],
++): Promise<SetupProposal[]> {
++  if (salonIds.length === 0) return [];
++  const { data, error } = await client
++    .from('salon_setup_proposals')
++    .select(PROPOSAL_COLUMNS)
++    .in('salon_id', salonIds)
++    .order('updated_at', { ascending: false });
++  if (error) {
++    if (isMissingRelationError(error)) return [];
++    throw error;
++  }
++  return (data ?? []) as SetupProposal[];
++}
++
++export type ProposalAction = 'approve' | 'publish' | 'request_changes' | 'reject';
++
++export async function reviewProposal(
++  client: SupabaseClient,
++  proposalId: string,
++  action: ProposalAction,
++  notes?: string,
++): Promise<void> {
++  const { error } = await client.rpc('review_salon_setup', {
++    p_proposal_id: proposalId,
++    p_action: action,
++    p_notes: notes?.trim() || null,
++  });
++  if (error) throw error;
++}
++
++// ---------------------------------------------------------------------------
++// Published website visibility check (what the customer app actually sees).
++// ---------------------------------------------------------------------------
++export async function fetchPublicWebsite(
++  client: SupabaseClient,
++  salonId: string,
++): Promise<{ slug: string; is_published: boolean; config: Record<string, unknown> } | null> {
++  const { data, error } = await client
++    .from('salon_public_websites')
++    .select('slug, is_published, config')
++    .eq('salon_id', salonId)
++    .maybeSingle();
++  if (error) {
++    if (isMissingRelationError(error)) return null;
++    throw error;
++  }
++  return data;
++}
+diff --git a/src/lib/useOwnerContext.ts b/src/lib/useOwnerContext.ts
+new file mode 100644
+index 0000000..923973c
+--- /dev/null
++++ b/src/lib/useOwnerContext.ts
+@@ -0,0 +1,55 @@
++// Shared owner context hook — resolves the signed-in owner and their salon(s)
++// once, so screens can read/write live Supabase data instead of localStorage.
++
++import { useCallback, useEffect, useState } from 'react';
++import { supabase } from './supabase';
++import { resolveOwnerSalons, OwnerSalon } from './ownerRepository';
++
++export interface OwnerContext {
++  ready: boolean;
++  userId: string | null;
++  salons: OwnerSalon[];
++  /** Primary salon (first owned) or null. */
++  salon: OwnerSalon | null;
++  error: string;
++  reload: () => Promise<void>;
++}
++
++export function useOwnerContext(): OwnerContext {
++  const [ready, setReady] = useState(false);
++  const [userId, setUserId] = useState<string | null>(null);
++  const [salons, setSalons] = useState<OwnerSalon[]>([]);
++  const [error, setError] = useState('');
++
++  const reload = useCallback(async () => {
++    if (!supabase) {
++      setError('Supabase is not configured.');
++      setReady(true);
++      return;
++    }
++    try {
++      const { data } = await supabase.auth.getUser();
++      const user = data.user;
++      if (!user) {
++        setUserId(null);
++        setSalons([]);
++        setReady(true);
++        return;
++      }
++      setUserId(user.id);
++      const rows = await resolveOwnerSalons(supabase, user.id);
++      setSalons(rows);
++      setError('');
++    } catch (cause: any) {
++      setError(cause?.message || 'Could not load your shop.');
++    } finally {
++      setReady(true);
++    }
++  }, []);
++
++  useEffect(() => {
++    void reload();
++  }, [reload]);
++
++  return { ready, userId, salons, salon: salons[0] ?? null, error, reload };
++}
+diff --git a/src/screens/Bookings.tsx b/src/screens/Bookings.tsx
+index 11d0b6a..42d9244 100644
+--- a/src/screens/Bookings.tsx
++++ b/src/screens/Bookings.tsx
+@@ -1,4 +1,7 @@
+-import React, { useState } from 'react';
++import React, { useState, useEffect } from 'react';
++import { supabase } from '../lib/supabase';
++import { fetchBookings, OwnerBooking } from '../lib/ownerRepository';
++import { useOwnerContext } from '../lib/useOwnerContext';
+ import Layout from '../components/Layout';
+ import { NavigationProps } from '../types';
+ import { Search, Clock, Scissors, User, Sparkles, Plus, Calendar, ArrowLeft, X, MessageSquare, FileText, CheckCircle2 } from 'lucide-react';
+@@ -20,47 +23,65 @@ export interface BookingItem {
+   serviceIcon: 'scissors' | 'user' | 'sparkles';
+ }
+ 
+-const initialBookings: BookingItem[] = [
+-  {
+-    id: '#BK-7829',
+-    clientName: 'Ananya Sharma',
+-    clientPhone: '919876543210',
+-    clientAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuC-nP9eCkGy2wbdT05CpC-bQQVwQQMLPOBPRJEw2zBFhG1vyLqTne9C4EcMHZQUquCnDF09P9bR3c5sf2te--nBJMG85ltQzCKokwdWGm3bZrpvALaxvEQgK6Vdgp60DPCZNcHoK20HWB3apHSJGxTi0kj0lcRdISfiyzLNPYETPVegam9lBR6ucdt87pKbMUbHzPv5s_UKHwknAkWdo2_IrviELZVHqv8XjQhIhhP6-f4C6rnoevq1DayOWMthqx-CnWVeE1HNgoc',
+-    time: '09:00 AM - 10:30 AM',
+-    status: 'Confirmed',
+-    service: 'Balayage & Styling',
+-    stylist: 'Rohan V.',
+-    price: '₹3,500.00',
++
++
++const mapStatus = (status: OwnerBooking['status']): BookingItem['status'] => {
++  switch (status) {
++    case 'confirmed': return 'Confirmed';
++    case 'completed': return 'Completed';
++    case 'pending': return 'Pending';
++    default: return 'Completed'; // cancelled / no_show surface as completed history
++  }
++};
++
++const mapBooking = (b: OwnerBooking): BookingItem => {
++  const start = new Date(b.appointment_start);
++  const time = Number.isNaN(start.getTime())
++    ? b.appointment_start
++    : start.toLocaleString('en-IN', { day: 'numeric', month: 'short' }) +
++      ' · ' + start.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
++  const initials = (b.customer?.full_name || 'C')
++    .split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
++  return {
++    id: b.id,
++    clientName: b.customer?.full_name || b.customer?.email || 'Customer',
++    clientPhone: '',
++    clientInitials: initials,
++    time,
++    status: mapStatus(b.status),
++    service: 'Salon service',
++    stylist: '—',
++    price: `₹${(b.total_amount_paise / 100).toLocaleString('en-IN')}`,
+     serviceIcon: 'scissors',
+-  },
+-  {
+-    id: '#BK-7830',
+-    clientName: 'Amit Patel',
+-    clientPhone: '919876543211',
+-    clientInitials: 'AP',
+-    time: '10:45 AM - 11:30 AM',
+-    status: 'In-Progress',
+-    service: 'Beard Trim & Shape',
+-    stylist: 'Rohan V.',
+-    price: '₹1,200.00',
+-    serviceIcon: 'user',
+-  },
+-  {
+-    id: '#BK-7831',
+-    clientName: 'Priya Kapoor',
+-    clientPhone: '919876543212',
+-    clientAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBNro9Tvx2mCg1vwb2oUbG_H3AMDFPVQ_r9dtXjs0XsvegF1ZbaDuEV5MPvyUlKkxAnamZSwpRbX_F378ZST4-G-lza0X03d1EZH2enioAI8HFWMK3pKsEDMoHBGKPfpRRJ2Gm83L1DWP-fxpBtiPhIvWozKi0CXHv2DXiIOz_7VMcieHpN-zsaHHee5M5CrYh2YU-oe13dPP1VLpJdTPEMJ6UCd9NzRLD1MyH_XuPuQifa-tFa4HNUrkxCpSOkX1QoAn2T5X8ES94',
+-    time: '01:00 PM - 02:00 PM',
+-    status: 'Pending',
+-    service: 'Deep Conditioning',
+-    stylist: 'Ananya S.',
+-    price: '₹2,500.00',
+-    serviceIcon: 'sparkles',
+-  },
+-];
++  };
++};
+ 
+ export default function Bookings({ navigate }: NavigationProps) {
+   const { t } = useLanguage();
++  // Live bookings from Supabase (RLS: this owner's salon only).
++  const { salon, ready } = useOwnerContext();
++  const [liveBookings, setLiveBookings] = useState<BookingItem[]>([]);
++  const [loadingBookings, setLoadingBookings] = useState(true);
++
++  useEffect(() => {
++    let cancelled = false;
++    const load = async () => {
++      if (!supabase || !salon) { setLoadingBookings(false); return; }
++      try {
++        const rows = await fetchBookings(supabase, salon.id);
++        if (!cancelled) setLiveBookings(rows.map(mapBooking));
++      } catch (err) {
++        console.warn('Bookings could not be loaded from Supabase:', err);
++      } finally {
++        if (!cancelled) setLoadingBookings(false);
++      }
++    };
++    if (ready) void load();
++    return () => { cancelled = true; };
++  }, [ready, salon?.id]);
++
++  const initialBookings = liveBookings;
++
+   const [activeFilter, setActiveFilter] = useState('All');
+   const [searchQuery, setSearchQuery] = useState('');
+   const [selectedBooking, setSelectedBooking] = useState<null | any>(null);
+diff --git a/src/screens/Dashboard.tsx b/src/screens/Dashboard.tsx
+index 3adc52c..9f83076 100644
+--- a/src/screens/Dashboard.tsx
++++ b/src/screens/Dashboard.tsx
+@@ -1,13 +1,46 @@
+-import React from 'react';
++import React, { useEffect, useState } from 'react';
+ import Layout from '../components/Layout';
+ import { NavigationProps } from '../types';
+-import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Calendar, Users, Wallet, Star, PlusCircle, UserPlus, Scissors, CalendarCheck, CreditCard } from 'lucide-react';
++import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Calendar, Users, Wallet, Star, PlusCircle, UserPlus, Scissors, CalendarCheck, CreditCard, FileCheck2, Globe } from 'lucide-react';
++import { supabase } from '../lib/supabase';
++import { fetchOwnerProposals, fetchBookings } from '../lib/ownerRepository';
++import { useOwnerContext } from '../lib/useOwnerContext';
+ import { formatPrice } from '../utils/currency';
+ import { useLanguage } from '../contexts/LanguageContext';
+ 
+ export default function Dashboard({ navigate }: NavigationProps) {
+   const { t } = useLanguage();
+ 
++  // Live data: pending website proposals + today's bookings.
++  const { salon, ready } = useOwnerContext();
++  const [pendingProposals, setPendingProposals] = useState(0);
++  const [published, setPublished] = useState<boolean | null>(null);
++  const [todayBookings, setTodayBookings] = useState<number | null>(null);
++
++  useEffect(() => {
++    let cancelled = false;
++    const load = async () => {
++      if (!supabase || !salon) return;
++      try {
++        const [proposals, bookings] = await Promise.all([
++          fetchOwnerProposals(supabase, [salon.id]),
++          fetchBookings(supabase, salon.id),
++        ]);
++        if (cancelled) return;
++        setPendingProposals(proposals.filter((p) => p.status === 'submitted' || p.status === 'approved').length);
++        setPublished(proposals.some((p) => p.status === 'published'));
++        const today = new Date().toDateString();
++        setTodayBookings(
++          bookings.filter((b) => new Date(b.appointment_start).toDateString() === today).length,
++        );
++      } catch (err) {
++        console.warn('Dashboard live data could not load:', err);
++      }
++    };
++    if (ready) void load();
++    return () => { cancelled = true; };
++  }, [ready, salon?.id]);
++
+   return (
+     <Layout currentScreen="dashboard" navigate={navigate} title="NEXORA SALONOS">
+       <div className="px-5 md:px-10 py-8 flex flex-col gap-8">
+@@ -61,11 +94,11 @@ export default function Dashboard({ navigate }: NavigationProps) {
+               </div>
+             </div>
+             <div className="flex items-baseline gap-2 mt-auto">
+-              <span className="text-[32px] font-bold text-on-surface tracking-tight">24</span>
+-              <span className="text-[13px] font-medium text-on-surface-variant">/ 30 {t('slots')}</span>
++              <span className="text-[32px] font-bold text-on-surface tracking-tight">{todayBookings ?? '—'}</span>
++              <span className="text-[13px] font-medium text-on-surface-variant">{t('today')}</span>
+             </div>
+             <div className="w-full bg-surface-container h-1.5 rounded-full mt-3 overflow-hidden">
+-              <div className="bg-primary h-full rounded-full" style={{ width: '80%' }}></div>
++              <div className="bg-primary h-full rounded-full" style={{ width: todayBookings ? `${Math.min(100, todayBookings * 10)}%` : '0%' }}></div>
+             </div>
+           </div>
+ 
+@@ -104,6 +137,33 @@ export default function Dashboard({ navigate }: NavigationProps) {
+           </div>
+         </section>
+ 
++        {/* Website Proposal Review */}
++        <section
++          onClick={() => navigate('proposal-review')}
++          className="bg-white/85 backdrop-blur-[20px] border border-surface-variant rounded-[18px] p-4 flex items-center gap-4 shadow-[0px_4px_20px_rgba(0,0,0,0.03)] hover:-translate-y-0.5 transition-transform cursor-pointer"
++        >
++          <div className="w-11 h-11 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
++            <FileCheck2 className="w-6 h-6" />
++          </div>
++          <div className="flex-1 min-w-0">
++            <p className="font-bold text-[15px] text-on-surface">Website Proposal Review</p>
++            <p className="text-[12px] text-on-surface-variant mt-0.5">
++              {pendingProposals > 0
++                ? `${pendingProposals} proposal${pendingProposals > 1 ? 's' : ''} waiting for your decision`
++                : published
++                  ? 'Your shop website is live. New proposals will appear here.'
++                  : 'Review & publish your shop website setup'}
++            </p>
++          </div>
++          {pendingProposals > 0 ? (
++            <span className="shrink-0 min-w-6 h-6 px-1.5 rounded-full bg-primary text-white text-[12px] font-bold flex items-center justify-center">
++              {pendingProposals}
++            </span>
++          ) : (
++            <Globe className={`w-5 h-5 shrink-0 ${published ? 'text-emerald-600' : 'text-on-surface-variant'}`} />
++          )}
++        </section>
++
+         {/* Secondary Widgets Row */}
+         <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+           {/* Wallet Balance */}
+diff --git a/src/screens/NewService.tsx b/src/screens/NewService.tsx
+index 44d3951..e120d49 100644
+--- a/src/screens/NewService.tsx
++++ b/src/screens/NewService.tsx
+@@ -1,6 +1,8 @@
+ import React, { useState, useRef } from 'react';
+ import TopBar from '../components/TopBar';
+ import { NavigationProps } from '../types';
++import { supabase } from '../lib/supabase';
++import { createService, resolveOwnerSalons } from '../lib/ownerRepository';
+ import { ImagePlus, ChevronDown, Clock, X, Sparkles } from 'lucide-react';
+ 
+ interface ServiceTemplate {
+@@ -108,44 +110,39 @@ export default function NewService({ navigate }: NavigationProps) {
+     setSelectedPreset(tpl.name);
+   };
+ 
+-  const handleSubmit = (e: React.FormEvent) => {
++  const [submitting, setSubmitting] = React.useState(false);
++
++  const handleSubmit = async (e: React.FormEvent) => {
+     e.preventDefault();
+-    
+-    const saved = localStorage.getItem('nexora_services');
+-    let currentList = [];
+-    if (saved) {
+-      try {
+-        currentList = JSON.parse(saved);
+-      } catch (err) {
+-        console.error('Failed to load current services list', err);
+-      }
+-    }
++    if (submitting) return;
+ 
+-    let mappedCat: 'Hair' | 'Nails' | 'Spa' | 'Aesthetic' = 'Hair';
+-    if (category === 'haircut' || category === 'color' || category === 'extensions') {
+-      mappedCat = 'Hair';
+-    } else if (category === 'nails') {
+-      mappedCat = 'Nails';
+-    } else if (category === 'treatment') {
+-      mappedCat = 'Spa';
+-    } else if (category === 'makeup') {
+-      mappedCat = 'Aesthetic';
++    // Persist to Supabase services (RLS: owner's salon only).
++    if (!supabase) {
++      navigate('services');
++      return;
++    }
++    setSubmitting(true);
++    try {
++      const { data } = await supabase.auth.getUser();
++      const user = data.user;
++      if (!user) throw new Error('Not authenticated');
++      const salons = await resolveOwnerSalons(supabase, user.id);
++      const salon = salons[0];
++      if (!salon) throw new Error('No shop found for your account yet.');
++      await createService(supabase, {
++        salonId: salon.id,
++        name: serviceName,
++        description: description,
++        durationMinutes: Number(duration) > 0 ? Number(duration) : 30,
++        pricePaise: Math.round(Number(price) * 100) || 0,
++      });
++      navigate('services');
++    } catch (err) {
++      console.warn('Service could not be saved to Supabase:', err);
++      window.alert('Could not save the service. Please check your connection and try again.');
++    } finally {
++      setSubmitting(false);
+     }
+-
+-    const newService = {
+-      id: `SRV-${Date.now()}`,
+-      name: serviceName,
+-      category: mappedCat,
+-      description: description,
+-      duration: Number(duration),
+-      price: Number(price),
+-      image: imagePreview || 'https://lh3.googleusercontent.com/aida-public/AB6AXuDw9naRZ0loBzUpQG7MWjsnG_zY_PI1ow606HO1hgOtQCN7eS4F9SNU82vaAlJuI9nP_pA0lqH-3gDIl6BedEJ2KMYBqnjLPx81IRT1u-5ZNCXvIV96G4Of2THK_tGUJkjAF49lnh5VyTsaPI3VJQphCIO6fflhrL6Ti0deu6eq955lQwvQeJMhwk4SF5FbCjnmV9Y9Trz0r3lSW_Q3EebSRGkhUrv5A2V-0u9qwXA2pdms4WzmRAD_jB30b5KUn6FaIv6bVeXayw0'
+-    };
+-
+-    currentList.push(newService);
+-    localStorage.setItem('nexora_services', JSON.stringify(currentList));
+-
+-    navigate('services');
+   };
+ 
+   return (
+diff --git a/src/screens/NewStaff.tsx b/src/screens/NewStaff.tsx
+index f24ea45..25af1e3 100644
+--- a/src/screens/NewStaff.tsx
++++ b/src/screens/NewStaff.tsx
+@@ -1,4 +1,6 @@
+ import React, { useState } from 'react';
++import { supabase } from '../lib/supabase';
++import { createStaff, resolveOwnerSalons } from '../lib/ownerRepository';
+ import { NavigationProps } from '../types';
+ import ProfilePhotoUploader from '../components/ProfilePhotoUploader';
+ import { 
+@@ -110,26 +112,35 @@ export default function NewStaff({ navigate }: NavigationProps) {
+       statusInfo: 'Ready'
+     };
+ 
+-    // Load current staff from localStorage or defaults
+-    const currentSaved = localStorage.getItem('nexora_staff_list');
+-    let staffList: StaffMember[] = [];
+-    if (currentSaved) {
++    // Persist to Supabase (staff table, RLS-scoped to this owner's salon).
++    const saveAndGo = async () => {
+       try {
+-        staffList = JSON.parse(currentSaved);
++        if (supabase) {
++          const { data } = await supabase.auth.getUser();
++          const user = data.user;
++          if (user) {
++            const salons = await resolveOwnerSalons(supabase, user.id);
++            const salon = salons[0];
++            if (salon) {
++              await createStaff(supabase, {
++                salonId: salon.id,
++                name: newMember.name,
++                role: newMember.role,
++                bio: newMember.specialty,
++              });
++            }
++          }
++        }
+       } catch (err) {
+-        console.error(err);
++        console.warn('Staff could not be saved to Supabase:', err);
+       }
+-    }
+-
+-    const updatedList = [newMember, ...staffList];
+-    localStorage.setItem('nexora_staff_list', JSON.stringify(updatedList));
+-
+-    triggerToast(`${newMember.name} added successfully!`);
+-    
+-    // Brief delay to allow the toast to show before navigating
+-    setTimeout(() => {
+-      navigate('staff');
+-    }, 1000);
++      triggerToast(`${newMember.name} added successfully!`);
++      // Brief delay to allow the toast to show before navigating
++      setTimeout(() => {
++        navigate('staff');
++      }, 700);
++    };
++    void saveAndGo();
+   };
+ 
+   return (
+diff --git a/src/screens/Profile.tsx b/src/screens/Profile.tsx
+index 5157f3b..39c64f9 100644
+--- a/src/screens/Profile.tsx
++++ b/src/screens/Profile.tsx
+@@ -1,4 +1,6 @@
+ import React, { useState, useRef } from 'react';
++import { updateSalonProfile } from '../lib/ownerRepository';
++import { useOwnerContext } from '../lib/useOwnerContext';
+ import Layout from '../components/Layout';
+ import PasswordField from '../components/PasswordField';
+ import OtpVerificationModal from '../components/OtpVerificationModal';
+@@ -50,12 +52,21 @@ export default function Profile({ navigate }: NavigationProps) {
+   const businessLogoInputRef = useRef<HTMLInputElement>(null);
+   const personalAvatarInputRef = useRef<HTMLInputElement>(null);
+ 
+-  // Business Profile Form State
+-  const [businessName, setBusinessName] = useState(() => localStorage.getItem('nexora_business_name') || 'Nexora Beauty Studio');
+-  const [gstNumber, setGstNumber] = useState(() => localStorage.getItem('nexora_gst_number') || '29GGGGG1314R9Z6');
+-  const [address, setAddress] = useState(() => localStorage.getItem('nexora_address') || '124 Connaught Place, New Delhi');
+-  const [city, setCity] = useState(() => localStorage.getItem('nexora_city') || 'Metropolis');
+-  const [postalCode, setPostalCode] = useState(() => localStorage.getItem('nexora_postal_code') || '50001');
++  // Business Profile Form State — hydrated from the live salon row (Supabase).
++  const { salon, ready } = useOwnerContext();
++  const [businessName, setBusinessName] = useState(() => localStorage.getItem('nexora_business_name') || '');
++  const [gstNumber, setGstNumber] = useState(() => localStorage.getItem('nexora_gst_number') || '');
++  const [address, setAddress] = useState(() => localStorage.getItem('nexora_address') || '');
++  const [city, setCity] = useState(() => localStorage.getItem('nexora_city') || '');
++  const [postalCode, setPostalCode] = useState(() => localStorage.getItem('nexora_postal_code') || '');
++
++  React.useEffect(() => {
++    if (ready && salon) {
++      setBusinessName(salon.name || '');
++      setAddress(salon.address || '');
++      setCity(salon.city || '');
++    }
++  }, [ready, salon?.id]);
+ 
+   // Business Logo & Personal Avatar State
+   const [businessLogo, setBusinessLogo] = useState(() => 
+@@ -196,6 +207,19 @@ export default function Profile({ navigate }: NavigationProps) {
+   };
+ 
+   const handleSaveBusiness = async () => {
++    // 0. Persist the business identity to Supabase (salons row, RLS owner-only).
++    if (supabase && salon) {
++      try {
++        await updateSalonProfile(supabase, salon.id, {
++          name: businessName.trim() || salon.name,
++          address: address.trim() || null,
++          city: city.trim() || null,
++        });
++      } catch (err) {
++        console.warn('Business profile could not be saved to Supabase:', err);
++      }
++    }
++
+     // 1. Save to localStorage for immediate local feedback
+     localStorage.setItem('nexora_business_name', businessName);
+     localStorage.setItem('nexora_gst_number', gstNumber);
+diff --git a/src/screens/ProposalReview.tsx b/src/screens/ProposalReview.tsx
+new file mode 100644
+index 0000000..d90a858
+--- /dev/null
++++ b/src/screens/ProposalReview.tsx
+@@ -0,0 +1,303 @@
++import React, { useCallback, useEffect, useMemo, useState } from 'react';
++import Layout from '../components/Layout';
++import { NavigationProps } from '../types';
++import { supabase } from '../lib/supabase';
++import {
++  fetchOwnerProposals,
++  resolveOwnerSalons,
++  reviewProposal,
++  ProposalAction,
++  SetupProposal,
++} from '../lib/ownerRepository';
++import { CheckCircle2, XCircle, Clock, Send, Eye, MessageSquareWarning, RefreshCw } from 'lucide-react';
++
++// Owner Proposal Review — website setup proposals prepared by the Growth
++// Partner / onboarding flow. The owner reviews the payload and decides:
++// approve / request changes / reject / publish (review_salon_setup RPC).
++// Publishing is what makes the shop visible in the Customer PWA & website.
++
++type StatusStyle = { label: string; classes: string };
++
++const STATUS_META: Record<string, StatusStyle> = {
++  submitted: { label: 'Awaiting review', classes: 'bg-amber-50 text-amber-700 border-amber-200' },
++  approved: { label: 'Approved', classes: 'bg-blue-50 text-blue-700 border-blue-200' },
++  changes_requested: { label: 'Changes requested', classes: 'bg-orange-50 text-orange-700 border-orange-200' },
++  edit_requested: { label: 'Edit requested', classes: 'bg-orange-50 text-orange-700 border-orange-200' },
++  published: { label: 'Published', classes: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
++  rejected: { label: 'Rejected', classes: 'bg-rose-50 text-rose-700 border-rose-200' },
++};
++
++const formatDate = (iso: string | null): string => {
++  if (!iso) return '—';
++  const d = new Date(iso);
++  if (Number.isNaN(d.getTime())) return iso;
++  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) +
++    ', ' + d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
++};
++
++const payloadSummary = (payload: Record<string, unknown> | null) => {
++  const p = (payload ?? {}) as Record<string, any>;
++  const salon = (p.salon ?? p.shop ?? {}) as Record<string, any>;
++  const services = Array.isArray(p.services) ? p.services : [];
++  const staff = Array.isArray(p.staff) ? p.staff : [];
++  return {
++    name: salon.name || p.name || 'Website setup',
++    category: salon.business_category || p.business_category || '',
++    city: salon.city || p.city || '',
++    serviceCount: services.length,
++    staffCount: staff.length,
++  };
++};
++
++export default function ProposalReview({ navigate }: NavigationProps) {
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState('');
++  const [proposals, setProposals] = useState<SetupProposal[]>([]);
++  const [salonNames, setSalonNames] = useState<Record<string, string>>({});
++  const [selected, setSelected] = useState<SetupProposal | null>(null);
++  const [notes, setNotes] = useState('');
++  const [busyAction, setBusyAction] = useState<ProposalAction | null>(null);
++  const [toast, setToast] = useState<string | null>(null);
++
++  const showToast = (msg: string) => {
++    setToast(msg);
++    window.setTimeout(() => setToast(null), 4000);
++  };
++
++  const load = useCallback(async () => {
++    if (!supabase) {
++      setError('Supabase is not configured.');
++      setLoading(false);
++      return;
++    }
++    setLoading(true);
++    setError('');
++    try {
++      const { data } = await supabase.auth.getUser();
++      const user = data.user;
++      if (!user) throw new Error('Not authenticated');
++      const salons = await resolveOwnerSalons(supabase, user.id);
++      const names: Record<string, string> = {};
++      salons.forEach((s) => {
++        names[s.id] = s.name;
++      });
++      setSalonNames(names);
++      const rows = await fetchOwnerProposals(
++        supabase,
++        salons.map((s) => s.id),
++      );
++      setProposals(rows);
++    } catch (cause: any) {
++      setError(cause?.message || 'Could not load proposals.');
++    } finally {
++      setLoading(false);
++    }
++  }, []);
++
++  useEffect(() => {
++    void load();
++  }, [load]);
++
++  const pendingCount = useMemo(
++    () => proposals.filter((p) => p.status === 'submitted' || p.status === 'approved').length,
++    [proposals],
++  );
++
++  const runAction = async (action: ProposalAction) => {
++    if (!supabase || !selected) return;
++    if ((action === 'request_changes' || action === 'reject') && !notes.trim()) {
++      showToast(action === 'request_changes' ? 'Add a note describing the changes needed.' : 'Add a short reason for rejection.');
++      return;
++    }
++    setBusyAction(action);
++    try {
++      await reviewProposal(supabase, selected.id, action, notes);
++      showToast(
++        action === 'publish'
++          ? 'Published! Your shop website is now live for customers.'
++          : action === 'approve'
++            ? 'Proposal approved.'
++            : action === 'request_changes'
++              ? 'Changes requested from the proposer.'
++              : 'Proposal rejected.',
++      );
++      setNotes('');
++      setSelected(null);
++      await load();
++    } catch (cause: any) {
++      showToast(cause?.message || 'Action failed. Please try again.');
++    } finally {
++      setBusyAction(null);
++    }
++  };
++
++  return (
++    <Layout currentScreen="proposal-review" navigate={navigate} title="NEXORA SALONOS" showBack onBack={() => navigate('dashboard')}>
++      <div className="px-4 py-6 max-w-md mx-auto w-full flex flex-col gap-4 min-h-[calc(100vh-120px)]">
++        <div className="flex items-center justify-between">
++          <div>
++            <h2 className="text-[26px] font-bold text-on-surface tracking-tight">Website Proposals</h2>
++            <p className="text-[13px] text-on-surface-variant mt-0.5">
++              Review shop website setups before they go live.
++            </p>
++          </div>
++          <button
++            onClick={() => void load()}
++            className="w-11 h-11 rounded-full bg-surface-container flex items-center justify-center active:scale-90 transition-transform"
++            aria-label="Refresh proposals"
++          >
++            <RefreshCw className={`w-5 h-5 text-primary ${loading ? 'animate-spin' : ''}`} />
++          </button>
++        </div>
++
++        {pendingCount > 0 && (
++          <div className="rounded-2xl bg-primary-container/40 border border-primary/20 p-4 flex items-center gap-3">
++            <Clock className="w-5 h-5 text-primary shrink-0" />
++            <p className="text-[13px] text-on-surface leading-snug">
++              <span className="font-bold">{pendingCount}</span> proposal{pendingCount > 1 ? 's' : ''} waiting
++              for your review. Publishing approves your shop for customer bookings.
++            </p>
++          </div>
++        )}
++
++        {loading && (
++          <div className="flex flex-col items-center justify-center py-20 gap-3">
++            <div className="w-9 h-9 border-[3px] border-primary/20 border-t-primary rounded-full animate-spin" />
++            <p className="text-sm text-on-surface-variant">Loading proposals...</p>
++          </div>
++        )}
++
++        {!loading && error && (
++          <div className="rounded-2xl bg-error-container/40 border border-error/20 p-4 text-[13px] text-on-surface">
++            {error}
++          </div>
++        )}
++
++        {!loading && !error && proposals.length === 0 && (
++          <div className="flex flex-col items-center justify-center py-20 text-center gap-2">
++            <Eye className="w-8 h-8 text-on-surface-variant" />
++            <h3 className="font-bold text-on-surface">No proposals yet</h3>
++            <p className="text-[13px] text-on-surface-variant max-w-[260px]">
++              When your Growth Partner prepares your shop website, it will appear here for review.
++            </p>
++          </div>
++        )}
++
++        {!loading && !error && proposals.map((proposal) => {
++          const meta = STATUS_META[proposal.status] ?? { label: proposal.status, classes: 'bg-slate-50 text-slate-600 border-slate-200' };
++          const summary = payloadSummary(proposal.payload);
++          const isActive = selected?.id === proposal.id;
++          const canDecide = proposal.status === 'submitted' || proposal.status === 'approved';
++          return (
++            <div key={proposal.id} className="rounded-2xl bg-surface-container-lowest border border-outline-variant/50 shadow-sm overflow-hidden">
++              <button
++                onClick={() => {
++                  setSelected(isActive ? null : proposal);
++                  setNotes('');
++                }}
++                className="w-full p-4 text-left active:bg-surface-container-low/60 transition-colors"
++              >
++                <div className="flex items-start justify-between gap-2">
++                  <div className="min-w-0">
++                    <p className="font-bold text-[15px] text-on-surface truncate">{summary.name}</p>
++                    <p className="text-[12px] text-on-surface-variant mt-0.5 truncate">
++                      {salonNames[proposal.salon_id ?? ''] || 'New shop'}
++                      {summary.category ? ` · ${summary.category}` : ''}
++                      {summary.city ? ` · ${summary.city}` : ''}
++                    </p>
++                  </div>
++                  <span className={`shrink-0 px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-wide ${meta.classes}`}>
++                    {meta.label}
++                  </span>
++                </div>
++                <div className="flex items-center gap-3 mt-2 text-[11px] text-on-surface-variant">
++                  <span>{summary.serviceCount} services</span>
++                  <span>·</span>
++                  <span>{summary.staffCount} staff</span>
++                  <span>·</span>
++                  <span>Updated {formatDate(proposal.updated_at)}</span>
++                </div>
++              </button>
++
++              {isActive && (
++                <div className="border-t border-outline-variant/40 p-4 flex flex-col gap-3 bg-surface-container-low/40">
++                  {proposal.owner_notes && (
++                    <div className="rounded-xl bg-surface-container-lowest border border-outline-variant/40 p-3">
++                      <p className="text-[11px] font-bold text-on-surface-variant uppercase tracking-wide mb-1">Your last note</p>
++                      <p className="text-[13px] text-on-surface">{proposal.owner_notes}</p>
++                    </div>
++                  )}
++
++                  {canDecide && (
++                    <>
++                      <div className="flex flex-col gap-1.5">
++                        <label className="text-[12px] font-bold text-on-surface flex items-center gap-1.5">
++                          <MessageSquareWarning className="w-4 h-4 text-primary" />
++                          Note for the proposer (required for changes / rejection)
++                        </label>
++                        <textarea
++                          value={notes}
++                          onChange={(e) => setNotes(e.target.value)}
++                          rows={2}
++                          placeholder="e.g. Please update the cover photo and pricing for facial services..."
++                          className="w-full rounded-xl bg-surface-container-lowest border border-outline-variant/50 p-3 text-[13px] text-on-surface focus:outline-none focus:border-primary resize-none"
++                        />
++                      </div>
++
++                      <div className="grid grid-cols-2 gap-2">
++                        <button
++                          onClick={() => void runAction('approve')}
++                          disabled={busyAction !== null}
++                          className="h-11 rounded-xl bg-blue-600 text-white text-[13px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.97] transition-transform disabled:opacity-50"
++                        >
++                          <CheckCircle2 className="w-4 h-4" /> {busyAction === 'approve' ? 'Approving...' : 'Approve'}
++                        </button>
++                        <button
++                          onClick={() => void runAction('publish')}
++                          disabled={busyAction !== null}
++                          className="h-11 rounded-xl bg-primary text-on-primary text-[13px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.97] transition-transform disabled:opacity-50"
++                        >
++                          <Send className="w-4 h-4" /> {busyAction === 'publish' ? 'Publishing...' : 'Approve & Publish'}
++                        </button>
++                        <button
++                          onClick={() => void runAction('request_changes')}
++                          disabled={busyAction !== null}
++                          className="h-11 rounded-xl bg-orange-500/90 text-white text-[13px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.97] transition-transform disabled:opacity-50"
++                        >
++                          <Clock className="w-4 h-4" /> {busyAction === 'request_changes' ? 'Sending...' : 'Request Changes'}
++                        </button>
++                        <button
++                          onClick={() => void runAction('reject')}
++                          disabled={busyAction !== null}
++                          className="h-11 rounded-xl bg-rose-600 text-white text-[13px] font-bold flex items-center justify-center gap-1.5 active:scale-[0.97] transition-transform disabled:opacity-50"
++                        >
++                          <XCircle className="w-4 h-4" /> {busyAction === 'reject' ? 'Rejecting...' : 'Reject'}
++                        </button>
++                      </div>
++                      <p className="text-[11px] text-on-surface-variant leading-snug">
++                        Publishing verifies your shop, enables online bookings, and makes the website visible in the
++                        Customer app & main website. Attributions are locked per shop.
++                      </p>
++                    </>
++                  )}
++
++                  {proposal.status === 'published' && (
++                    <p className="text-[12px] text-emerald-700 font-medium">
++                      Published {formatDate(proposal.published_at)} — live for customers.
++                    </p>
++                  )}
++                </div>
++              )}
++            </div>
++          );
++        })}
++      </div>
++
++      {toast && (
++        <div className="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 bg-inverse-surface text-inverse-on-surface px-4 py-3 rounded-xl shadow-lg text-[13px] font-medium max-w-[90%]">
++          {toast}
++        </div>
++      )}
++    </Layout>
++  );
++}
+diff --git a/src/screens/Reviews.tsx b/src/screens/Reviews.tsx
+index e2eebdb..ee56f1e 100644
+--- a/src/screens/Reviews.tsx
++++ b/src/screens/Reviews.tsx
+@@ -28,6 +28,9 @@ import {
+   Tag
+ } from 'lucide-react';
+ import { motion, AnimatePresence } from 'motion/react';
++import { supabase } from '../lib/supabase';
++import { fetchSalonReviews } from '../lib/ownerRepository';
++import { useOwnerContext } from '../lib/useOwnerContext';
+ 
+ interface Review {
+   id: string;
+@@ -53,73 +56,7 @@ interface SavedReply {
+   text: string;
+ }
+ 
+-const initialReviews: Review[] = [
+-  {
+-    id: 'rev-1',
+-    customerName: 'Suman G.',
+-    customerAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDyamfgVHEFfNUwHoBFHMzlxXIXNRz7pgW1XewyxhXLuQCekKzaJgg80c6oXwCgbKLYxOVKaP1GWvkaC3tb558V2elM2uuVQNT7LFZynb6wP-pfK-TsNJ3N1dXZH4eYvq-hvdkN8F9qA4jM_Idd54OwkEMuSKk7Mh9mLJHUehYdrPRc6NoDkJL5OghshpXpI7s5VecRmT9B3HSHqltg2bKYJTA1N01V2hV0i38kCC2lxQXGQp_HvQhPM2u0zxDuErElIavNtrB57Pg',
+-    timeAgo: '2 days ago',
+-    rating: 5,
+-    service: 'Balayage & Tone',
+-    comment: '"The balayage service was incredible! Elena is a true artist. She really listened to what I wanted and delivered perfectly. The salon atmosphere is so relaxing and luxurious."',
+-    type: '5star',
+-    replied: false,
+-    statusBorder: 'green'
+-  },
+-  {
+-    id: 'rev-2',
+-    customerName: 'Michael T.',
+-    customerInitials: 'M',
+-    timeAgo: '1 week ago',
+-    rating: 5,
+-    service: 'Signature Cut',
+-    comment: '"Always a fantastic experience. The attention to detail is unmatched, and I always leave feeling refreshed. Highly recommend Marcus for mens cuts!"',
+-    type: '5star',
+-    replied: true,
+-    replyText: 'Thank you Michael! Marcus and the team love having you at Nexora. See you next month!',
+-    replyDate: '6 days ago',
+-    statusBorder: 'green'
+-  },
+-  {
+-    id: 'rev-3',
+-    customerName: 'Jessica R.',
+-    customerAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDELI09ZNOrGv45IgrLVGbRbQjK0MGiqgG8uc5GJCiZEGjSyN-EXlca0-INuxWJuon1HvdF12dNDY5RuIr07jjafSUsZITa16JfGbd20c62wO_TveMSQ8znaEYg6qY3c_bvG3itRNLmhiXnJuxFZIgBRrYxs7KpIOVGygzBKLtb1eJk9VOMxNuv2jwY9xXXR-n8UlgxdgcZwKil6gkcaVFYV7BATKJKCAzL0a2idf4GHIC54I3xOKBG7Qz-87HZgg8f3Bwa4qV2kmI',
+-    timeAgo: '3 weeks ago',
+-    rating: 2,
+-    service: 'Express Blowout',
+-    comment: '"The stylist was a bit rushed today and my hair didn\'t hold the style as long as it usually does. Usually I have a great experience, but this time fell short."',
+-    type: 'critical',
+-    replied: false,
+-    isResolved: false,
+-    statusBorder: 'red'
+-  },
+-  {
+-    id: 'rev-4',
+-    customerName: 'Eleanor Vance',
+-    customerAvatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCBEsXkeAiVpvmbW8Yi3JPENw2qM0ItwZpAz4hWWf5JnqazR2ARjy_t6e3sGZ-IMhBnUF8OsvAHl6q6JYVrXk9Q8OHZTOZCe-AQzwWHjpvs8bmrqSQnZ_XPtnUvJN2UFt-H9MLYJjZaDBXCA9Nb7ErMP742bTh86O_dY0lB6onIk_T893uD5rwxcDAwH3aRDKAR-VoFl5jo80ld4dY2JKpW_ozzD-e6OWnTdEz0_LUJ5c9jZAAO6wEqngX_Dzq7HKBM_a2ZnuPck9E',
+-    timeAgo: '1 month ago',
+-    rating: 5,
+-    service: 'Full Highlights & Treatment',
+-    comment: '"Nexora is the absolute best salon in town. My hair feels healthier than ever after the deep hydration treatment!"',
+-    type: '5star',
+-    replied: true,
+-    replyText: 'Dear Eleanor, you are always such a joy to host! Thank you for trusting us with your hair journey.',
+-    replyDate: '3 weeks ago',
+-    statusBorder: 'green'
+-  },
+-  {
+-    id: 'rev-5',
+-    customerName: 'David K.',
+-    customerInitials: 'D',
+-    timeAgo: '1 month ago',
+-    rating: 4,
+-    service: 'Beard Trim & Facial',
+-    comment: '"Great service and friendly staff. Parking was a little tricky during peak time, but the service itself was top notch."',
+-    type: '4star',
+-    replied: false,
+-    statusBorder: 'default'
+-  }
+-];
++
+ 
+ const defaultSavedReplies: SavedReply[] = [
+   {
+@@ -149,7 +86,44 @@ const defaultSavedReplies: SavedReply[] = [
+ ];
+ 
+ export default function Reviews({ navigate }: NavigationProps) {
+-  const [reviews, setReviews] = useState<Review[]>(initialReviews);
++  // Live reviews from Supabase (reviews table, this owner's salon).
++  const { salon, ready } = useOwnerContext();
++  const [reviews, setReviews] = useState<Review[]>([]);
++
++  useEffect(() => {
++    let cancelled = false;
++    const load = async () => {
++      if (!supabase || !salon) return;
++      try {
++        const rows = await fetchSalonReviews(supabase, salon.id);
++        if (cancelled) return;
++        setReviews(
++          rows.map((r) => {
++            const rating = r.rating ?? 0;
++            const type: Review['type'] = rating >= 5 ? '5star' : rating === 4 ? '4star' : 'critical';
++            const d = r.created_at ? new Date(r.created_at) : null;
++            return {
++              id: r.id,
++              customerName: r.author || 'Customer',
++              customerInitials: (r.author || 'C').split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2),
++              timeAgo: d && !Number.isNaN(d.getTime())
++                ? d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
++                : '',
++              rating,
++              service: 'Salon visit',
++              comment: r.comment || '',
++              type,
++              replied: false,
++            } as Review;
++          }),
++        );
++      } catch (err) {
++        console.warn('Reviews could not be loaded from Supabase:', err);
++      }
++    };
++    if (ready) void load();
++    return () => { cancelled = true; };
++  }, [ready, salon?.id]);
+   const [activeFilter, setActiveFilter] = useState<'all' | '5star' | '4star' | 'critical' | 'unreplied'>('all');
+   const [searchQuery, setSearchQuery] = useState('');
+   
+diff --git a/src/screens/ServiceDetail.tsx b/src/screens/ServiceDetail.tsx
+index 42d782c..3053a60 100644
+--- a/src/screens/ServiceDetail.tsx
++++ b/src/screens/ServiceDetail.tsx
+@@ -1,4 +1,7 @@
+ import React, { useState } from 'react';
++import { supabase } from '../lib/supabase';
++import { fetchServices, updateService } from '../lib/ownerRepository';
++import { useOwnerContext } from '../lib/useOwnerContext';
+ import TopBar from '../components/TopBar';
+ import { NavigationProps } from '../types';
+ import { DollarSign, Calendar, TrendingUp, Edit2, UserPlus, X, Check, Users, Clock, Sparkles } from 'lucide-react';
+@@ -94,34 +97,57 @@ const presetTemplates = [
+ ];
+ 
+ export default function ServiceDetail({ navigate }: NavigationProps) {
+-  const [servicesList, setServicesList] = useState<any[]>(() => {
+-    const saved = localStorage.getItem('nexora_services');
+-    if (saved) {
++  // Live services from Supabase (same RLS-scoped table as ServicesList).
++  const { salon, ready } = useOwnerContext();
++  const [servicesList, setServicesList] = useState<any[]>([]);
++
++  React.useEffect(() => {
++    let cancelled = false;
++    const load = async () => {
++      if (!supabase || !salon) return;
+       try {
+-        return JSON.parse(saved);
+-      } catch (e) {
+-        console.error('Failed to parse nexora_services', e);
++        const rows = await fetchServices(supabase, salon.id);
++        if (!cancelled) {
++          setServicesList(
++            rows.map((r) => ({
++              id: r.id,
++              name: r.name,
++              category: 'General',
++              description: r.description || '',
++              duration: r.duration_minutes,
++              price: r.price_paise / 100,
++              image: '',
++            })),
++          );
++        }
++      } catch (err) {
++        console.warn('Services could not be loaded from Supabase:', err);
+       }
++    };
++    if (ready) void load();
++    return () => { cancelled = true; };
++  }, [ready, salon?.id]);
++
++  const selectedId = localStorage.getItem('nexora_selected_service_id') || '';
++  const serviceItem = servicesList.find((s: any) => s.id === selectedId) || servicesList[0] || null;
++
++  // Sync local editable fields once the live service arrives.
++  React.useEffect(() => {
++    if (serviceItem) {
++      setServiceName(serviceItem.name);
++      setPrice(serviceItem.price);
++      setDuration(serviceItem.duration);
++      setCategory(serviceItem.category || 'General');
++      setDescription(serviceItem.description || '');
+     }
+-    return [];
+-  });
+-
+-  const selectedId = localStorage.getItem('nexora_selected_service_id') || 'SRV-01';
+-  const serviceItem = servicesList.find((s: any) => s.id === selectedId) || servicesList[0] || {
+-    id: 'SRV-01',
+-    name: 'Balayage & Styling',
+-    category: 'Hair',
+-    description: 'A customized, hand-painted highlighting technique that creates a soft, natural gradation of lightness towards the ends.',
+-    duration: 120,
+-    price: 240,
+-    image: 'https://lh3.googleusercontent.com/aida-public/AB6AXuDw9naRZ0loBzUpQG7MWjsnG_zY_PI1ow606HO1hgOtQCN7eS4F9SNU82vaAlJuI9nP_pA0lqH-3gDIl6BedEJ2KMYBqnjLPx81IRT1u-5ZNCXvIV96G4Of2THK_tGUJkjAF49lnh5VyTsaPI3VJQphCIO6fflhrL6Ti0deu6eq955lQwvQeJMhwk4SF5FbCjnmV9Y9Trz0r3lSW_Q3EebSRGkhUrv5A2V-0u9qwXA2pdms4WzmRAD_jB30b5KUn6FaIv6bVeXayw0'
+-  };
+-
+-  const [serviceName, setServiceName] = useState(serviceItem.name);
+-  const [price, setPrice] = useState(serviceItem.price);
+-  const [duration, setDuration] = useState(serviceItem.duration);
+-  const [category, setCategory] = useState(serviceItem.category);
+-  const [description, setDescription] = useState(serviceItem.description);
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [serviceItem?.id]);
++
++  const [serviceName, setServiceName] = useState(serviceItem?.name ?? '');
++  const [price, setPrice] = useState(serviceItem?.price ?? 0);
++  const [duration, setDuration] = useState(serviceItem?.duration ?? 0);
++  const [category, setCategory] = useState(serviceItem?.category ?? 'General');
++  const [description, setDescription] = useState(serviceItem?.description ?? '');
+   
+   const [assignedStaffIds, setAssignedStaffIds] = useState<string[]>(['ST-04', 'ST-01']);
+   
+@@ -171,7 +197,7 @@ export default function ServiceDetail({ navigate }: NavigationProps) {
+     setIsStaffModalOpen(true);
+   };
+ 
+-  const handleSaveEdit = (e: React.FormEvent) => {
++  const handleSaveEdit = async (e: React.FormEvent) => {
+     e.preventDefault();
+     setServiceName(tempName);
+     setPrice(Number(tempPrice));
+@@ -179,21 +205,19 @@ export default function ServiceDetail({ navigate }: NavigationProps) {
+     setCategory(tempCategory);
+     setDescription(tempDescription);
+ 
+-    const updatedList = servicesList.map((s: any) => {
+-      if (s.id === selectedId) {
+-        return {
+-          ...s,
++    // Persist to Supabase.
++    if (supabase && serviceItem) {
++      try {
++        await updateService(supabase, serviceItem.id, {
+           name: tempName,
+-          price: Number(tempPrice),
+-          duration: Number(tempDuration),
+-          category: tempCategory,
+-          description: tempDescription
+-        };
++          price_paise: Math.round(Number(tempPrice) * 100) || 0,
++          duration_minutes: Number(tempDuration) > 0 ? Number(tempDuration) : 30,
++          description: tempDescription || null,
++        });
++      } catch (err) {
++        console.warn('Service update could not be saved to Supabase:', err);
+       }
+-      return s;
+-    });
+-    setServicesList(updatedList);
+-    localStorage.setItem('nexora_services', JSON.stringify(updatedList));
++    }
+ 
+     setIsEditModalOpen(false);
+     triggerToast('Service details updated successfully!');
+@@ -212,6 +236,18 @@ export default function ServiceDetail({ navigate }: NavigationProps) {
+       setTempStaffIds([...tempStaffIds, id]);
+     }
+   };
++
++  if (!serviceItem) {
++    return (
++      <Layout currentScreen="service-detail" navigate={navigate} title="Service" showBack onBack={() => navigate('services')}>
++        <div className="flex flex-col items-center justify-center py-24 gap-3">
++          <div className="w-9 h-9 border-[3px] border-primary/20 border-t-primary rounded-full animate-spin" />
++          <p className="text-sm text-on-surface-variant">Loading service...</p>
++        </div>
++      </Layout>
++    );
++  }
++
+   return (
+     <Layout currentScreen="services" navigate={navigate} title={serviceName} showBack onBack={() => navigate('services')} showSettings transparentTopBar>
+       <div className="px-4 py-4 max-w-md mx-auto space-y-8 w-full pb-32">
+diff --git a/src/screens/ServicesList.tsx b/src/screens/ServicesList.tsx
+index 81d1db3..1ed0a43 100644
+--- a/src/screens/ServicesList.tsx
++++ b/src/screens/ServicesList.tsx
+@@ -1,9 +1,12 @@
+ import React, { useState } from 'react';
+ import Layout from '../components/Layout';
+ import { NavigationProps } from '../types';
+-import { Search, Clock, Plus, X, RotateCcw, Download } from 'lucide-react';
++import { Search, Clock, Plus, X, RotateCcw, Download, Scissors } from 'lucide-react';
+ import { motion } from 'motion/react';
+ import { formatPrice } from '../utils/currency';
++import { supabase } from '../lib/supabase';
++import { fetchServices } from '../lib/ownerRepository';
++import { useOwnerContext } from '../lib/useOwnerContext';
+ 
+ interface ServiceItem {
+   id: string;
+@@ -15,85 +18,55 @@ interface ServiceItem {
+   image: string;
+ }
+ 
+-const initialServices: ServiceItem[] = [
+-  {
+-    id: '1',
+-    name: 'Balayage & Styling',
+-    description: 'Full balayage treatment with toner, root smudge, and signature blowout styling.',
+-    duration: 120,
+-    price: 3500,
+-    category: 'Hair',
+-    image: 'https://images.unsplash.com/photo-1562322140-8baeececf3df?auto=format&fit=crop&q=80&w=800'
+-  },
+-  {
+-    id: '2',
+-    name: 'Bridal Makeup Package',
+-    description: 'Complete bridal makeup including HD makeup, hair styling, and draping.',
+-    duration: 180,
+-    price: 15000,
+-    category: 'Makeup',
+-    image: 'https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?auto=format&fit=crop&q=80&w=800'
+-  },
+-  {
+-    id: '3',
+-    name: 'De-tan & Bleach',
+-    description: 'O3+ De-tan pack with gentle skin bleach for face and neck.',
+-    duration: 45,
+-    price: 800,
+-    category: 'Skin & Spa',
+-    image: 'https://images.unsplash.com/photo-1512290923902-8a9f81dc236c?auto=format&fit=crop&q=80&w=800'
+-  },
+-  {
+-    id: '4',
+-    name: 'Eyebrow Threading',
+-    description: 'Precision eyebrow shaping and upper lip threading.',
+-    duration: 15,
+-    price: 100,
+-    category: 'Threading',
+-    image: 'https://images.unsplash.com/photo-1512496015851-a90fb38ba796?auto=format&fit=crop&q=80&w=800'
+-  },
+-  {
+-    id: '5',
+-    name: 'Bridal Mehendi / Heena',
+-    description: 'Intricate traditional bridal mehendi design for hands and feet.',
+-    duration: 240,
+-    price: 5000,
+-    category: 'Mehendi',
+-    image: 'https://images.unsplash.com/photo-1596455607563-ad6193f76b17?auto=format&fit=crop&q=80&w=800'
+-  },
+-  {
+-    id: '6',
+-    name: 'L\'Oréal Hair Spa',
+-    description: 'Deep conditioning L\'Oréal hair spa with scalp massage and steam.',
+-    duration: 60,
+-    price: 1200,
+-    category: 'Hair',
+-    image: 'https://images.unsplash.com/photo-1560869713-7d0a29430803?auto=format&fit=crop&q=80&w=800'
+-  },
+-];
++
+ 
+ export default function ServicesList({ navigate }: NavigationProps) {
+-  const [services, setServices] = React.useState<ServiceItem[]>(() => {
+-    const saved = localStorage.getItem('nexora_services');
+-    if (saved) {
+-      try {
+-        return JSON.parse(saved);
+-      } catch (e) {
+-        console.error('Failed to parse nexora_services', e);
+-      }
++  // Live services from Supabase (RLS: only this owner's salon).
++  const { salon, ready } = useOwnerContext();
++  const [services, setServices] = React.useState<ServiceItem[]>([]);
++  const [loadingServices, setLoadingServices] = React.useState(true);
++  const [loadError, setLoadError] = React.useState('');
++
++  const loadServices = React.useCallback(async () => {
++    if (!supabase || !salon) {
++      setLoadingServices(false);
++      return;
+     }
+-    return initialServices;
+-  });
++    setLoadingServices(true);
++    setLoadError('');
++    try {
++      const rows = await fetchServices(supabase, salon.id);
++      setServices(
++        rows.map((r) => ({
++          id: r.id,
++          name: r.name,
++          category: 'General',
++          description: r.description || '',
++          duration: r.duration_minutes,
++          price: r.price_paise / 100,
++          image: '',
++        })),
++      );
++    } catch (err) {
++      console.warn('Services could not be loaded from Supabase:', err);
++      setLoadError('Could not load services. Pull to retry.');
++    } finally {
++      setLoadingServices(false);
++    }
++  }, [salon?.id]);
++
++  React.useEffect(() => {
++    if (ready) void loadServices();
++  }, [ready, loadServices]);
+ 
+   const [searchQuery, setSearchQuery] = useState('');
+   const [activeCategory, setActiveCategory] = useState<string>('All');
+ 
+-  React.useEffect(() => {
+-    localStorage.setItem('nexora_services', JSON.stringify(services));
++  const categories = React.useMemo(() => {
++    const set = new Set(services.map((s) => s.category).filter(Boolean));
++    return ['All', ...Array.from(set)];
+   }, [services]);
+ 
+-  const categories = ['All', 'Hair', 'Makeup', 'Skin & Spa', 'Threading', 'Mehendi'];
+-
+   const filteredServices = services.filter((srv) => {
+     const matchesCat = activeCategory === 'All' || srv.category === activeCategory;
+     const matchesSearch =
+@@ -108,7 +81,8 @@ export default function ServicesList({ navigate }: NavigationProps) {
+   };
+ 
+   const handleRestore = () => {
+-    setServices(initialServices);
++    // Live data — reload from Supabase (no demo menu to restore).
++    void loadServices();
+   };
+ 
+   return (
+@@ -206,11 +180,17 @@ export default function ServicesList({ navigate }: NavigationProps) {
+                 className="bg-white/70 backdrop-blur-[20px] border border-[#e8e8e8] rounded-[18px] overflow-hidden flex flex-col group hover:shadow-[0px_10px_40px_rgba(0,0,0,0.08)] transition-all duration-300 hover:-translate-y-1 cursor-pointer"
+               >
+                 <div className="h-48 w-full relative overflow-hidden bg-surface-container-low">
+-                  <img 
+-                    src={service.image} 
+-                    alt={service.name} 
+-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+-                  />
++                  {service.image ? (
++                    <img 
++                      src={service.image} 
++                      alt={service.name} 
++                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
++                    />
++                  ) : (
++                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5">
++                      <Scissors className="w-10 h-10 text-primary/40" />
++                    </div>
++                  )}
+                   <span className="absolute top-3 right-3 px-3 py-1 bg-white/80 backdrop-blur-md text-[11px] font-bold text-on-surface rounded-full border border-white/60 shadow-xs">
+                     {service.category}
+                   </span>
+diff --git a/src/screens/StaffDetail.tsx b/src/screens/StaffDetail.tsx
+index a4206ca..d795178 100644
+--- a/src/screens/StaffDetail.tsx
++++ b/src/screens/StaffDetail.tsx
+@@ -1,4 +1,7 @@
+ import React, { useState, useEffect } from 'react';
++import { supabase } from '../lib/supabase';
++import { fetchStaff, updateStaff } from '../lib/ownerRepository';
++import { useOwnerContext } from '../lib/useOwnerContext';
+ import Layout from '../components/Layout';
+ import { NavigationProps } from '../types';
+ import ProfilePhotoUploader from '../components/ProfilePhotoUploader';
+@@ -165,21 +168,47 @@ const DEFAULT_SERVICES_REGISTRY = [
+ ];
+ 
+ export default function StaffDetail({ navigate }: NavigationProps) {
+-  // Load staff list & active ID
+-  const [staffList, setStaffList] = useState<StaffMember[]>(() => {
+-    const saved = localStorage.getItem('nexora_staff_list');
+-    if (saved) {
++  // Live staff from Supabase (RLS: this owner's salon only).
++  const { salon, ready } = useOwnerContext();
++  const [staffList, setStaffList] = useState<StaffMember[]>([]);
++
++  useEffect(() => {
++    let cancelled = false;
++    const load = async () => {
++      if (!supabase || !salon) return;
+       try {
+-        return JSON.parse(saved);
+-      } catch (e) {
+-        console.error('Failed to parse nexora_staff_list', e);
++        const rows = await fetchStaff(supabase, salon.id);
++        if (cancelled) return;
++        setStaffList(
++          rows.map((r) => {
++            const initials = r.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
++            return {
++              id: r.id,
++              name: r.name,
++              role: r.role || 'Stylist',
++              specialty: r.bio || '',
++              phone: '',
++              email: '',
++              rating: 0,
++              reviewsCount: 0,
++              initials,
++              status: 'Available' as const,
++              weeklyRev: '₹0.0L',
++              bookingsThisWeek: 0,
++              statusInfo: 'Ready',
++            } as StaffMember;
++          }),
++        );
++      } catch (err) {
++        console.warn('Staff could not be loaded from Supabase:', err);
+       }
+-    }
+-    return [];
+-  });
++    };
++    if (ready) void load();
++    return () => { cancelled = true; };
++  }, [ready, salon?.id]);
+ 
+   const [selectedStaffId, setSelectedStaffId] = useState<string>(() => {
+-    return localStorage.getItem('nexora_selected_staff_id') || 'ST-01';
++    return localStorage.getItem('nexora_selected_staff_id') || '';
+   });
+ 
+   const [activeStaff, setActiveStaff] = useState<StaffMember | null>(null);
+@@ -307,10 +336,16 @@ export default function StaffDetail({ navigate }: NavigationProps) {
+ 
+     const newList = staffList.map(s => s.id === updated.id ? updated : s);
+     setStaffList(newList);
+-    localStorage.setItem('nexora_staff_list', JSON.stringify(newList));
+-    setActiveStaff(updated);
++        setActiveStaff(updated);
+     setShowEditModal(false);
+     triggerToast('Profile updated successfully!');
++    if (supabase && !updated.id.startsWith('ST-')) {
++      void updateStaff(supabase, updated.id, {
++        name: updated.name,
++        role: updated.role || null,
++        bio: updated.specialty || null,
++      }).catch((err) => console.warn('Staff update could not be saved to Supabase:', err));
++    }
+   };
+ 
+   const handleDeleteService = (serviceId: string) => {
+@@ -324,8 +359,7 @@ export default function StaffDetail({ navigate }: NavigationProps) {
+ 
+     const newList = staffList.map(s => s.id === updated.id ? updated : s);
+     setStaffList(newList);
+-    localStorage.setItem('nexora_staff_list', JSON.stringify(newList));
+-    setActiveStaff(updated);
++        setActiveStaff(updated);
+     triggerToast('Assigned service removed');
+   };
+ 
+@@ -346,8 +380,7 @@ export default function StaffDetail({ navigate }: NavigationProps) {
+ 
+     const newList = staffList.map(s => s.id === updated.id ? updated : s);
+     setStaffList(newList);
+-    localStorage.setItem('nexora_staff_list', JSON.stringify(newList));
+-    setActiveStaff(updated);
++        setActiveStaff(updated);
+     setShowAssignModal(false);
+     triggerToast(`${srv.name} assigned!`);
+   };
+@@ -369,8 +402,7 @@ export default function StaffDetail({ navigate }: NavigationProps) {
+ 
+     const newList = staffList.map(s => s.id === updated.id ? updated : s);
+     setStaffList(newList);
+-    localStorage.setItem('nexora_staff_list', JSON.stringify(newList));
+-    setActiveStaff(updated);
++        setActiveStaff(updated);
+     triggerToast(`${day} status updated`);
+   };
+ 
+@@ -381,8 +413,7 @@ export default function StaffDetail({ navigate }: NavigationProps) {
+         const updated: StaffMember = { ...activeStaff, avatar: reader.result as string };
+         const newList = staffList.map(s => s.id === updated.id ? updated : s);
+         setStaffList(newList);
+-        localStorage.setItem('nexora_staff_list', JSON.stringify(newList));
+-        setActiveStaff(updated);
++                setActiveStaff(updated);
+         triggerToast('Profile photo updated!');
+     };
+     reader.readAsDataURL(file);
+@@ -393,8 +424,7 @@ export default function StaffDetail({ navigate }: NavigationProps) {
+     const updated: StaffMember = { ...activeStaff, avatar: undefined };
+     const newList = staffList.map(s => s.id === updated.id ? updated : s);
+     setStaffList(newList);
+-    localStorage.setItem('nexora_staff_list', JSON.stringify(newList));
+-    setActiveStaff(updated);
++        setActiveStaff(updated);
+     triggerToast('Profile photo removed!');
+   };
+ 
+@@ -415,8 +445,7 @@ export default function StaffDetail({ navigate }: NavigationProps) {
+ 
+     const newList = staffList.map(s => s.id === updated.id ? updated : s);
+     setStaffList(newList);
+-    localStorage.setItem('nexora_staff_list', JSON.stringify(newList));
+-    setActiveStaff(updated);
++        setActiveStaff(updated);
+   };
+ 
+   if (!activeStaff) {
+diff --git a/src/screens/StaffManagement.tsx b/src/screens/StaffManagement.tsx
+index 3595b74..ac14a41 100644
+--- a/src/screens/StaffManagement.tsx
++++ b/src/screens/StaffManagement.tsx
+@@ -1,4 +1,7 @@
+ import React, { useState, useEffect } from 'react';
++import { supabase } from '../lib/supabase';
++import { fetchStaff, createStaff, updateStaff } from '../lib/ownerRepository';
++import { useOwnerContext } from '../lib/useOwnerContext';
+ import Layout from '../components/Layout';
+ import { NavigationProps } from '../types';
+ import { 
+@@ -41,68 +44,49 @@ interface StaffMember {
+   statusInfo: string; // e.g. "Next: 2:00 PM", "Ends: 1:15 PM", "Back: Tomorrow"
+ }
+ 
+-const INITIAL_STAFF: StaffMember[] = [
+-  {
+-    id: 'ST-01',
+-    name: 'Sanya Rao',
+-    role: 'Senior Stylist',
+-    specialty: 'Balayage & Color Correction',
+-    phone: '+1 (310) 555-0145',
+-    email: 'elena.rostova@nexora.com',
+-    rating: 4.9,
+-    reviewsCount: 124,
+-    avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCzw-FINsqOVvcGQdzJ6FpXYOgm1eruw1ADnOEIGIePBqAv1Sj0fqUjb4tp-x5F-uPmfj0ee_vU0G-_P1-d29WZYQz5xkPwi8AHhcUT7D87_K2VL8c4zdqu2clG_YALpB6GnrHr5lzMuYu-GDQP5tDmI90XnsGKwiW0MIOfp9ARCuSHPEQ7oErLvv20Z4VnxVGa_tu0kmmGiB5TGJ9kh9Yce6UwwMB4MX_EFrvOmyKtczXXiaPnVA9HoG1IQbvDLPfG4IWjPUc10_s',
+-    status: 'Available',
+-    weeklyRev: '₹2.4L',
+-    bookingsThisWeek: 28,
+-    statusInfo: 'Next: 2:00 PM'
+-  },
+-  {
+-    id: 'ST-02',
+-    name: 'Kiran Kumar',
+-    role: 'Color Specialist',
+-    specialty: 'Vibrant Colors & Highlights',
+-    phone: '+1 (310) 555-0198',
+-    email: 'marcus.chen@nexora.com',
+-    rating: 4.8,
+-    reviewsCount: 98,
+-    avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAyga_-IhTVr5NSAbjqjeCoJ1Bu_jl7CY9jLf86be5WQUJqFUT5Axn0Ewctks2h-7-E3S7QfErHnkeFbyI5E5WeoT3e8CrYMtLMgjWVa7DHhSUBdlbuZU-yRK4iULK_XKNSdLf19idGyjyeU96aNDbnSZVFnMrA-TYIVAOqlRc0Kbv7dzC7RzsJN7xZMT9Jj_NlK3v_sNA7Zcz27dIVucRiBYT2vUQNNFHzwo37biqHLLPGyn8TOfEadCHQIqt6ZZSEjukdEbjWwYQ',
+-    status: 'In-Session',
+-    weeklyRev: '₹3.1L',
+-    bookingsThisWeek: 22,
+-    statusInfo: 'Ends: 1:15 PM'
+-  },
+-  {
+-    id: 'ST-03',
+-    name: 'Suman Gupta',
+-    role: 'Junior Stylist',
+-    specialty: 'Modern Cuts & Blowouts',
+-    phone: '+1 (310) 555-0123',
+-    email: 'sarah.j@nexora.com',
+-    rating: 4.6,
+-    reviewsCount: 45,
+-    avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCqnBO6_8zyof5TquhFt61wmjfRvHWi2mmdCuJ25FU1h5bfnEdrhcBMLDsihOIeHQHZy0amhhVqh301sqwb1Kj2JMsw4NmoQgRkUccRmTQjq6H3RLgx45gB61IojoxkbKRmFF32-yDT4LU1D-84iw9fJuEctaeycEQSh18PhPLVuou3ANKAPP2QNMBhRinOkG9H0kK_-DNSWXM1Z60touK72oYpSJWgovXxPfC8zlS3fOYQNHV6Arawl-wkUeHuPHGt-29tkIxUJNs',
+-    status: 'Off-Duty',
+-    weeklyRev: '₹1.2L',
+-    bookingsThisWeek: 14,
+-    statusInfo: 'Back: Tomorrow'
+-  }
+-];
++
+ 
+ type FilterType = 'All' | 'Available' | 'In-Session' | 'Off-Duty';
+ 
+ export default function StaffManagement({ navigate }: NavigationProps) {
+-  const [staffList, setStaffList] = useState<StaffMember[]>(() => {
+-    const saved = localStorage.getItem('nexora_staff_list');
+-    if (saved) {
+-      try {
+-        return JSON.parse(saved);
+-      } catch (e) {
+-        console.error('Failed to parse nexora_staff_list', e);
+-      }
++  // Live staff from Supabase (RLS: this owner's salon only).
++  const { salon, ready } = useOwnerContext();
++  const [staffList, setStaffList] = useState<StaffMember[]>([]);
++
++  const loadStaff = React.useCallback(async () => {
++    if (!supabase || !salon) return;
++    try {
++      const rows = await fetchStaff(supabase, salon.id);
++      setStaffList(
++        rows
++          .filter((r) => r.is_active)
++          .map((r) => {
++            const initials = r.name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
++            return {
++              id: r.id,
++              name: r.name,
++              role: r.role || 'Stylist',
++              specialty: r.bio || 'General Styling',
++              phone: '',
++              email: '',
++              rating: 0,
++              reviewsCount: 0,
++              initials,
++              status: 'Available' as const,
++              weeklyRev: '₹0.0L',
++              bookingsThisWeek: 0,
++              statusInfo: 'Ready',
++            };
++          }),
++      );
++    } catch (err) {
++      console.warn('Staff could not be loaded from Supabase:', err);
+     }
+-    return INITIAL_STAFF;
+-  });
++  }, [salon?.id]);
++
++  useEffect(() => {
++    if (ready) void loadStaff();
++  }, [ready, loadStaff]);
+   
+   const [searchQuery, setSearchQuery] = useState('');
+   const [activeFilter, setActiveFilter] = useState<FilterType>('All');
+@@ -119,9 +103,7 @@ export default function StaffManagement({ navigate }: NavigationProps) {
+   const [email, setEmail] = useState('');
+   const [initialStatus, setInitialStatus] = useState<'Available' | 'In-Session' | 'Off-Duty'>('Available');
+ 
+-  useEffect(() => {
+-    localStorage.setItem('nexora_staff_list', JSON.stringify(staffList));
+-  }, [staffList]);
++
+ 
+   const triggerToast = (msg: string) => {
+     setToastMessage(msg);
+@@ -157,6 +139,16 @@ export default function StaffManagement({ navigate }: NavigationProps) {
+ 
+     setStaffList(prev => [newMember, ...prev]);
+     setShowAddModal(false);
++
++    // Persist to Supabase (best-effort; local optimistic entry already shown).
++    if (supabase && salon) {
++      void createStaff(supabase, {
++        salonId: salon.id,
++        name: newMember.name,
++        role: newMember.role,
++        bio: newMember.specialty,
++      }).then(() => loadStaff()).catch((err) => console.warn('Staff could not be saved to Supabase:', err));
++    }
+     
+     // Reset fields
+     setName('');
+@@ -171,6 +163,11 @@ export default function StaffManagement({ navigate }: NavigationProps) {
+     const staff = staffList.find(s => s.id === id);
+     setStaffList(prev => prev.filter(s => s.id !== id));
+     setActiveMenuId(null);
++    if (supabase && !id.startsWith('ST-')) {
++      void updateStaff(supabase, id, { is_active: false }).catch((err) =>
++        console.warn('Staff could not be deactivated in Supabase:', err),
++      );
++    }
+     if (staff) {
+       triggerToast(`${staff.name} removed from staff list`);
+     }
+@@ -192,13 +189,14 @@ export default function StaffManagement({ navigate }: NavigationProps) {
+   };
+ 
+   const handleClearAll = () => {
+-    setStaffList([]);
+-    triggerToast('All staff cleared (simulated empty state)');
++    // Live data: nothing to simulate — reload from Supabase instead.
++    void loadStaff();
++    triggerToast('Staff list refreshed from the server');
+   };
+ 
+   const handleRestoreDefaults = () => {
+-    setStaffList(INITIAL_STAFF);
+-    triggerToast('Demo staff team restored');
++    void loadStaff();
++    triggerToast('Staff list refreshed from the server');
+   };
+ 
+   const filteredStaff = staffList.filter(s => {
+diff --git a/src/screens/Wallet.tsx b/src/screens/Wallet.tsx
+index 6c0688b..5a2c5d6 100644
+--- a/src/screens/Wallet.tsx
++++ b/src/screens/Wallet.tsx
+@@ -1,4 +1,7 @@
+-import React, { useState } from 'react';
++import React, { useState, useEffect } from 'react';
++import { supabase } from '../lib/supabase';
++import { fetchOwnerPayouts } from '../lib/ownerRepository';
++import { useOwnerContext } from '../lib/useOwnerContext';
+ import Layout from '../components/Layout';
+ import { NavigationProps } from '../types';
+ import { 
+@@ -163,10 +166,56 @@ const initialTransactions: Transaction[] = [
+ 
+ export default function Wallet({ navigate }: NavigationProps) {
+   const { t } = useLanguage();
+-  const [balance, setBalance] = useState(425000.00);
+-  const [pendingSettlement, setPendingSettlement] = useState(85000.00);
+-  const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions);
++  // Live wallet data from Supabase owner_payouts (read-only — settlements run
++  // server-side daily at 22:00 IST per the locked payout rule).
++  const { salon, ready } = useOwnerContext();
++  const [balance, setBalance] = useState(0);
++  const [pendingSettlement, setPendingSettlement] = useState(0);
++  const [transactions, setTransactions] = useState<Transaction[]>([]);
++  const [walletLoading, setWalletLoading] = useState(true);
+   const [filter, setFilter] = useState<'All' | 'Completed' | 'Refunded'>('All');
++
++  useEffect(() => {
++    let cancelled = false;
++    const load = async () => {
++      if (!supabase || !salon) { setWalletLoading(false); return; }
++      try {
++        const payouts = await fetchOwnerPayouts(supabase, salon.id);
++        if (cancelled) return;
++        const paid = payouts.filter((p) => p.status === 'paid' || p.status === 'settled');
++        const pending = payouts.filter((p) => p.status !== 'paid' && p.status !== 'settled');
++        setBalance(paid.reduce((acc, p) => acc + p.amount_paise, 0) / 100);
++        setPendingSettlement(pending.reduce((acc, p) => acc + p.amount_paise, 0) / 100);
++        setTransactions(
++          payouts.map((p) => {
++            const done = p.status === 'paid' || p.status === 'settled';
++            const iso = (p.run_date || '').slice(0, 10);
++            return {
++              id: p.id,
++              client: 'Daily settlement',
++              service: `${p.booking_count} booking${p.booking_count === 1 ? '' : 's'} · platform fee ${(p.platform_fee_paise / 100).toLocaleString('en-IN')}`,
++              date: iso || p.run_date,
++              isoDate: iso,
++              amount: `+₹${(p.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
++              isPositive: true,
++              status: done ? 'Completed' : 'Pending',
++              iconType: 'shop',
++              method: p.payout_reference || 'Auto payout · 10 PM IST',
++              fee: `₹${(p.platform_fee_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
++              net: `₹${(p.amount_paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
++              transactionId: p.id,
++            } as Transaction;
++          }),
++        );
++      } catch (err) {
++        console.warn('Payouts could not be loaded from Supabase:', err);
++      } finally {
++        if (!cancelled) setWalletLoading(false);
++      }
++    };
++    if (ready) void load();
++    return () => { cancelled = true; };
++  }, [ready, salon?.id]);
+   
+   // Date Range Picker state
+   const [startDate, setStartDate] = useState<string>('');
+@@ -267,35 +316,11 @@ export default function Wallet({ navigate }: NavigationProps) {
+ 
+   const handleWithdraw = (e: React.FormEvent) => {
+     e.preventDefault();
+-    const amt = parseFloat(withdrawAmount);
+-    if (isNaN(amt) || amt <= 0 || amt > balance) return;
+-
+-    setBalance(prev => prev - amt);
+-    
+-    const todayIso = new Date().toISOString().split('T')[0];
+-    const selectedMethod = payoutMethods.find(m => m.id === selectedPayoutId);
+-    
+-    // Add transaction record
+-    const newTx: Transaction = {
+-      id: `tx-${Date.now()}`,
+-      client: 'Bank Withdrawal',
+-      service: selectedMethod?.type === 'upi' ? 'Instant IMPS Transfer' : 'NEFT Bank Payout',
+-      date: 'Just now',
+-      isoDate: todayIso,
+-      amount: `-₹${amt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+-      isPositive: false,
+-      status: 'Completed',
+-      iconType: 'refund',
+-      method: selectedMethod?.meta || 'Withdrawal',
+-      fee: selectedMethod?.type === 'upi' ? `₹${(amt * 0.015).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₹0.00',
+-      net: `-₹${amt.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+-      transactionId: `WD-${Math.floor(10000000 + Math.random() * 90000000)}`
+-    };
+-
+-    setTransactions([newTx, ...transactions]);
++    // Locked business rule: owner settlements run automatically every day at
++    // 10 PM IST (server-side). There is no manual/instant withdrawal.
+     setIsWithdrawOpen(false);
+-    setIsSuccessMessage(`Successfully requested withdrawal of ${formatPrice(amt, true)}!`);
+-    setTimeout(() => setIsSuccessMessage(null), 4000);
++    setIsSuccessMessage('Payouts settle automatically every day at 10:00 PM IST. No manual withdrawal is needed.');
++    setTimeout(() => setIsSuccessMessage(null), 6000);
+   };
+ 
+   const validateNewMethod = () => {
+diff --git a/src/types.ts b/src/types.ts
+index df53fa8..8a26c74 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -31,7 +31,8 @@ export type ScreenName =
+   | 'new-staff'
+   | 'staff-detail'
+   | 'server-error'
+-  | 'marketing';
++  | 'marketing'
++  | 'proposal-review';
+ 
+ export const VALID_SCREENS: ScreenName[] = [
+   'splash', 'welcome', 'login', 'reset-password', 'register-stepper', 'dashboard',
+@@ -41,7 +42,7 @@ export const VALID_SCREENS: ScreenName[] = [
+   'website-dashboard', 'website-gallery', 'wallet', 'transaction-detail',
+   'revenue-analytics', 'analytics', 'reviews', 'install-app',
+   'app-update', 'staff', 'new-staff', 'staff-detail', 'server-error',
+-  'marketing'
++  'marketing', 'proposal-review'
+ ];
+ 
+ export interface Theme {
+diff --git a/vite.config.ts b/vite.config.ts
+index ba2eada..92256cc 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -99,6 +99,9 @@ export default defineConfig(() => {
+       },
+     },
+     server: {
++      host: '0.0.0.0',
++      // Allow preview/proxy hosts (e.g. sandbox preview domains).
++      allowedHosts: true as const,
+       // HMR is disabled in AI Studio via DISABLE_HMR env var.
+       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+       hmr: process.env.DISABLE_HMR !== 'true',
+-- 
+2.39.5
+
