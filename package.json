@@ -17,10 +17,10 @@
     "validate:artifact": "bash scripts/validate-artifact.sh",
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate",
-    "test:phase14": "npm run test:phase14:contracts && npm run test:phase14:integration",
+    "test:phase14": "npm run test:phase14:contracts && npm run test:phase14:integration && npm run test:phase14:e2e",
     "test:phase14:contracts": "node --test tests/phase14/contracts/*.test.mjs",
     "test:phase14:integration": "node --test tests/phase14/integration/*.test.mjs",
-    "test:phase14:e2e": "echo \"E2E requires Playwright\" && exit 0"
+    "test:phase14:e2e": "playwright test tests/phase14/e2e"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.95.0",
@@ -32,6 +32,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
     "@cloudflare/workers-types": "4.20260515.1",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
