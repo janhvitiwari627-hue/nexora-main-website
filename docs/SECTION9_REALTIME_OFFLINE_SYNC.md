@@ -108,3 +108,165 @@ The client may display a realtime payment update only after the trusted server h
 ## 8. Change control
 
 Adding a use case, broadening a channel, or publishing a new table requires: a threat-model review, explicit RLS policy review, payload minimization review, negative authorization tests, and an update to this specification before release.
+
+---
+
+**Sub-point:** 9.2 — Offline Data Access & Caching Rules  
+**Status:** Specification baseline  
+**Applies to:** Main Website, Customer PWA, Owner PWA, and Growth Partner PWA
+
+## 1. Purpose and governing rule
+
+Offline data access enables resilience in low-connectivity environments while strictly respecting authorization boundaries established in Section 9.1 and database RLS. Caching must never bypass Row-Level Security, must never allow unauthorized writes, and must guarantee that cached data is always scoped to the currently authenticated user, salon, or tenant.
+
+The canonical source of truth remains the server database. Cached data is advisory only and must be treated as potentially stale. Offline writes are queued and reconciled only after successful server-side authorization validation.
+
+## 2. Client-side caching strategy
+
+### 2.1 Primary storage technologies
+
+- **IndexedDB** (via `idb` or native APIs): Used for structured, queryable offline data (appointments, salon profiles, user preferences, cached lists).
+  - Stores normalized relational-like records with indexes on `id`, `salon_id`, `user_id`, `updated_at`, and authorization scope keys.
+  - Separate object stores per data domain: `bookings`, `salon_profiles`, `user_settings`, `services`, `availability_slots`, `notifications`.
+- **CacheStorage API** (via Service Worker): Used for static assets, API response snapshots, and offline-first pages.
+  - Named caches: `nexora-static-v1`, `nexora-api-v1`, `nexora-images-v1`.
+  - Service Worker intercepts fetch events and serves from cache when offline or for stale-while-revalidate strategies.
+
+All caching logic must be implemented inside a registered Service Worker (`/public/sw.js` or equivalent) and a dedicated client-side cache manager module (`lib/offline/cache-manager.ts`).
+
+### 2.2 Data flow
+
+1. On successful authenticated API response: write minimal authorized projection to IndexedDB + CacheStorage.
+2. On app load or screen mount: attempt network-first, fall back to IndexedDB + CacheStorage.
+3. Background sync (via Background Sync API or periodic `sync` event): reconcile queued writes and refresh read-only caches.
+
+## 3. Read-only offline data scopes
+
+Only explicitly authorized, read-only data may be cached for offline access. The following scopes are permitted:
+
+| Data Scope | Example Entities | Authorization Constraint | Offline Access Mode |
+|---|---|---|---|
+| **Appointments / Bookings** | User's own bookings, staff-managed bookings for their salon | `customer_id = auth.uid()` OR active staff/owner membership on `salon_id` | Read-only. Cached by booking UUID + salon scope. |
+| **Salon Profiles** | Public profile fields, services catalogue, opening hours, staff roster (public view) | Salon is published and viewer has at least read membership or is a potential customer | Read-only. Never cache private financial or internal notes. |
+| **User Settings** | Preferences, notification toggles, saved locations, theme | Strictly `user_id = auth.uid()` | Read-only. |
+| **Availability Slots** | Future open slots for a specific salon/service | Viewer authorized to view/book that salon | Read-only snapshot. Must be refreshed on reconnect. |
+| **Notifications** | Inbox for the authenticated user | `recipient_user_id = auth.uid()` | Read-only. |
+
+**Explicit restrictions:**
+- Never cache full user profiles, payment methods, ledger entries, verification documents, internal audit logs, or cross-tenant data.
+- Never cache data belonging to other salons or users even if the current user has partial access.
+- Anonymous users may cache only fully public, published marketing content (no personal data).
+
+## 4. Restricted offline write operations & queue mechanisms
+
+### 4.1 Permitted offline writes (queued only)
+
+- Booking creation / reschedule / cancel (customer self-service)
+- Service request / proposal submission
+- User preference updates
+- Read receipts for notifications
+
+All other mutations (staff schedule changes, financial operations, role assignments, salon configuration) **must** be performed online only.
+
+### 4.2 Queue implementation
+
+- Use a dedicated IndexedDB object store: `offline_write_queue`.
+- Each queued item contains:
+  ```ts
+  {
+    id: string,                    // uuid
+    operation: 'create' | 'update' | 'delete',
+    entity: 'booking' | 'notification' | ...,
+    payload: object,               // minimal validated data
+    auth_scope: { user_id, salon_id?, tenant_id? },
+    timestamp: number,
+    retry_count: number,
+    last_error?: string
+  }
+  ```
+- On network restoration: process queue in order (FIFO) using authenticated RPC/API calls.
+- On conflict or authorization failure: discard item, notify user, and clear affected cache entries.
+- Use `navigator.serviceWorker.ready` + Background Sync registration (`sync` tag: `nexora-sync-writes`).
+
+### 4.3 Safety rules
+
+- Every queued write must include the authenticated user context captured at enqueue time.
+- Never trust client-provided `user_id`, `salon_id`, etc. — always re-validate server-side via RLS + JWT.
+- On sign-out or role revocation: immediately purge the entire write queue and all cached data.
+
+## 5. Cache invalidation, TTL, and storage quota management rules
+
+### 5.1 Invalidation triggers
+
+- Explicit server `updated_at` or version mismatch on refetch.
+- Authorization scope change (user signs out, switches salon, role revoked).
+- Successful write reconciliation (invalidate related read caches).
+- Manual user action ("Refresh data") or forced logout.
+- Service Worker update detected.
+
+### 5.2 TTL & freshness policies
+
+| Data Type | Max Age (TTL) | Strategy | Notes |
+|---|---|---|---|
+| Bookings / Appointments | 15 minutes | stale-while-revalidate | Refresh on screen focus or realtime event |
+| Salon Profiles | 60 minutes | cache-first + background refresh | Public data; revalidate on reconnect |
+| User Settings | 24 hours | network-first | Must be fresh on login |
+| Availability Slots | 5 minutes | network-first | Critical for booking flow |
+| Notifications | 5 minutes | stale-while-revalidate | Badge updates via realtime preferred |
+| Static Assets | 7 days | cache-first | Service Worker precache |
+
+### 5.3 Storage quota management
+
+- Target maximum usage: 50 MB per user (IndexedDB + CacheStorage combined).
+- Implement quota monitoring via `navigator.storage.estimate()`.
+- On approaching quota (≥80%):
+  - Evict least-recently-used (LRU) entries older than TTL.
+  - Prioritize eviction: historical bookings > salon profiles > user settings.
+  - Never evict the current user's active booking or queued writes.
+- On quota exceeded: clear all non-essential caches, show warning banner, and force online-only mode until space is freed.
+- Periodic cleanup job (on app idle or every 24h): remove entries where `updated_at < now - 30 days`.
+
+### 5.4 Security & privacy rules for caching
+
+- All cached data must be encrypted at rest where the platform supports it (IndexedDB encryption via Web Crypto or platform-specific).
+- On logout / session end: immediately delete all IndexedDB stores and CacheStorage entries for the user.
+- Never persist sensitive fields (tokens, payment details, PII beyond what's strictly necessary for offline UX).
+- Cache keys must incorporate the authenticated `user_id` / `salon_id` to prevent cross-user leakage.
+
+## 6. Implementation acceptance checklist for 9.2
+
+- [ ] IndexedDB schema and CacheStorage strategy documented and implemented in Service Worker.
+- [ ] Only read-only scopes listed above are cached; all other data is excluded.
+- [ ] Offline write queue exists with proper auth_scope capture and server re-validation.
+- [ ] TTL, invalidation, and LRU quota policies are enforced.
+- [ ] Logout / role change immediately clears all caches and queues.
+- [ ] Negative tests confirm no cross-user / cross-salon cached data leakage.
+- [ ] Quota monitoring and graceful degradation implemented.
+- [ ] All offline operations respect the Authorization & Data Isolation rules below.
+
+## 7. 9.2 Authorization & Data Isolation (applies to both realtime and offline)
+
+- Realtime must never bypass Row-Level Security.
+- RLS must remain enabled on every Realtime-exposed private table.
+- Channel names, topics, filters, and record IDs are not security boundaries.
+- Every subscription must be protected by database-level authorization.
+- A user must receive only events they are authorized to read through a normal authenticated query.
+- Every private subscription must be scoped by the authenticated user, salon, tenant, booking, proposal, or partner attribution.
+- Never subscribe a normal user to an unrestricted private table.
+- Never trust a client-provided `user_id`, `salon_id`, `partner_id`, or channel name as proof of authorization.
+- Private Broadcast and Presence channels must verify authenticated membership.
+- Anonymous users may subscribe only to explicitly public and published data.
+- Service-role credentials must never be used to create browser Realtime connections.
+- Role, ownership, or membership changes must take effect without requiring a full application restart.
+- When access is revoked, the client must unsubscribe immediately, clear unauthorized cached data, and refetch the permitted scope.
+- Realtime payloads must expose only required fields. Sensitive internal fields must use protected projections, views, or server-generated events.
+
+## 8. Change control for 9.2
+
+Any modification to caching scopes, TTL values, queue behavior, or offline write permissions requires:
+- Threat-model review
+- RLS + authorization policy review
+- Storage quota impact analysis
+- Negative authorization and cross-tenant leakage tests
+- Update to this specification before release.
+
