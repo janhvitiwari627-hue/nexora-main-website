@@ -167,8 +167,8 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   useEffect(() => {
     const client = getClient();
     if (!client) {
-      setAuthState({ loading: false, session: null });
-      return;
+      const timer = window.setTimeout(() => setAuthState({ loading: false, session: null }), 0);
+      return () => window.clearTimeout(timer);
     }
 
     let active = true;
@@ -201,7 +201,7 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
         }
         if (!active || revision !== sessionRevision) return;
         setAuthState({ loading: false, session, role: profile.platform_role });
-      } catch (cause) {
+      } catch {
         if (!active || revision !== sessionRevision) return;
         setAuthState({ loading: false, session, role: undefined });
       }
@@ -244,6 +244,10 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   else if (path === "/cancellation-refund") content = <LegalPage type="refund" />;
   else if (path === "/login" || path === "/signup")
     content = <AuthPage mode={path === "/login" ? "login" : "signup"} navigate={navigate} />;
+  else if (path === "/forgot-password") content = <ForgotPasswordPage navigate={navigate} />;
+  else if (path === "/reset-password") content = <ResetPasswordPage navigate={navigate} />;
+  else if (path === "/auth/callback") content = <AuthCallbackPage navigate={navigate} />;
+  else if (path === "/auth/expired") content = <SessionExpiredPage navigate={navigate} />;
   else if (path === "/admin" || path.startsWith("/admin/"))
     content = <AdminUnavailable />;
   else if (isPortalPath(path))
@@ -506,8 +510,18 @@ function CatalogStrip({ navigate, online }: { navigate: (path: string) => void; 
 }
 
 
+type Offer = {
+  id: string;
+  salon_id: string;
+  title: string | null;
+  description: string | null;
+  discount_type: string | null;
+  discount_value: number | null;
+  is_active: boolean;
+};
+
 function OffersStrip({ navigate }: { navigate: (path: string) => void }) {
-  const [offers, setOffers] = useState<any[]>([]);
+  const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     let active=true;
@@ -515,7 +529,7 @@ function OffersStrip({ navigate }: { navigate: (path: string) => void }) {
       try {
         const client = getClient(); if (!client) { setLoading(false); return; }
         const { data } = await client.from("offers").select("id,salon_id,title,description,discount_type,discount_value,is_active").eq("is_active", true).limit(6);
-        if (active && data) setOffers(data);
+        if (active && data) setOffers(data as Offer[]);
       } catch {} finally { if (active) setLoading(false); }
     };
     const t = setTimeout(()=>void load(), 0);
@@ -523,7 +537,7 @@ function OffersStrip({ navigate }: { navigate: (path: string) => void }) {
   }, []);
   if (loading) return <SalonSkeletons count={3} />;
   if (!offers.length) return <StateCard title="No active offers yet" text="Offers from offers table where is_active=true. RLS public read. When shop owners create offers for their salon_id, they appear here." />;
-  return <div className="service-grid">{offers.map((o:any)=><div key={o.id} className="service-card"><div><h3>{o.title}</h3><p>{o.description||""}</p><small>{o.discount_type} {o.discount_value}</small></div><button className="text-button" onClick={()=>navigate("/salons")}>View salon</button></div>)}</div>;
+  return <div className="service-grid">{offers.map((o: Offer)=><div key={o.id} className="service-card"><div><h3>{o.title ?? "Offer"}</h3><p>{o.description||""}</p><small>{o.discount_type} {o.discount_value}</small></div><button className="text-button" onClick={()=>navigate("/salons")}>View salon</button></div>)}</div>;
 }
 
 
@@ -537,10 +551,13 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
 
   // Parse query params for smart search deep links ?category=&area=&city=
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const cat = params.get("category"); if (cat) setCategoryFilter(cat);
-    const area = params.get("area"); if (area) setQuery(area);
-    const city = params.get("city"); if (city) setCityFilter(city);
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const cat = params.get("category"); if (cat) setCategoryFilter(cat);
+      const area = params.get("area"); if (area) setQuery(area);
+      const city = params.get("city"); if (city) setCityFilter(city);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const categories = Array.from(new Set(items.map(i=>i.business_category).filter(Boolean))) as string[];
@@ -573,7 +590,7 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
         <label>Category<select value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}><option value="">All categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select></label>
         <label>City<select value={cityFilter} onChange={e=>setCityFilter(e.target.value)}><option value="">All cities</option>{cities.map(c=><option key={c} value={c}>{c}</option>)}</select></label>
         <label>Min rating<select value={ratingFilter} onChange={e=>setRatingFilter(Number(e.target.value))}><option value={0}>Any rating</option><option value={4}>4+ ★</option><option value={4.5}>4.5+ ★</option></select></label>
-        <label>Sort by<select value={sortBy} onChange={e=>setSortBy(e.target.value as any)}><option value="rating">Top Rated</option><option value="reviews">Trending (reviews)</option><option value="price">Price low-high</option><option value="name">Name A-Z</option></select></label>
+        <label>Sort by<select value={sortBy} onChange={e=>setSortBy(e.target.value as "rating"|"reviews"|"price"|"name")}><option value="rating">Top Rated</option><option value="reviews">Trending (reviews)</option><option value="price">Price low-high</option><option value="name">Name A-Z</option></select></label>
       </div>
       <div className="trust-row" style={{marginBottom:16}}><span>✓ Smart: name+area+city+category</span><span>✓ Filter: category, city, rating</span><span>✓ Sort: rating, reviews, price</span><span>✓ RLS: only published</span></div>
       {loading ? <SalonSkeletons count={6} /> : error ? <StateCard title="Could not load salons" text={error} action="Retry" onAction={load} /> : !filtered.length ? <StateCard title={items.length ? "No matching salon" : "No published salons yet"} text={items.length ? "Try another salon name, area, city, category or rating." : "Draft and unpublished websites are kept private. Owner publish via Proposals tab → appears here."} /> : <div className="salon-grid">{filtered.map((item) => <SalonCard key={item.id} item={item} navigate={navigate} />)}</div>}
@@ -684,6 +701,11 @@ function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (pat
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"error" | "success" | "info">("error");
   const [showPassword, setShowPassword] = useState(false);
+  const [confirmationPending, setConfirmationPending] = useState(false);
+  // Section 10.2 — Google OAuth is fail-safe OFF unless the deployment opts in.
+  const googleOauthConfigured = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED === "true";
+  const [googleOauthFailed, setGoogleOauthFailed] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -742,13 +764,14 @@ function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (pat
       if (!client) throw new Error(getDetailedConfigError());
 
       if (mode === "signup") {
-        // Real Supabase signup
+        // Real Supabase signup. Confirmation email uses the PKCE callback
+        // route; the confirmation link lands on /auth/callback.
         const { data, error } = await client.auth.signUp({
           email: trimmedEmail,
           password,
           options: {
             data: { full_name: trimmedName || trimmedEmail.split("@")[0], signup_role: role },
-            emailRedirectTo: typeof window !== "undefined" ? `${window.location.origin}/login` : undefined,
+            emailRedirectTo: typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined,
           },
         });
         if (error) throw error;
@@ -756,11 +779,12 @@ function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (pat
         // Supabase may return user without session if email confirmation required
         if (!data.session) {
           if (data.user) {
-            setMessage(`Account created for ${role.replace("_", " ")}! Please check your email (${trimmedEmail}) to confirm, then log in. If you don't see it, check spam folder. You can also log in directly if email confirmation is disabled.`);
+            setConfirmationPending(true);
+            setMessage(`Account created for ${role.replace("_", " ")}! Please confirm your email (${trimmedEmail}) using the link we just sent. Check spam if it does not arrive, then log in.`);
             setMessageType("success");
-            // Try to hint browser to go to login after short delay? keep user on page so they can click.
             return;
           } else {
+            setConfirmationPending(true);
             setMessage("Check your email to confirm the account, then log in.");
             setMessageType("success");
             return;
@@ -815,6 +839,59 @@ function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (pat
       setMessageType(parsed.startsWith("Account created") || parsed.includes("check your email") ? "success" : "error");
     } finally {
       setBusy(false);
+    }
+  };
+
+  // Section 10.1 — real Supabase resend of the confirmation email.
+  const resendConfirmation = async () => {
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) {
+      setMessage("Enter your email address above, then resend the confirmation.");
+      setMessageType("error");
+      return;
+    }
+    setBusy(true);
+    try {
+      const client = getClient();
+      if (!client) throw new Error(missingSupabaseConfigMessage);
+      const { error } = await client.auth.resend({
+        type: "signup",
+        email: trimmedEmail,
+        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+      });
+      if (error) throw error;
+      setMessage(`Confirmation email resent to ${trimmedEmail}. If it already arrived once, only the newest link works.`);
+      setMessageType("success");
+    } catch (cause) {
+      setMessage(friendlyError(cause));
+      setMessageType("error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Section 10.2 — Google OAuth via Supabase, PKCE end-to-end (client
+  // flowType is "pkce", so signInWithOAuth generates and verifies the code
+  // challenge). Fail-safe: any provider error hides the button entirely.
+  const continueWithGoogle = async () => {
+    setGoogleBusy(true);
+    try {
+      const client = getClient();
+      if (!client) throw new Error(missingSupabaseConfigMessage);
+      const { error } = await client.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: { prompt: "select_account" },
+        },
+      });
+      if (error) throw error;
+    } catch (cause) {
+      // Unverified provider, missing keys, or blocked redirect → hide button.
+      console.warn("[Nexora] Google OAuth unavailable:", friendlyError(cause));
+      setGoogleOauthFailed(true);
+    } finally {
+      setGoogleBusy(false);
     }
   };
 
@@ -882,20 +959,328 @@ function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (pat
         <button className="primary" disabled={busy}>
           {busy ? "Please wait…" : mode === "login" ? "Log in securely" : `Create ${roleLabel} account`}
         </button>
+        {googleOauthConfigured && !googleOauthFailed && (
+          <button type="button" className="secondary" disabled={googleBusy} onClick={() => void continueWithGoogle()}>
+            {googleBusy ? "Redirecting to Google…" : "Continue with Google"}
+          </button>
+        )}
+        {googleOauthConfigured && googleOauthFailed && (
+          <p className="preview-note">Google sign-in is temporarily unavailable. Please use email and password.</p>
+        )}
         <div className="button-row" style={{ justifyContent: "space-between", marginTop: 6 }}>
           <button type="button" className="text-button" onClick={() => navigate(mode === "login" ? "/signup" : "/login")}>
             {mode === "login" ? "Need an account? Sign up" : "Already registered? Log in"}
           </button>
+          {mode === "login" && (
+            <button type="button" className="text-button" onClick={() => navigate("/forgot-password")}>
+              Forgot password?
+            </button>
+          )}
           {messageType === "success" && mode === "signup" && (
             <button type="button" className="secondary compact" onClick={() => navigate(`/login?role=${role === "business_user" ? "owner" : role === "growth_partner" ? "growth-partner" : "customer"}`)}>
               Go to login →
             </button>
           )}
         </div>
+        {confirmationPending && mode === "signup" && (
+          <div className="button-row" style={{ justifyContent: "flex-start", marginTop: 6 }}>
+            <button type="button" className="secondary compact" disabled={busy} onClick={() => void resendConfirmation()}>
+              Resend confirmation email
+            </button>
+          </div>
+        )}
         <div className="trust-row" style={{ marginTop: 18 }}>
           <span>✓ Shared Supabase {SUPABASE_PROJECT_REF}</span><span>✓ RLS protected</span><span>✓ Role locked</span>
         </div>
       </form>
+    </main>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section 10.1 — Real Supabase auth routes: /auth/callback, /forgot-password,
+// /reset-password, /auth/expired. No mock auth anywhere: every flow goes
+// through supabase-js against the shared project, PKCE only.
+// ---------------------------------------------------------------------------
+
+/** Resolve the caller's active profile; never trust URL or storage roles. */
+async function resolveActiveProfile(client: SupabaseClient, userId: string) {
+  const { data, error } = await client
+    .from("profiles")
+    .select("platform_role,is_active")
+    .eq("id", userId)
+    .maybeSingle();
+  if (error || !data || data.is_active !== true || !isKnownPlatformRole(data.platform_role)) return null;
+  return data as { platform_role: Role; is_active: boolean };
+}
+
+/** Same-origin-only redirect target; blocks protocol-relative and absolute URLs. */
+function safeSameOriginPath(candidate: string | null, fallback: string): string {
+  if (!candidate || !candidate.startsWith("/") || candidate.startsWith("//") || candidate.includes("\\")) return fallback;
+  if (/[?#]/.test(candidate)) return fallback;
+  return candidate;
+}
+
+function AuthCallbackPage({ navigate }: { navigate: (path: string) => void }) {
+  const [state, setState] = useState<{ status: "working" | "error"; message: string }>({
+    status: "working",
+    message: "Completing secure sign-in…",
+  });
+
+  useEffect(() => {
+    const timer = window.setTimeout(async () => {
+      const client = getClient();
+      if (!client) {
+        setState({ status: "error", message: missingSupabaseConfigMessage });
+        return;
+      }
+      try {
+        const url = new URL(window.location.href);
+        const providerError = url.searchParams.get("error_description") ?? url.searchParams.get("error");
+        if (providerError) throw new Error(providerError);
+        const code = url.searchParams.get("code");
+        if (code) {
+          // PKCE: exchange the one-time code with the locally stored
+          // code_verifier. supabase-js may already have exchanged it
+          // (detectSessionInUrl), so a code-consumed error is tolerated
+          // when a live session exists afterwards.
+          const { error } = await client.auth.exchangeCodeForSession(code);
+          if (error && !/invalid|expired|not found|already|code challenge/i.test(error.message)) {
+            throw error;
+          }
+        }
+        const { data: { session } } = await client.auth.getSession();
+        if (!session?.user) {
+          throw new Error("This sign-in link is invalid or has expired. Please log in again.");
+        }
+        const profile = await resolveActiveProfile(client, session.user.id);
+        if (!profile) {
+          await client.auth.signOut();
+          throw new Error("This account is inactive or has no valid Nexora role. Contact support.");
+        }
+        const returnTo = safeSameOriginPath(url.searchParams.get("returnTo"), portalPathForRole(profile.platform_role));
+        // Strip the one-time code from the URL before continuing.
+        window.history.replaceState({}, "", "/auth/callback");
+        navigate(profile.platform_role === "customer" ? returnTo : portalPathForRole(profile.platform_role));
+      } catch (cause) {
+        setState({ status: "error", message: friendlyError(cause) });
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [navigate]);
+
+  if (state.status === "working") {
+    return (
+      <main className="center-page">
+        <section className="entry-card">
+          <span className="eyebrow">Secure sign-in</span>
+          <h1>{state.message}</h1>
+          <div className="loader" aria-label="Completing sign-in" />
+        </section>
+      </main>
+    );
+  }
+  return (
+    <main className="center-page">
+      <StateCard title="Sign-in could not be completed" text={state.message} action="Back to login" onAction={() => navigate("/login")} />
+    </main>
+  );
+}
+
+function ForgotPasswordPage({ navigate }: { navigate: (path: string) => void }) {
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [messageType, setMessageType] = useState<"error" | "success">("error");
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) {
+      setMessage("Enter the email address you registered with.");
+      setMessageType("error");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    try {
+      const client = getClient();
+      if (!client) throw new Error(missingSupabaseConfigMessage);
+      // Real Supabase reset flow: email contains a PKCE recovery link to
+      // /reset-password, which must be whitelisted in Supabase Auth.
+      const { error } = await client.auth.resetPasswordForEmail(
+        trimmedEmail,
+        { redirectTo: `${window.location.origin}/reset-password` },
+      );
+      if (error) throw error;
+      setMessage(`If an account exists for ${trimmedEmail}, a password reset link has been sent. Check your inbox and spam folder.`);
+      setMessageType("success");
+    } catch (cause) {
+      setMessage(friendlyError(cause));
+      setMessageType("error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <main className="center-page auth-bg">
+      <form className="auth-card" onSubmit={submit} noValidate>
+        <span className="eyebrow">Account recovery</span>
+        <h1>Reset your password</h1>
+        <p className="preview-note" style={{ marginTop: -8 }}>
+          We will email you a secure link. The link signs you in once, then you choose a new password. Links expire and can only be used on this website.
+        </p>
+        <label>
+          Email
+          <input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="name@domain.com" />
+        </label>
+        {message && (
+          <div className={`form-message ${messageType}`} role="status" style={messageType === "success" ? { background: "#e9f8f1", color: "#12704c" } : undefined}>
+            {message}
+          </div>
+        )}
+        <button className="primary" disabled={busy}>{busy ? "Sending…" : "Email me a reset link"}</button>
+        <div className="button-row" style={{ justifyContent: "space-between", marginTop: 6 }}>
+          <button type="button" className="text-button" onClick={() => navigate("/login")}>Back to login</button>
+          <button type="button" className="text-button" onClick={() => navigate("/signup")}>Need an account? Sign up</button>
+        </div>
+      </form>
+    </main>
+  );
+}
+
+function ResetPasswordPage({ navigate }: { navigate: (path: string) => void }) {
+  const [ready, setReady] = useState<"waiting" | "ready" | "failed">("waiting");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+
+  // The recovery link lands with ?code=…&type=recovery. supabase-js (PKCE,
+  // detectSessionInUrl) exchanges the code; we wait for the resulting session.
+  useEffect(() => {
+    const client = getClient();
+    if (!client) {
+      const failTimer = window.setTimeout(() => {
+        setReady("failed");
+        setMessage(missingSupabaseConfigMessage);
+      }, 0);
+      return () => window.clearTimeout(failTimer);
+    }
+    let active = true;
+    const check = async () => {
+      const { data: { session } } = await client.auth.getSession();
+      if (!active) return;
+      if (session) {
+        setReady("ready");
+        return;
+      }
+      setReady("failed");
+      setMessage("This password reset link is invalid or has expired. Request a new one.");
+    };
+    const timer = window.setTimeout(() => void check(), 1200);
+    const { data: { subscription } } = client.auth.onAuthStateChange((event, session) => {
+      if (!active) return;
+      if (session && (event === "SIGNED_IN" || event === "PASSWORD_RECOVERY" || event === "TOKEN_REFRESHED")) {
+        setReady("ready");
+      }
+    });
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (password.length < 6) {
+      setMessage("Password must be at least 6 characters.");
+      return;
+    }
+    if (password !== confirm) {
+      setMessage("Passwords do not match.");
+      return;
+    }
+    setBusy(true);
+    setMessage("");
+    try {
+      const client = getClient();
+      if (!client) throw new Error(missingSupabaseConfigMessage);
+      const { data: { user } } = await client.auth.getUser();
+      if (!user) throw new Error("Your reset session has expired. Request a new reset link.");
+      const { error } = await client.auth.updateUser({ password });
+      if (error) throw error;
+      const profile = await resolveActiveProfile(client, user.id);
+      if (!profile) {
+        await client.auth.signOut();
+        throw new Error("This account is inactive or has no valid Nexora role. Contact support.");
+      }
+      navigate(portalPathForRole(profile.platform_role));
+    } catch (cause) {
+      setMessage(friendlyError(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (ready === "waiting") {
+    return (
+      <main className="center-page">
+        <section className="entry-card">
+          <span className="eyebrow">Account recovery</span>
+          <h1>Verifying reset link…</h1>
+          <div className="loader" aria-label="Verifying reset link" />
+        </section>
+      </main>
+    );
+  }
+  if (ready === "failed") {
+    return (
+      <main className="center-page">
+        <StateCard title="Reset link unavailable" text={message || "Request a new password reset link."} action="Request new link" onAction={() => navigate("/forgot-password")} />
+      </main>
+    );
+  }
+  return (
+    <main className="center-page auth-bg">
+      <form className="auth-card" onSubmit={submit} noValidate>
+        <span className="eyebrow">Account recovery</span>
+        <h1>Choose a new password</h1>
+        <label>
+          New password
+          <input required minLength={6} type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" placeholder="At least 6 characters" />
+        </label>
+        <label>
+          Confirm new password
+          <input required minLength={6} type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" placeholder="Repeat the new password" />
+        </label>
+        {message && <div className="form-message" role="alert">{message}</div>}
+        <button className="primary" disabled={busy}>{busy ? "Saving…" : "Update password"}</button>
+      </form>
+    </main>
+  );
+}
+
+function SessionExpiredPage({ navigate }: { navigate: (path: string) => void }) {
+  useEffect(() => {
+    const client = getClient();
+    if (client) void client.auth.signOut();
+  }, []);
+  const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const returnTo = safeSameOriginPath(params.get("returnTo"), "/login");
+  return (
+    <main className="center-page">
+      <section className="entry-card">
+        <span className="eyebrow">Session expired</span>
+        <h1>Please log in again</h1>
+        <p>Your session expired or could not be verified. For security, Nexora never keeps an unverified session signed in.</p>
+        <div className="button-row">
+          <button className="primary" onClick={() => navigate(returnTo)}>Log in</button>
+          <button className="secondary" onClick={() => navigate("/")}>Go home</button>
+        </div>
+      </section>
     </main>
   );
 }

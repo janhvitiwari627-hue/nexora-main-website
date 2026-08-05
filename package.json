@@ -13,7 +13,7 @@
     "deploy": "npm run build && wrangler deploy",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
-    "test:contracts": "node --test tests/auth-config-contract.test.mjs tests/booking-role-guard.test.mjs tests/business-rules-contract.test.mjs tests/proposal-flow-contract.test.mjs tests/phase1-customer-contract.test.mjs tests/path-routing-contract.test.mjs tests/phase2-owner-package-contract.test.mjs tests/phase3-growth-partner-package-contract.test.mjs tests/phase8-contract.test.mjs",
+    "test:contracts": "node --test tests/auth-config-contract.test.mjs tests/booking-role-guard.test.mjs tests/business-rules-contract.test.mjs tests/proposal-flow-contract.test.mjs tests/phase1-customer-contract.test.mjs tests/path-routing-contract.test.mjs tests/phase2-owner-package-contract.test.mjs tests/phase3-growth-partner-package-contract.test.mjs tests/phase8-contract.test.mjs tests/production-auth-security-contract.test.mjs",
     "validate:artifact": "bash scripts/validate-artifact.sh",
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
