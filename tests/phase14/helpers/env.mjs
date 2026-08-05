@@ -1,5 +1,8 @@
 // Phase 14 Environment Helper - Live test configuration
 // Requires real Supabase credentials and test accounts
+//
+// VITE_ variables are accepted as fallback for NEXT_PUBLIC_ variables
+// to support migration from Vite-based PWA configurations.
 
 const REQUIRED_VARS = [
   'NEXT_PUBLIC_SUPABASE_URL',
@@ -19,11 +22,28 @@ const REQUIRED_VARS = [
   'ACCEPTANCE_PARTNER_B_PASSWORD',
 ];
 
+// Resolve Supabase URL with VITE_ fallback
+function resolveSupabaseUrl() {
+  return process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? '';
+}
+
+// Resolve Supabase anon key with VITE_ and PUBLISHABLE_KEY fallbacks
+function resolveSupabaseAnonKey() {
+  return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY 
+    ?? process.env.VITE_SUPABASE_ANON_KEY 
+    ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY 
+    ?? process.env.VITE_SUPABASE_PUBLISHABLE_KEY 
+    ?? '';
+}
+
 export function getEnv() {
   const env = {};
   for (const key of REQUIRED_VARS) {
     env[key] = process.env[key] || '';
   }
+  // Add resolved Supabase values with fallback
+  env.NEXT_PUBLIC_SUPABASE_URL = resolveSupabaseUrl();
+  env.NEXT_PUBLIC_SUPABASE_ANON_KEY = resolveSupabaseAnonKey();
   return env;
 }
 
@@ -61,3 +81,7 @@ export function createBlockedReport(testNames) {
     timestamp: new Date().toISOString()
   };
 }
+
+// Export resolved values for direct use in tests
+export const SUPABASE_URL = resolveSupabaseUrl();
+export const SUPABASE_ANON_KEY = resolveSupabaseAnonKey();
