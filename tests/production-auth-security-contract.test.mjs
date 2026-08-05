@@ -154,3 +154,19 @@ test("migration inventory stays ordered and present", async () => {
   assert.ok(files.includes("20260808_production_gates_and_blockers.sql"));
   assert.ok(files.includes("20260807_phase8_security_and_isolation.sql"));
 });
+
+// ---------------------------------------------------------------------------
+// Release Blocker #3 — the live inventory export must be strictly read-only
+// ---------------------------------------------------------------------------
+
+test("live inventory export script is SELECT-only (no DDL/DML/grants)", async () => {
+  const raw = await readFile(new URL("../supabase/READONLY_INVENTORY_EXPORT.sql", import.meta.url), "utf8");
+  const code = raw
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("--"))
+    .join("\n");
+  assert.match(code, /select/i);
+  assert.doesNotMatch(code, /\b(insert into|update|delete from|drop |alter table|create table|create or replace|grant |revoke |truncate)\b/i);
+  // Verification RPCs are documented but commented out (operator choice).
+  assert.match(raw, /-- select \* from public\.verify_security_isolation\(\);/);
+});

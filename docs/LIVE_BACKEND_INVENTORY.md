@@ -9,6 +9,13 @@ carried from the latest verified live probe in the repository — the Phase 0 Fr
 against every migration and frontend query in the current tree. Each row lists the exact verification
 needed at release time. Nothing was mutated.
 
+**How to re-export the live inventory (required action for Release Blocker #3):**
+run `supabase/READONLY_INVENTORY_EXPORT.sql` in the Supabase SQL Editor. It is strictly
+SELECT-only (contract-tested) and dumps: tables + row counts + RLS flags, every RLS policy,
+RLS-enabled tables with zero policies, all functions + security-definer surface, Nexora gate/
+verification RPC presence, storage bucket privacy + storage policies, triggers, pg_cron jobs +
+run history, realtime publication, auth triggers, column-drift checks, and money-column types.
+
 Legend: LIVE = probed live 2026-08-02 · MISSING = migration exists, never applied · UNVERIFIED = needs a credentialed probe.
 
 ## Frontend Dependency → Backend Object Matrix
