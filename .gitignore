@@ -42,3 +42,9 @@ next-env.d.ts
 /.sites-runtime/
 /outputs/
 /work/
+
+# Phase 14 acceptance test environment
+.env.acceptance
+.env.acceptance.local
+playwright-report/
+test-results/

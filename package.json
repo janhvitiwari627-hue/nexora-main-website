@@ -16,7 +16,11 @@
     "test:contracts": "node --test tests/auth-config-contract.test.mjs tests/booking-role-guard.test.mjs tests/business-rules-contract.test.mjs tests/proposal-flow-contract.test.mjs tests/phase1-customer-contract.test.mjs tests/path-routing-contract.test.mjs tests/phase2-owner-package-contract.test.mjs tests/phase3-growth-partner-package-contract.test.mjs tests/phase7-contract.test.mjs tests/phase8-contract.test.mjs tests/full-website-test.mjs tests/production-auth-security-contract.test.mjs",
     "validate:artifact": "bash scripts/validate-artifact.sh",
     "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate"
+    "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate",
+    "test:phase14": "npm run test:phase14:contracts && npm run test:phase14:integration && npm run test:phase14:e2e",
+    "test:phase14:contracts": "node --test tests/phase14/contracts/*.test.mjs",
+    "test:phase14:integration": "node --test tests/phase14/integration/*.test.mjs",
+    "test:phase14:e2e": "playwright test tests/phase14/e2e"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.95.0",
@@ -28,6 +32,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
     "@cloudflare/workers-types": "4.20260515.1",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
