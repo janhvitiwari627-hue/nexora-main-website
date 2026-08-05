@@ -12,19 +12,19 @@
     },
     {
       "source": "/app/owner",
-      "destination": "https://pink-nexora-aap.vercel.app/app/owner"
+      "destination": "https://shop-onwer-pink-nexora-aap.vercel.app/app/owner"
     },
     {
       "source": "/app/owner/:path*",
-      "destination": "https://pink-nexora-aap.vercel.app/app/owner/:path*"
+      "destination": "https://shop-onwer-pink-nexora-aap.vercel.app/app/owner/:path*"
     },
     {
       "source": "/app/partner",
-      "destination": "https://pink-growth-partner-aap.vercel.app/app/partner"
+      "destination": "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app/app/partner"
     },
     {
       "source": "/app/partner/:path*",
-      "destination": "https://pink-growth-partner-aap.vercel.app/app/partner/:path*"
+      "destination": "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app/app/partner/:path*"
     }
   ]
 }
