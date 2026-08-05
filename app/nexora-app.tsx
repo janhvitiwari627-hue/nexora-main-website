@@ -126,7 +126,7 @@ function parseSupabaseAuthError(error: unknown): string {
   if (lower.includes("user already registered") || lower.includes("already registered") || lower.includes("user already exists")) {
     return "An account with this email already exists. Please log in instead.";
   }
-  if (lower.includes("email not confirmed") || lower.includes("email not confirmed") || lower.includes("confirmation")) {
+  if (lower.includes("email not confirmed") || lower.includes("confirmation")) {
     return "Please confirm your email first. Check your inbox (and spam) for a confirmation link.";
   }
   if (lower.includes("invalid login credentials") || lower.includes("invalid credentials")) {
@@ -826,13 +826,9 @@ function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (pat
         await client.auth.signOut();
         throw new Error("This account has no valid Nexora role. Contact support.");
       }
-      const profileForNav = finalProfile as unknown as { platform_role: Role };
       const { returnTo } = readAuthQueryParams();
-      if (platformRole === "customer" && returnTo) {
-        navigate(returnTo);
-      } else {
-        navigate(profileForNav.platform_role === "customer" && returnTo ? returnTo : portalPathForRole(profileForNav.platform_role));
-      }
+      // Customers keep their deep link; other roles always land on their own portal.
+      navigate(platformRole === "customer" && returnTo ? returnTo : portalPathForRole(platformRole));
     } catch (cause) {
       const parsed = parseSupabaseAuthError(cause);
       setMessage(parsed);
