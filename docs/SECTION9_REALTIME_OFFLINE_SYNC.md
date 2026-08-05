@@ -270,3 +270,752 @@ Any modification to caching scopes, TTL values, queue behavior, or offline write
 - Negative authorization and cross-tenant leakage tests
 - Update to this specification before release.
 
+---
+
+**Sub-point:** 9.3 — Subscription Lifecycle  
+**Status:** Specification baseline  
+**Applies to:** Main Website, Customer PWA, Owner PWA, and Growth Partner PWA
+
+## 1. Purpose and governing rule
+
+Every realtime subscription in the Nexora platform must have **exactly one clear owner** — a page, component, authenticated session, or application-level manager — and must be **torn down deterministically** when that owner's lifecycle ends. No subscription may outlive its owner, leak across user boundaries, or persist after the authorization scope that created it has changed.
+
+The subscription lifecycle is the primary defense against: unauthorized data delivery after role/tenant changes, phantom state updates to destroyed components, duplicate connections consuming server resources, and cross-account event contamination on shared devices.
+
+This specification governs the **creation, tracking, maintenance, and destruction** of every Supabase Realtime channel subscription across all Nexora client applications.
+
+## 2. Subscription ownership model
+
+### 2.1 Owner types
+
+Every subscription must be assigned to exactly one of the following owner categories. No subscription may exist without an owner.
+
+| Owner Type | Scope | Example | Lifetime Boundary |
+|---|---|---|---|
+| **Component** | A single React component instance | A `<BookingDetailCard>` subscribing to `nexora:v1:booking:<uuid>` | Mount → unmount of the component |
+| **Page / Route** | A top-level page or route handler | The bookings list page subscribing to notification updates | Route mount → route exit or replacement |
+| **Authenticated Session** | The current `auth.uid()` identity | A notification subscription for `nexora:v1:notification:user:<uuid>` | Sign-in → sign-out or session expiry |
+| **Application-Level Manager** | A singleton service (e.g., global notification badge) | A notification badge manager subscribing on user login | App boot with valid session → sign-out |
+
+### 2.2 Ownership invariants
+
+The following invariants are **non-negotiable** and must hold at all times:
+
+1. **One owner per subscription.** A channel subscription reference is held by exactly one owner. If two components need the same channel, they must share via a single owner (e.g., a context provider or singleton manager), not create two subscriptions.
+2. **Owner destruction = subscription destruction.** When the owning component unmounts, the owning page is left, or the owning session ends, the subscription **must** be unsubscribed synchronously in the cleanup phase.
+3. **No orphaned subscriptions.** At no point may a subscription exist whose owner has been destroyed or whose auth scope is invalid.
+4. **Subscription references are non-transferable.** A subscription created under `user_A`'s session may never be reused, renamed, or handed off to `user_B`'s session. It must be destroyed and a new one created.
+
+## 3. Mandatory teardown triggers
+
+Every subscription must be removed when **any** of the following conditions is met. The teardown must be immediate — not deferred to garbage collection, idle callbacks, or "next render."
+
+### 3.1 Component unmount
+
+When a React component that owns a subscription unmounts (including route transitions, conditional rendering, parent removal, or error boundaries):
+
+```typescript
+useEffect(() => {
+  let active = true; // guards against post-unmount state updates
+  const channel = supabase
+    .channel('nexora:v1:booking:' + bookingId)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `id=eq.${bookingId}` }, (payload) => {
+      if (!active) return; // component already unmounted — discard
+      handleBookingUpdate(payload);
+    })
+    .subscribe();
+
+  return () => {
+    active = false; // mark destroyed BEFORE unsubscribe
+    supabase.removeChannel(channel);
+  };
+}, [bookingId, supabase]);
+```
+
+**Rules:**
+- The `active` flag (or equivalent abort signal) must be checked **before** every state update triggered by the subscription callback.
+- `removeChannel()` must be called in the effect cleanup function — never inside a conditional, never wrapped in a timeout.
+- If the component re-renders and the `bookingId` changes, the old channel is removed and a new one is created (the effect dependency array enforces this).
+
+### 3.2 User leaves the relevant route
+
+When the user navigates away from a route that requires a subscription:
+
+```typescript
+// In a route-level subscription manager
+useEffect(() => {
+  if (!isBookingsRoute(currentPath)) return;
+  
+  const channel = createBookingChannel(supabase, activeSalonId);
+  
+  return () => {
+    supabase.removeChannel(channel);
+    clearBookingRealtimeState(); // clear any in-memory derived state
+  };
+}, [currentPath, activeSalonId, supabase]);
+```
+
+**Rules:**
+- Route detection must use the actual navigation state, not component visibility or scroll position.
+- If the user navigates to a different portal (e.g., from `/app/customer` to `/app/owner`), all subscriptions owned by the previous portal must be torn down.
+- The `portalRoleFromPath()` utility from `lib/portalRoutes.ts` can be used to detect portal transitions.
+
+### 3.3 Active salon or tenant changes
+
+When the user switches the active salon or tenant context (e.g., a business owner with multiple salons selecting a different salon):
+
+```typescript
+useEffect(() => {
+  if (!activeSalonId) return;
+
+  const channel = supabase
+    .channel(`nexora:v1:availability:salon:${activeSalonId}`)
+    .on('postgres_changes', { /* ... */ }, handleAvailabilityChange)
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+    // Clear all salon-scoped realtime-derived state
+    clearSalonScopedState(activeSalonId);
+  };
+}, [activeSalonId, supabase]); // salonId in deps forces teardown + recreation
+```
+
+**Rules:**
+- The `activeSalonId` (or `tenantId`) must appear in the effect dependency array so that any change triggers the cleanup → recreation cycle.
+- All in-memory state derived from the previous salon's subscription must be cleared. Retaining it risks displaying stale data from a salon the user is no longer viewing.
+- Never accumulate subscriptions across salon switches. Only the current salon's subscription may be active.
+
+### 3.4 Authenticated user changes
+
+When the authenticated identity changes (sign-out, sign-in of a different user, or forced session replacement):
+
+```typescript
+// Application-level auth state listener — mirrors the pattern in nexora-app.tsx
+useEffect(() => {
+  let active = true;
+  let sessionRevision = 0;
+
+  const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const revision = ++sessionRevision;
+    if (!active) return;
+
+    if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+      // Tear down ALL user-scoped subscriptions
+      teardownAllUserSubscriptions();
+      clearAllPrivateInMemoryState();
+      return;
+    }
+
+    if (event === 'TOKEN_REFRESHED') {
+      // Recreate subscriptions with the new token
+      recreateSubscriptionsForSession(session, revision);
+      return;
+    }
+
+    if (event === 'SIGNED_IN') {
+      // Clear any previous user's state before subscribing
+      clearAllPrivateInMemoryState();
+      initializeSubscriptionsForSession(session, revision);
+    }
+  });
+
+  return () => {
+    active = false;
+    sessionRevision += 1;
+    subscription.unsubscribe();
+    teardownAllUserSubscriptions();
+  };
+}, [supabase]);
+```
+
+**Rules:**
+- On `SIGNED_OUT`: immediately remove all channels and purge private in-memory state. Do not wait for a "graceful" transition.
+- On `SIGNED_IN` with a different `auth.uid()`: clear all state from the previous user before creating any new subscription. This prevents cross-account event contamination.
+- The `sessionRevision` pattern (already used in `nexora-app.tsx`) must be used to prevent stale callbacks from acting on a session that has been superseded.
+
+### 3.5 Session expiry
+
+When the Supabase session expires (refresh token expired, server rejects the token, or `getSession()` returns null):
+
+```typescript
+async function handleSessionExpiry() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    teardownAllUserSubscriptions();
+    clearAllPrivateInMemoryState();
+    clearOfflineQueues(); // per 9.2 §4.3
+    // Redirect to login with reason parameter
+    navigate('/login?reason=session-expired');
+  }
+}
+```
+
+**Rules:**
+- Session expiry must trigger the same teardown as sign-out.
+- Expired sessions must not silently retry subscription reconnection. The retry logic must check session validity before each attempt.
+- Per the existing codebase pattern in `nexora-app.tsx`, a failed profile fetch after session refresh must fail closed (sign out the user) rather than leaving a half-authenticated state.
+
+### 3.6 User signs out
+
+When the user explicitly signs out (clicking "Sign out"):
+
+```typescript
+const signOut = useCallback(async (destination = '/') => {
+  // 1. Teardown subscriptions BEFORE sign-out
+  teardownAllUserSubscriptions();
+  clearAllPrivateInMemoryState();
+  clearOfflineQueues();
+
+  // 2. Clear auth state
+  setAuthState({ loading: false, session: null });
+
+  // 3. Call Supabase sign-out
+  await getClient()?.auth.signOut();
+
+  // 4. Navigate away
+  navigate(destination);
+}, [navigate]);
+```
+
+**Rules:**
+- Subscription teardown must happen **before** `supabase.auth.signOut()` is called, not after. Once sign-out completes, the client's JWT is invalid, and any in-flight subscription reconnection attempt will fail with an auth error that should not trigger a retry.
+- The `signOut` function must be idempotent — calling it twice must not cause errors.
+
+### 3.7 Authorization is revoked
+
+When a user's role or membership changes in a way that revokes access (e.g., staff removed from salon, role downgraded, account deactivated):
+
+```typescript
+// Server-side: RLS policies enforce authorization on every event delivery.
+// Client-side: detect revocation signals and tear down immediately.
+
+function handleAuthStateChange(event: string, session: Session | null) {
+  // Profile re-validation (mirrors nexora-app.tsx pattern)
+  const profile = await fetchProfile(session.user.id);
+  if (!profile || !profile.is_active) {
+    // Account deactivated — full teardown
+    teardownAllUserSubscriptions();
+    clearAllPrivateInMemoryState();
+    await supabase.auth.signOut();
+    return;
+  }
+
+  // Role change detection
+  if (profile.platform_role !== previousRole) {
+    teardownRoleSpecificSubscriptions(previousRole);
+    initializeSubscriptionsForRole(profile.platform_role);
+  }
+
+  // Salon membership loss detection
+  const currentSalonIds = await fetchAuthorizedSalonIds(session.user.id);
+  const lostSalons = previousSalonIds.filter(id => !currentSalonIds.includes(id));
+  for (const salonId of lostSalons) {
+    teardownSalonSubscriptions(salonId);
+    clearSalonScopedState(salonId);
+  }
+}
+```
+
+**Rules:**
+- Authorization revocation must be detected proactively (via profile re-fetch on auth state change) and reactively (via server-side RLS rejection of subscription events).
+- When RLS rejects a subscription event (Supabase returns a channel error), the client must treat it as a revocation signal, unsubscribe from that channel, and clear the associated state.
+- Never silently retry a subscription that was rejected due to authorization failure.
+
+### 3.8 Browser tab no longer requires the stream
+
+When the tab enters a state where the stream is no longer needed (e.g., user switches to a non-subscription page, tab is backgrounded for extended periods on mobile):
+
+```typescript
+// Optional optimization: pause subscriptions when tab is hidden
+useEffect(() => {
+  const handleVisibilityChange = () => {
+    if (document.hidden) {
+      // Pause non-critical subscriptions (e.g., availability)
+      pauseNonCriticalSubscriptions();
+    } else {
+      // Resume and refetch stale state
+      resumeSubscriptions();
+      refetchStaleState();
+    }
+  };
+
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+}, []);
+```
+
+**Rules:**
+- Critical subscriptions (active booking state, payment status) must remain active even when the tab is hidden, as users may switch tabs during payment confirmation.
+- Non-critical subscriptions (availability slots, notification badge) may be paused on tab hide, but must be resumed and state refetched on tab restore.
+- The `document.hidden` API must be used — do not rely on `blur`/`focus` events alone, which are unreliable.
+
+## 4. Duplicate subscription prevention
+
+### 4.1 The duplicate problem
+
+Duplicate subscriptions occur when:
+- A component re-renders and creates a new subscription without removing the old one.
+- Navigation back to a page creates a second subscription while the first is still active.
+- React Strict Mode double-invokes effects during development, masking cleanup bugs.
+- Multiple components subscribe to the same channel independently.
+
+### 4.2 Prevention strategy
+
+**Rule 1: Effect cleanup must precede creation.**
+
+Every subscription effect must return a cleanup function that removes the channel. React's effect lifecycle guarantees cleanup runs before the next effect invocation, preventing overlap.
+
+```typescript
+// ✅ CORRECT: cleanup always runs before next creation
+useEffect(() => {
+  const channel = createChannel();
+  return () => removeChannel(channel);
+}, [dependencyA, dependencyB]);
+
+// ❌ WRONG: no cleanup — duplicate on every re-render
+useEffect(() => {
+  const channel = createChannel();
+  // Missing: return () => removeChannel(channel);
+}, []);
+```
+
+**Rule 2: Subscription identity keys must be precise.**
+
+The effect dependency array must include every value that changes the subscription's scope. Missing dependencies cause stale subscriptions to persist; extra dependencies cause unnecessary teardown/recreation.
+
+```typescript
+// ✅ CORRECT: bookingId changes → old channel removed, new one created
+useEffect(() => {
+  const channel = createBookingChannel(bookingId);
+  return () => removeChannel(channel);
+}, [bookingId]);
+
+// ❌ WRONG: empty deps — subscription persists even if bookingId changes
+useEffect(() => {
+  const channel = createBookingChannel(bookingId);
+  return () => removeChannel(channel);
+}, []); // bookingId missing!
+```
+
+**Rule 3: Use a subscription registry for deduplication.**
+
+For application-level managers, maintain a central registry that prevents duplicate subscriptions to the same channel:
+
+```typescript
+class SubscriptionRegistry {
+  private channels = new Map<string, { channel: RealtimeChannel; refCount: number }>();
+
+  subscribe(channelKey: string, factory: () => RealtimeChannel): RealtimeChannel {
+    const existing = this.channels.get(channelKey);
+    if (existing) {
+      existing.refCount += 1;
+      return existing.channel;
+    }
+    const channel = factory();
+    this.channels.set(channelKey, { channel, refCount: 1 });
+    return channel;
+  }
+
+  unsubscribe(channelKey: string): void {
+    const entry = this.channels.get(channelKey);
+    if (!entry) return;
+    entry.refCount -= 1;
+    if (entry.refCount <= 0) {
+      supabase.removeChannel(entry.channel);
+      this.channels.delete(channelKey);
+    }
+  }
+
+  teardownAll(): void {
+    for (const [key, entry] of this.channels) {
+      supabase.removeChannel(entry.channel);
+    }
+    this.channels.clear();
+  }
+
+  get activeCount(): number {
+    return this.channels.size;
+  }
+}
+```
+
+### 4.3 React Strict Mode safety
+
+In React 18+ Strict Mode, effects are double-invoked in development (mount → unmount → mount). The cleanup function must handle this gracefully:
+
+```typescript
+useEffect(() => {
+  let cancelled = false;
+  const channel = supabase
+    .channel(`nexora:v1:booking:${bookingId}`)
+    .on('postgres_changes', { /* ... */ }, (payload) => {
+      if (cancelled) return;
+      handleUpdate(payload);
+    })
+    .subscribe();
+
+  return () => {
+    cancelled = true;
+    // removeChannel is idempotent in Supabase JS v2 — safe to call even
+    // if the channel was never fully subscribed
+    supabase.removeChannel(channel);
+  };
+}, [bookingId]);
+```
+
+## 5. Channel reference storage and removal
+
+### 5.1 Storage requirements
+
+Every created channel reference must be stored in a location that is:
+- **Accessible** to the cleanup function.
+- **Scoped** to the owner's lifetime.
+- **Never leaked** to a scope outside the owner.
+
+```typescript
+// ✅ CORRECT: channel ref stored in effect-local closure
+useEffect(() => {
+  const channel = supabase.channel(key).subscribe();
+  return () => supabase.removeChannel(channel);
+}, [key]);
+
+// ❌ WRONG: channel ref stored in component state — persists across renders,
+// may be stale when cleanup runs
+const [channel, setChannel] = useState<RealtimeChannel | null>(null);
+useEffect(() => {
+  const ch = supabase.channel(key).subscribe();
+  setChannel(ch); // stored in state — stale reference risk
+}, [key]);
+
+// ❌ WRONG: channel ref stored in module-level variable — shared across
+// all component instances, destroyed only on last unmount
+let globalChannel: RealtimeChannel | null = null;
+function MyComponent() {
+  useEffect(() => {
+    globalChannel = supabase.channel(key).subscribe();
+    return () => {
+      if (globalChannel) supabase.removeChannel(globalChannel);
+      globalChannel = null;
+    };
+  }, [key]);
+}
+```
+
+### 5.2 Removal guarantees
+
+- `supabase.removeChannel(channel)` must be called **exactly once** per created channel.
+- Calling `removeChannel` on an already-removed channel is a no-op in Supabase JS v2, but implementations should not rely on this — use the `active` flag or `cancelled` flag to prevent double-removal logic.
+- After removal, the channel reference must be discarded (set to `null` or let it fall out of scope). Retaining a removed channel reference risks accidental reuse.
+
+## 6. Scope-efficient subscriptions
+
+### 6.1 Avoid one subscription per list row
+
+When displaying a list of entities (e.g., a list of bookings), do **not** create one subscription per row. Instead, use a single filtered subscription at the list level:
+
+```typescript
+// ✅ CORRECT: one subscription for the entire salon's bookings
+useEffect(() => {
+  const channel = supabase
+    .channel(`nexora:v1:bookings:salon:${salonId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'bookings',
+        filter: `salon_id=eq.${salonId}`,
+      },
+      (payload) => {
+        updateBookingInList(payload);
+      }
+    )
+    .subscribe();
+
+  return () => supabase.removeChannel(channel);
+}, [salonId]);
+
+// ❌ WRONG: one subscription per booking row
+function BookingRow({ booking }: { booking: Booking }) {
+  useEffect(() => {
+    const channel = supabase
+      .channel(`nexora:v1:booking:${booking.id}`)
+      .on('postgres_changes', { /* ... */ }, handleUpdate)
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [booking.id]); // 50 bookings = 50 subscriptions!
+}
+```
+
+### 6.2 Maximum concurrent subscription limits
+
+The client must enforce the following concurrent subscription limits per application instance:
+
+| Subscription Category | Maximum Concurrent | Notes |
+|---|---|---|
+| Active booking entity subscriptions | 1 | The currently viewed booking detail |
+| Active payment entity subscriptions | 1 | The currently pending payment |
+| Active proposal/verification subscriptions | 1 | The currently viewed proposal or verification |
+| User notification channel | 1 | Scoped to `auth.uid()` |
+| Salon availability channels | 3 | Currently viewed salon/service combinations |
+| **Total** | **7** | Hard limit. Exceeding requires architecture review. |
+
+**Rules:**
+- If the limit is reached and a new subscription is requested, the oldest non-critical subscription must be evicted.
+- The subscription registry must log a warning when the total approaches the limit (≥5 active channels).
+- These limits apply per application instance (per tab/PWA), not per user account.
+
+## 7. Token refresh and subscription recreation
+
+### 7.1 Supabase auto-refresh behavior
+
+The Supabase JS client (`autoRefreshToken: true`, as configured in `supabaseClient.ts`) automatically refreshes JWTs before expiry. The `onAuthStateChange` callback fires with `TOKEN_REFRESHED` when a new token is issued.
+
+### 7.2 Subscription reconnection after refresh
+
+Realtime channels authenticated with the old JWT may become invalid after a token refresh. The client must handle this as follows:
+
+```typescript
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'TOKEN_REFRESHED' && session) {
+    // Supabase Realtime channels auto-reconnect with the new token
+    // in most cases. However, private channels may need explicit
+    // re-subscription if the server rejected the old token.
+    
+    for (const [key, entry] of subscriptionRegistry.entries()) {
+      if (entry.channel.state === 'CLOSED' || entry.channel.state === 'ERRORED') {
+        // Recreate the channel with the current session
+        supabase.removeChannel(entry.channel);
+        const newChannel = recreateChannel(key, session);
+        subscriptionRegistry.set(key, { channel: newChannel, refCount: entry.refCount });
+      }
+    }
+  }
+});
+```
+
+### 7.3 Safe recreation rules
+
+- **Never create a new subscription before removing the old one.** This prevents duplicate connections during the brief overlap.
+- **Preserve the subscription registry's reference counts.** When recreating a channel, do not reset `refCount` — the owning components still hold their logical references.
+- **Re-validate authorization before recreation.** If the token was refreshed because of a role change, re-fetch the user's profile and authorized scope before recreating channels. A refreshed token may carry different claims.
+- **Use the `sessionRevision` pattern.** Assign a new revision on each token refresh and pass it to recreated subscriptions. Any callback that fires with a stale revision must be discarded.
+
+## 8. Post-authentication-failure subscription behavior
+
+### 8.1 Stop retrying after invalid authentication
+
+When a private subscription fails because authentication is invalid (expired token, revoked role, deactivated account, wrong tenant), the client must:
+
+1. **Not retry** the subscription automatically.
+2. **Log the failure** with the channel key and error code (without logging payload content).
+3. **Remove the channel** from the registry.
+4. **Clear derived state** for the affected scope.
+5. **Signal the auth manager** to re-validate the session.
+
+```typescript
+function handleChannelError(channelKey: string, error: RealtimeChannelError) {
+  // Supabase returns specific error codes for auth failures
+  const isAuthError = 
+    error.message?.includes('JWT') ||
+    error.message?.includes('token') ||
+    error.message?.includes('unauthorized') ||
+    error.message?.includes('forbidden') ||
+    error.status === 401 ||
+    error.status === 403;
+
+  if (isAuthError) {
+    console.warn(`[Realtime] Auth failure on channel ${channelKey}: ${error.message}`);
+    subscriptionRegistry.unsubscribe(channelKey);
+    clearStateForChannel(channelKey);
+    // Trigger session re-validation — do NOT auto-retry
+    triggerSessionRevalidation();
+    return;
+  }
+
+  // For transient network errors, Supabase handles auto-reconnection.
+  // Do not implement custom retry logic — it risks reconnection storms.
+}
+```
+
+### 8.2 Reconnection storm prevention
+
+- The client must not implement custom exponential backoff for subscription reconnection. Supabase Realtime has built-in reconnection with backoff.
+- If a channel enters an error loop (≥3 errors within 30 seconds), it must be permanently removed and logged as a critical issue.
+- Reconnection attempts must always check session validity first. Never reconnect with a known-expired or revoked session.
+
+## 9. Post-destruction state update prevention
+
+### 9.1 The stale callback problem
+
+A realtime event may arrive after the owning component has unmounted but before the subscription is fully torn down (race condition). If the callback triggers a React state update on an unmounted component, it causes:
+- React warnings ("Can't perform a React state update on an unmounted component").
+- Potential memory leaks if the callback holds references to component state.
+- Silent data corruption if the update targets a state object that has been reallocated.
+
+### 9.2 Prevention pattern
+
+Every subscription callback must check an `active` or `cancelled` flag before performing state updates:
+
+```typescript
+useEffect(() => {
+  let cancelled = false;
+
+  const channel = supabase
+    .channel(`nexora:v1:booking:${bookingId}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings', filter: `id=eq.${bookingId}` }, 
+      (payload) => {
+        if (cancelled) return; // component is gone — discard this event
+        
+        // Safe to update state
+        setBooking(prev => ({
+          ...prev,
+          status: payload.new.status,
+          updated_at: payload.new.updated_at,
+        }));
+      }
+    )
+    .subscribe();
+
+  return () => {
+    cancelled = true; // set BEFORE removeChannel to close the race window
+    supabase.removeChannel(channel);
+  };
+}, [bookingId]);
+```
+
+### 9.3 Additional safeguards
+
+- **AbortController pattern:** For subscriptions that trigger async operations (e.g., refetch on event), pass an `AbortSignal` so that in-flight requests are cancelled on unmount.
+
+```typescript
+useEffect(() => {
+  const controller = new AbortController();
+  let cancelled = false;
+
+  const channel = supabase
+    .channel(`nexora:v1:booking:${bookingId}`)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'bookings' }, 
+      async (payload) => {
+        if (cancelled) return;
+        // Refetch full booking data — abort if component unmounts mid-fetch
+        const { data } = await supabase
+          .from('bookings')
+          .select('*')
+          .eq('id', payload.new.id)
+          .abortSignal(controller.signal)
+          .maybeSingle();
+        if (cancelled || !data) return;
+        setBooking(data);
+      }
+    )
+    .subscribe();
+
+  return () => {
+    cancelled = true;
+    controller.abort();
+    supabase.removeChannel(channel);
+  };
+}, [bookingId]);
+```
+
+- **Error boundary integration:** If a subscription callback throws, the error must be caught and logged, not propagated to an unmounted component tree.
+
+## 10. Cross-user contamination prevention
+
+### 10.1 The shared-device scenario
+
+On shared devices (family tablets, internet café PCs, demo kiosks), User A may sign out and User B may sign in on the same browser. If User A's subscriptions or in-memory state are not fully cleared, User B may see:
+- Events addressed to User A (e.g., User A's booking confirmation).
+- Stale state from User A's session (e.g., User A's notification badge count).
+- Cached private data from User A's scope (e.g., User A's salon history).
+
+### 10.2 Mandatory clearing on user change
+
+Before any new subscription is created for a newly authenticated user, the following must be executed:
+
+```typescript
+async function handleUserChange(newSession: Session | null) {
+  // Step 1: Teardown ALL existing subscriptions
+  subscriptionRegistry.teardownAll();
+
+  // Step 2: Clear ALL private in-memory state
+  clearBookingState();
+  clearNotificationState();
+  clearPaymentState();
+  clearProposalState();
+  clearAvailabilityState();
+  clearUserProfileState();
+
+  // Step 3: Clear offline caches (per 9.2 §4.3)
+  await clearIndexedDBStores();
+  await clearCacheStorageEntries();
+  await clearOfflineWriteQueue();
+
+  // Step 4: Only NOW create subscriptions for the new user
+  if (newSession) {
+    initializeSubscriptionsForSession(newSession);
+  }
+}
+```
+
+### 10.3 Prevention rules
+
+- **No subscription may be created until the previous user's state is fully cleared.** The clearing must be synchronous for in-memory state and awaited for IndexedDB/CacheStorage.
+- **The `auth.uid()` must be verified** against the subscription's expected scope before any event is processed. If `payload.new.customer_id !== currentUser.id`, the event must be discarded and logged.
+- **Channel names incorporating `user_id` or `salon_id`** (per 9.1 §4.1) provide a structural defense: a channel named `nexora:v1:notification:user:<userA_uuid>` cannot receive events for User B even if it were accidentally retained. However, channel names are not authorization — RLS enforcement remains the authority.
+- **LocalStorage and SessionStorage** may contain user-scoped data. On sign-out, all Nexora-namespaced keys must be removed. On sign-in, any leftover keys from a previous user must be detected and cleared.
+
+### 10.4 Private in-memory state clearing
+
+"Private in-memory state" includes all React state, context values, ref contents, and module-level variables that hold user-specific data:
+
+```typescript
+function clearAllPrivateInMemoryState() {
+  // React contexts — reset to initial values
+  resetBookingContext();
+  resetNotificationContext();
+  resetPaymentContext();
+  
+  // Module-level caches
+  bookingCache.clear();
+  notificationCache.clear();
+  
+  // Refs holding user-specific data
+  currentUserRef.current = null;
+  activeSalonRef.current = null;
+  
+  // Query client caches (if using React Query or SWR)
+  queryClient.clear(); // removes ALL cached queries
+  
+  // Custom event emitters
+  realtimeEventEmitter.removeAllListeners();
+}
+```
+
+## 11. Implementation acceptance checklist for 9.3
+
+- [ ] Every subscription has a documented owner (component, page, session, or manager).
+- [ ] All 8 teardown triggers (§3.1–§3.8) are implemented and tested.
+- [ ] No duplicate subscriptions can exist for the same channel key — verified via the subscription registry or effect cleanup guarantees.
+- [ ] Channel references are stored in effect-local closures or a scoped registry, never in component state or module-level globals shared across instances.
+- [ ] List views use a single filtered subscription, not one per row.
+- [ ] The concurrent subscription limit (§6.2) is enforced and logged.
+- [ ] Token refresh triggers subscription re-validation without creating duplicates (§7).
+- [ ] Auth-failed subscriptions are not retried and trigger session re-validation (§8).
+- [ ] The `active`/`cancelled` flag pattern prevents all post-destruction state updates (§9).
+- [ ] On user change, all subscriptions are torn down, all private state is cleared, and clearing completes before any new subscription is created (§10).
+- [ ] Cross-user contamination is tested: sign in as User A → create subscriptions → sign out → sign in as User B → verify no User A events, state, or cached data are visible.
+- [ ] React Strict Mode double-invocation does not create duplicate subscriptions.
+- [ ] All teardown paths are exercised in automated tests (component unmount, route change, salon switch, sign-out, session expiry, auth revocation).
+
+## 12. Change control for 9.3
+
+Any modification to subscription ownership rules, teardown triggers, deduplication logic, token refresh behavior, or cross-user clearing requirements requires:
+- Threat-model review (focus on cross-user contamination and authorization bypass)
+- RLS and channel authorization review
+- Automated negative tests proving no leaked subscriptions or stale state
+- Regression tests for all 8 teardown triggers
+- Update to this specification before release.
+
