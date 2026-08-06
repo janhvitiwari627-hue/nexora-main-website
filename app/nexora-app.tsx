@@ -487,6 +487,7 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   const { statsBySalon } = useMarketplaceStats(online);
   const { services: popularServices, loading: popularLoading } = usePopularServices(online);
   const { personalized, favorites, ready } = useCustomerSuggestions(online, authState.session, items);
+  const { rows: recommendationRows, loading: recommendationsLoading, isPersonalized } = useRecommendations(online, authState.session);
   const { categories: adminCategories, loading: categoriesLoading } = useMarketplaceCategories(online);
   const { sponsored, loading: sponsoredLoading } = useSponsored(online);
   const { rows: topRatedRows, loading: topRatedLoading } = useTopRated(online);
@@ -581,16 +582,15 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         {recommended.length ? <div className="salon-grid">{recommended.map(item=><SalonCard key={item.id} item={item} navigate={navigate} stats={statsBySalon[item.id]} />)}</div> : <SalonSkeletons count={3} />}
       </section>
 
-      {/* Customer-specific suggestions (logged-in customers) */}
-      {showForYou && (
-        <section className="section">
-          <div className="section-heading"><span className="eyebrow">For you</span><h2>Recommended For You</h2><p>{favorites.length > 0 ? "Based on your saved favourites and preferences." : "Based on your saved preferences — city, area and category."}</p></div>
-          {personalized && personalized.length > 0 ? <div className="salon-grid">{personalized.map(item=><SalonCard key={item.id} item={item} navigate={navigate} stats={statsBySalon[item.id]} />)}</div> : <StateCard title="Favourites only" text="Salons you favourited in the Customer app will appear here." />}
-          {favorites.length > 0 && (
-            <p className="section-hint"><button className="text-button" onClick={() => navigate(PORTAL_PATHS.customer)}>Open your favourites in the Customer app →</button></p>
-          )}
-        </section>
-      )}
+      {/* Recommended — personalized for logged-in customers; deterministic
+          fallback (popular + top rated + active offers) for guests */}
+      <section className="section">
+        <div className="section-heading"><span className="eyebrow">Recommended</span><h2>Recommended For You</h2><p>{isPersonalized ? "Picked from your bookings, favourites and preferences." : "Popular, top-rated and trending salons — plus active offers."}</p></div>
+        {recommendationsLoading ? <SalonSkeletons count={3} /> : recommendationRows.length ? <div className="salon-grid">{recommendationRows.map((row) => <RecommendationCard key={row.id} row={row} navigate={navigate} />)}</div> : <StateCard title="No recommendations yet" text="Salons will appear here as they get bookings, reviews and offers." />}
+        {isPersonalized && (
+          <p className="section-hint"><button className="text-button" onClick={() => navigate(PORTAL_PATHS.customer)}>Open your favourites in the Customer app →</button></p>
+        )}
+      </section>
 
       {/* Offers */}
       <section className="section">
@@ -1088,6 +1088,17 @@ function TrendingCard({ row, navigate }: { row: TrendingRow; navigate: (path: st
   );
 }
 
+function RecommendationCard({ row, navigate }: { row: RecommendationRow; navigate: (path: string) => void }) {
+  return (
+    <article className="salon-card">
+      <div className="salon-visual" style={row.cover_image_path?.startsWith("http") ? { backgroundImage: `url("${row.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>{!row.cover_image_path?.startsWith("http") && <span>✦</span>}<em>Verified</em></div>
+      <div className="salon-body"><div className="salon-meta"><span>{row.business_category ?? "Salon"}</span><span>★ {Number(row.rating_avg).toFixed(1)} ({row.review_count})</span></div>
+      <h3>{row.name}</h3><p>{row.area ?? row.city}, {row.city}</p><div className="salon-bottom"><b>From {money(row.starting_price_paise)}</b><button onClick={() => navigate(`/salons/${row.slug}`)}>View salon</button></div>
+      <div style={{ marginTop: 8 }}><em style={{ fontSize: 11, color: "#8c7077", background: "var(--cream,#fff5f8)", padding: "3px 8px", borderRadius: 999 }}>{row.reason}{row.personalized ? " · for you" : ""}</em></div></div>
+    </article>
+  );
+}
+
 function SalonCard({ item, navigate, stats }: { item: CatalogItem; navigate: (path: string) => void; stats?: SalonStats }) {
   const rating = stats ? Number(stats.rating_avg) : Number(item.rating_average);
   const reviews = stats ? Number(stats.review_count) : Number(item.review_count);
@@ -1280,6 +1291,42 @@ function useNearby(online: boolean, radiusKm?: number) {
     return () => window.clearTimeout(t);
   }, [load, online]);
   return { rows, loading, geoStatus, load };
+}
+
+type RecommendationRow = {
+  id: string; slug: string; name: string; business_category: string | null;
+  area: string | null; city: string | null; rating_avg: number; review_count: number;
+  booking_count: number; starting_price_paise: number | null; cover_image_path: string | null;
+  score: number; reason: string; personalized: boolean;
+};
+
+/**
+ * Recommended — logged-in customers get personalized signals (bookings,
+ * favourites, preferred city/area/category, price band, browsing clicks,
+ * review activity, membership) computed server-side on auth.uid(); guests get
+ * the deterministic fallback (popular + top rated + active offers). Only
+ * published/verified/active salons are ever returned; reasons are public-safe.
+ */
+function useRecommendations(online: boolean, session: Session | null) {
+  const [rows, setRows] = useState<RecommendationRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isPersonalized, setIsPersonalized] = useState(false);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const client = getClient(); if (!client) { setLoading(false); return; }
+      const { data, error } = await client.rpc("marketplace_recommendations", { p_limit: 6 });
+      if (error) throw error;
+      const list = (data ?? []) as RecommendationRow[];
+      setRows(list);
+      setIsPersonalized(list.some((r) => r.personalized));
+    } catch { setRows([]); } finally { setLoading(false); }
+  }, []);
+  useEffect(() => {
+    const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
+    return () => window.clearTimeout(t);
+  }, [load, online, session]);
+  return { rows, loading, isPersonalized, load };
 }
 
 /**
