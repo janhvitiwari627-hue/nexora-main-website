@@ -128,6 +128,9 @@ type MembershipStatus = {
   renewal_price_paise: number | null;
 };
 
+type HomepageSection = { section_key: string; visible: boolean; sort_order: number; title: string | null };
+type RecentlyViewedRow = { id: string; slug: string; name: string; area: string | null; city: string | null; cover_image_path: string | null; viewed_at: string };
+
 const REF_CODE_KEY = "nexora_ref_code";
 
 /**
@@ -517,6 +520,11 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   const { rows: recommendationRows, loading: recommendationsLoading, isPersonalized } = useRecommendations(online, authState.session);
   const { plans: membershipPlans, loading: membershipLoading } = useMembershipPlans(online);
   const { status: membershipStatus } = useMyMembership(online, authState.session);
+  const { visible } = useHomepageSections(online);
+  const { rows: recentlyViewed, consent: rvConsent, consentLoaded, loading: rvLoading, setConsentPref } = useRecentlyViewed(online, authState.session);
+  const [homeQuery, setHomeQuery] = useState("");
+  const [homeLocation, setHomeLocation] = useState("");
+  const isCustomer = authState.session && authState.role === "customer";
   const { categories: adminCategories, loading: categoriesLoading } = useMarketplaceCategories(online);
   const { sponsored, loading: sponsoredLoading } = useSponsored(online);
   const { rows: topRatedRows, loading: topRatedLoading } = useTopRated(online);
@@ -541,7 +549,6 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
     }
     return rows.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")).slice(0, 3);
   }, [items, statsBySalon]);
-  const isCustomer = authState.session && authState.role === "customer";
   const showForYou = isCustomer && ready && (personalized !== null || favorites.length > 0);
 
   return (
@@ -553,8 +560,13 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
           <p>
             Explore published salon websites, compare real services, and manage every appointment through one secure Nexora account. Phase 1 homepage now includes Categories, Top Rated, Trending, Nearby, Recommended, Offers, Slots, Sponsored, Membership, About.
           </p>
-          <div className="button-row">
-            <button className="primary" onClick={() => navigate("/salons")}>Explore salons (Smart Search)</button>
+          <div className="button-row" style={{ flexWrap: "wrap" }}>
+            <input value={homeQuery} onChange={(e) => setHomeQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") navigate(`/salons?q=${encodeURIComponent(homeQuery.trim())}`); }} placeholder="Search salon, service, area…" style={{ minWidth: 220, padding: "10px 14px", borderRadius: 12, border: "1px solid #e8e8e8", fontSize: 14 }} />
+            <button className="primary" onClick={() => navigate(`/salons?q=${encodeURIComponent(homeQuery.trim())}`)}>Search</button>
+            <select value={homeLocation} onChange={(e) => navigate(e.target.value ? `/salons?area=${encodeURIComponent(e.target.value)}` : "/salons")} style={{ padding: "10px 14px", borderRadius: 12, border: "1px solid #e8e8e8", fontSize: 13, maxWidth: 220 }}>
+              <option value="">📍 All Jaipur</option>
+              {JAIPUR_ZONES.map((z) => <optgroup key={z.zone} label={z.zone}>{z.areas.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>)}
+            </select>
             <button className="secondary" onClick={() => navigate("/signup")}>Create account</button>
           </div>
           <div className="trust-row">
@@ -579,37 +591,37 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         <CatalogStrip navigate={navigate} online={online} statsBySalon={statsBySalon} />
       </section>
 
-      {/* Categories */}
-      <section className="section" style={{background:"var(--cream)"}}>
+{visible('category_grid') && (
+<section className="section" style={{background:"var(--cream)"}}>
         <div className="section-heading"><span className="eyebrow">Browse by category</span><h2>Categories</h2><p>Business categories from salons.business_category – smart search filter.</p></div>
         {categoriesLoading ? <div className="loader" /> : adminCategories.length ? <div className="salon-grid">{adminCategories.map((c) => <article key={c.slug} className="role-card" onClick={() => navigate(`/salons?category=${encodeURIComponent(c.name)}`)} style={{ cursor: "pointer" }}><span className="role-icon">{(c.icon && c.icon !== "star") ? c.icon : "🗂"}</span><h3>{c.name}</h3><p>{c.salon_count} salon{c.salon_count === 1 ? "" : "s"} · {c.service_count} services</p></article>)}</div> : <StateCard title="No categories yet" text="Approved categories will appear here when set by the admin panel." />}
         {error && <div className="form-message">{error}</div>}
-      </section>
+      </section>)}
 
-      {/* Top Rated */}
-      <section className="section">
+{visible('top_rated') && (
+<section className="section">
         <div className="section-heading"><span className="eyebrow">Top rated</span><h2>Top Rated Salons</h2><p>Sorted by rating_average desc – highest rated first.</p></div>
         {topRatedLoading ? <SalonSkeletons count={3} /> : topRatedRows.length ? <div className="salon-grid">{topRatedRows.map((r) => <TopRatedCard key={r.id} row={r} navigate={navigate} />)}</div> : <StateCard title="Not enough reviews yet" text="Salons with at least 1 approved review appear here, ranked by a weighted rating." />}
-      </section>
+      </section>)}
 
-      {/* Trending */}
-      <section className="section" style={{background:"var(--cream)"}}>
+{visible('trending') && (
+<section className="section" style={{background:"var(--cream)"}}>
         <div className="section-heading"><span className="eyebrow">Trending</span><h2>Trending Now</h2><p>Sorted by review_count desc – most reviewed.</p></div>
         {trendingLoading ? <SalonSkeletons count={3} /> : trendingRows.length ? <div className="salon-grid">{trendingRows.map((r) => <TrendingCard key={r.id} row={r} navigate={navigate} />)}</div> : <StateCard title="No trending activity yet" text="Salons rise here from recent bookings, views and reviews (time-decayed). Admin overrides can boost any salon." />}
-      </section>
+      </section>)}
 
-      {/* Nearby — browser location (permission only), fallback to Jaipur center */}
-      <section className="section">
+{visible('nearby') && (
+<section className="section">
         <div className="section-heading"><span className="eyebrow">Nearby</span><h2>Salons near you</h2><p>{geoStatus === "granted" ? "Sorted by your location — nothing is stored." : geoStatus === "denied" ? "Location permission denied — showing salons around Jaipur instead." : "Based on Jaipur (allow location to personalise)."}</p></div>
         {nearbyLoading ? <SalonSkeletons count={3} /> : nearbyRows.length ? <div className="salon-grid">{nearbyRows.map((row) => <article key={row.id} className="salon-card"><div className="salon-visual" style={row.cover_image_path?.startsWith("http") ? { backgroundImage: `url("${row.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>{!row.cover_image_path?.startsWith("http") && <span>✦</span>}<em>Verified</em></div><div className="salon-body"><div className="salon-meta"><span>{row.business_category ?? "Salon"}</span><span>📍 {Number(row.distance_km).toFixed(1)} km</span></div><h3>{row.name}</h3><p>{row.area ?? row.city}, {row.city}</p><div className="salon-bottom"><b>From {money(row.starting_price_paise)}</b><button onClick={() => navigate(`/salons/${row.slug}`)}>View salon</button></div></div></article>)}</div> : <StateCard title="No salons nearby yet" text="Salons with location coordinates set by their owner appear here, sorted by distance." />}
         <p className="section-hint" style={{ marginTop: 10 }}><button className="text-button" onClick={() => navigate("/salons")}>Open full search →</button></p>
-      </section>
+      </section>)}
 
-      {/* Recommended */}
-      <section className="section" style={{background:"var(--cream)"}}>
+{visible('recommended') && (
+<section className="section" style={{background:"var(--cream)"}}>
         <div className="section-heading"><span className="eyebrow">Recommended</span><h2>Recommended For You</h2><p>Sorted by rating_average * review_count – recommended ranking.</p></div>
         {recommended.length ? <div className="salon-grid">{recommended.map(item=><SalonCard key={item.id} item={item} navigate={navigate} stats={statsBySalon[item.id]} />)}</div> : <SalonSkeletons count={3} />}
-      </section>
+      </section>)}
 
       {/* Recommended — personalized for logged-in customers; deterministic
           fallback (popular + top rated + active offers) for guests */}
@@ -621,11 +633,11 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         )}
       </section>
 
-      {/* Offers */}
-      <section className="section">
+{visible('offers') && (
+<section className="section">
         <div className="section-heading"><span className="eyebrow">Offers</span><h2>Active Offers</h2><p>From offers table where is_active=true – RLS public read. Shows discount_type, discount_value.</p></div>
         <OffersStrip navigate={navigate} />
-      </section>
+      </section>)}
 
       {/* Partner-approved promotions — only active + approved (published) */}
       <section className="section" style={{ background: "var(--cream)" }}>
@@ -633,14 +645,14 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         <PartnerPromosStrip navigate={navigate} />
       </section>
 
-      {/* Available Slots */}
-      <section className="section" style={{background:"var(--cream)"}}>
+{visible('available_today') && (
+<section className="section" style={{background:"var(--cream)"}}>
         <div className="section-heading"><span className="eyebrow">Slots</span><h2>Open Today</h2><p>Real opening hours from salon_hours (owner managed) with config fallback — no mock slots.</p></div>
         <OpenTodayStrip items={items} navigate={navigate} />
-      </section>
+      </section>)}
 
-      {/* Sponsored — admin-managed, clearly labelled, active + in-window only */}
-      <section className="section">
+{visible('sponsored_shops') && (
+<section className="section">
         <div className="section-heading"><span className="eyebrow">Sponsored</span><h2>Sponsored</h2><p>Admin-approved sponsored content — always labelled, never mixed into organic results without the badge. Expired or paused campaigns hide automatically.</p></div>
         {sponsoredLoading ? <SalonSkeletons count={3} /> : sponsored.shops.length || sponsored.brands.length || sponsored.videos.length ? (
           <>
@@ -655,7 +667,20 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
             )}
           </>
         ) : <StateCard title="No sponsored content yet" text="Admin-approved sponsored shops, brands and videos appear here." />}
-      </section>
+      </section>)}
+
+      {/* Recently viewed — logged-in + consent only */}
+      {visible('recently_viewed') && (isCustomer ? (
+        <section className="section">
+          <div className="section-heading"><span className="eyebrow">Recently viewed</span><h2>Pick up where you left off</h2><p>Salons you viewed recently — shown only with your consent. Nothing is shared.</p></div>
+          {!consentLoaded ? <SalonSkeletons count={3} /> : !rvConsent ? (
+            <StateCard title="Recently viewed is off" text="Turn it on to see the salons you browsed recently — stored only for your own account." action="Enable" onAction={() => void setConsentPref(true)} />
+          ) : rvLoading ? <SalonSkeletons count={3} /> : recentlyViewed.length ? (
+            <div className="salon-grid">{recentlyViewed.map((row) => <article key={row.id} className="salon-card"><div className="salon-visual" style={row.cover_image_path?.startsWith("http") ? { backgroundImage: `url("${row.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>{!row.cover_image_path?.startsWith("http") && <span>✦</span>}<em>Viewed</em></div><div className="salon-body"><div className="salon-meta"><span>Recently viewed</span><span>🕘 {new Date(row.viewed_at).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span></div><h3>{row.name}</h3><p>{row.area ?? row.city}, {row.city}</p><div className="salon-bottom"><button onClick={() => navigate(`/salons/${row.slug}`)}>View again</button></div></div></article>)}</div>
+          ) : <StateCard title="Nothing viewed yet" text="Salons you visit will appear here." />}
+          {rvConsent && <p className="section-hint"><button className="text-button" onClick={() => void setConsentPref(false)}>Disable recently viewed</button></p>}
+        </section>
+      ) : null)}
 
       {/* What customers say — public review content from the Customer PWA */}
       <section className="section">
@@ -670,7 +695,7 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
       </section>
 
       {/* Membership — live plans + current customer status */}
-      <section className="section" style={{ background: "var(--cream)" }}>
+{visible('membership') && (      <section className="section" style={{ background: "var(--cream)" }}>
         <div className="section-heading"><span className="eyebrow">Membership</span><h2>Nexora Membership</h2><p>Admin-managed plans — benefits (discounts and points) are calculated server-side at booking time and can never be changed from the browser.</p></div>
         {membershipLoading ? <SalonSkeletons count={3} /> : membershipPlans.length ? <div className="role-grid">{membershipPlans.map((plan) => (
           <article className="role-card" key={plan.id}>
@@ -691,7 +716,7 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
           </div>
         )}
         {isCustomer && <p className="section-hint"><button className="text-button" onClick={() => navigate(PORTAL_PATHS.customer)}>View your rewards &amp; loyalty points in the Customer app →</button></p>}
-      </section>
+      </section>)}
 
       {/* About */}
       <section className="section">
@@ -1213,6 +1238,76 @@ function usePopularServices(online: boolean) {
     return () => window.clearTimeout(t);
   }, [load, online]);
   return { services, loading, load };
+}
+
+/** Admin-configurable homepage section order + visibility. */
+function useHomepageSections(online: boolean) {
+  const [sections, setSections] = useState<HomepageSection[]>([]);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const t = window.setTimeout(async () => {
+      try {
+        const client = getClient();
+        if (!client) { setReady(true); return; }
+        const { data, error } = await client.rpc("marketplace_homepage_sections");
+        if (error) throw error;
+        if (active) setSections((data ?? []) as HomepageSection[]);
+      } catch { /* default: show everything */ } finally { if (active) setReady(true); }
+    }, 0);
+    return () => { active = false; window.clearTimeout(t); };
+  }, [online]);
+  const visible = (key: string) => {
+    const row = sections.find((s) => s.section_key === key);
+    return row ? row.visible : true;
+  };
+  return { sections, ready, visible };
+}
+
+/** Recently viewed (logged-in + consent only). */
+function useRecentlyViewed(online: boolean, session: Session | null) {
+  const [rows, setRows] = useState<RecentlyViewedRow[]>([]);
+  const [consent, setConsent] = useState(false);
+  const [consentLoaded, setConsentLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const t = window.setTimeout(async () => {
+      try {
+        const client = getClient();
+        if (!client || !session?.user) { setConsentLoaded(true); return; }
+        const { data } = await client.from("profiles").select("allow_recently_viewed").eq("id", session.user.id).maybeSingle();
+        if (active) { setConsent(Boolean((data as { allow_recently_viewed?: boolean } | null)?.allow_recently_viewed)); setConsentLoaded(true); }
+      } catch { if (active) setConsentLoaded(true); }
+    }, 0);
+    return () => { active = false; window.clearTimeout(t); };
+  }, [online, session]);
+
+  const load = useCallback(async () => {
+    const client = getClient();
+    if (!client) { setRows([]); return; }
+    setLoading(true);
+    try {
+      const { data, error } = await client.rpc("my_recently_viewed", { p_limit: 6 });
+      if (error) throw error;
+      setRows((data ?? []) as RecentlyViewedRow[]);
+    } catch { setRows([]); } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    if (!online || !session?.user || !consent) { setRows([]); return; }
+    const t = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(t);
+  }, [online, session, consent, load]);
+
+  const setConsentPref = async (value: boolean) => {
+    const client = getClient();
+    if (!client || !session?.user) return;
+    const { error } = await client.from("profiles").update({ allow_recently_viewed: value }).eq("id", session.user.id);
+    if (!error) { setConsent(value); if (value) void load(); else setRows([]); }
+  };
+  return { rows, consent, consentLoaded, loading, setConsentPref };
 }
 
 /** Membership plans (active only, no payment details). */
