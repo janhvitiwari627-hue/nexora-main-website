@@ -114,6 +114,17 @@ type OfferDetail = {
 };
 type SlotRow = { slot_start: string; slot_end: string; staff_id: string | null; staff_name: string | null };
 
+type MembershipPlan = {
+  id: string; name: string; slug: string; description: string | null;
+  price_paise: number; billing_period: string; benefits: string[];
+  discount_percent: number; reward_points_rate: number;
+};
+type MembershipStatus = {
+  plan_name: string; status: string; starts_at: string | null; expires_at: string | null;
+  discount_percent: number; reward_points_rate: number; benefits: string[];
+  renewal_price_paise: number | null;
+};
+
 const REF_CODE_KEY = "nexora_ref_code";
 
 /**
@@ -501,6 +512,8 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   const { services: popularServices, loading: popularLoading } = usePopularServices(online);
   const { personalized, favorites, ready } = useCustomerSuggestions(online, authState.session, items);
   const { rows: recommendationRows, loading: recommendationsLoading, isPersonalized } = useRecommendations(online, authState.session);
+  const { plans: membershipPlans, loading: membershipLoading } = useMembershipPlans(online);
+  const { status: membershipStatus } = useMyMembership(online, authState.session);
   const { categories: adminCategories, loading: categoriesLoading } = useMarketplaceCategories(online);
   const { sponsored, loading: sponsoredLoading } = useSponsored(online);
   const { rows: topRatedRows, loading: topRatedLoading } = useTopRated(online);
@@ -653,14 +666,27 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         {popularLoading ? <SalonSkeletons count={3} /> : popularServices.length ? <div className="service-grid">{popularServices.map((svc) => <article className="service-card" key={svc.service_id}><div><h3>{svc.service_name}</h3><p>{svc.salon_name}</p><small>{svc.duration_minutes} minutes · {svc.booking_count} bookings</small></div><div><b>{money(svc.price_paise)}</b><button className="text-button" onClick={() => navigate(`/salons/${items.find(i=>i.id===svc.salon_id)?.website.slug ?? ""}`)}>View salon</button></div></article>)}</div> : <StateCard title="No booking activity yet" text="Once customers start booking, the most popular services appear here." />}
       </section>
 
-      {/* Membership */}
-      <section className="section" style={{background:"var(--cream)"}}>
-        <div className="section-heading"><span className="eyebrow">Membership</span><h2>Nexora Membership Tiers</h2><p>Static tier config, future wallet / loyalty integration. Tier benefits increase with bookings.</p></div>
-        <div className="role-grid">
-          <article className="role-card"><span className="role-icon">🥉</span><h3>Bronze</h3><p>0-4 bookings – 0% extra, basic support.</p></article>
-          <article className="role-card"><span className="role-icon">🥈</span><h3>Silver</h3><p>5-14 bookings – 5% reward points bonus, priority slots.</p></article>
-          <article className="role-card"><span className="role-icon">🥇</span><h3>Gold</h3><p>15+ bookings – 10% bonus, free cancellation once, sponsored offers.</p></article>
-        </div>
+      {/* Membership — live plans + current customer status */}
+      <section className="section" style={{ background: "var(--cream)" }}>
+        <div className="section-heading"><span className="eyebrow">Membership</span><h2>Nexora Membership</h2><p>Admin-managed plans — benefits (discounts and points) are calculated server-side at booking time and can never be changed from the browser.</p></div>
+        {membershipLoading ? <SalonSkeletons count={3} /> : membershipPlans.length ? <div className="role-grid">{membershipPlans.map((plan) => (
+          <article className="role-card" key={plan.id}>
+            <span className="role-icon">{plan.slug === "gold" ? "🥇" : plan.slug === "silver" ? "🥈" : "🥉"}</span>
+            <h3>{plan.name}{membershipStatus?.plan_name === plan.name ? " · ✓ your plan" : ""}</h3>
+            <p style={{ fontWeight: 700 }}>{plan.price_paise === 0 ? "Free" : `${money(plan.price_paise)} / ${plan.billing_period}`}</p>
+            <ul style={{ margin: "6px 0 0", paddingLeft: 16, fontSize: 12, lineHeight: 1.7 }}>
+              {(plan.benefits ?? []).map((b, i) => <li key={i}>{b}</li>)}
+              <li>{plan.discount_percent}% off on eligible bookings</li>
+              <li>{plan.reward_points_rate} point{plan.reward_points_rate === 1 ? "" : "s"} per ₹100 spent</li>
+            </ul>
+          </article>
+        ))}</div> : <StateCard title="No membership plans yet" text="Admin-approved membership plans appear here." />}
+        {membershipStatus && (
+          <div style={{ marginTop: 12, padding: "10px 14px", background: "#fff5f8", border: "1px solid #f0d3de", borderRadius: 12, fontSize: 13 }}>
+            <b>Your plan: {membershipStatus.plan_name}</b> · {membershipStatus.discount_percent}% off · {membershipStatus.reward_points_rate} pts/₹100
+            {membershipStatus.expires_at ? <> · renews/expires {new Date(membershipStatus.expires_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</> : ""}
+          </div>
+        )}
         {isCustomer && <p className="section-hint"><button className="text-button" onClick={() => navigate(PORTAL_PATHS.customer)}>View your rewards &amp; loyalty points in the Customer app →</button></p>}
       </section>
 
@@ -1184,6 +1210,46 @@ function usePopularServices(online: boolean) {
     return () => window.clearTimeout(t);
   }, [load, online]);
   return { services, loading, load };
+}
+
+/** Membership plans (active only, no payment details). */
+function useMembershipPlans(online: boolean) {
+  const [plans, setPlans] = useState<MembershipPlan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const client = getClient(); if (!client) return;
+      const { data, error } = await client.rpc("marketplace_membership_plans");
+      if (error) throw error;
+      setPlans((data ?? []) as MembershipPlan[]);
+    } catch { setPlans([]); } finally { setLoading(false); }
+  }, []);
+  useEffect(() => {
+    const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
+    return () => window.clearTimeout(t);
+  }, [load, online]);
+  return { plans, loading };
+}
+
+/** Current customer membership status (own row; server decides eligibility). */
+function useMyMembership(online: boolean, session: Session | null) {
+  const [status, setStatus] = useState<MembershipStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let active = true;
+    const t = window.setTimeout(async () => {
+      try {
+        const client = getClient();
+        if (!client || !session?.user) { setLoading(false); return; }
+        const { data, error } = await client.rpc("my_membership_status");
+        if (error) throw error;
+        if (active) setStatus(((data ?? [])[0] as MembershipStatus) ?? null);
+      } catch { /* no membership */ } finally { if (active) setLoading(false); }
+    }, 0);
+    return () => { active = false; window.clearTimeout(t); };
+  }, [online, session]);
+  return { status, loading };
 }
 
 /** Admin-managed categories (approved + active, admin order). */
