@@ -39,6 +39,25 @@ type Website = {
 };
 type CatalogItem = Salon & { website: Website };
 
+// Live marketplace aggregates (Customer PWA data — security-definer RPCs so
+// anon may read aggregates without exposing private rows).
+type SalonStats = {
+  salon_id: string;
+  rating_avg: number;
+  review_count: number;
+  booking_count: number;
+  recent_reviews: Array<{ author: string; rating: number; comment: string; verified_booking: boolean; created_at: string }>;
+};
+type PopularService = {
+  service_id: string;
+  salon_id: string;
+  salon_name: string;
+  service_name: string;
+  price_paise: number;
+  duration_minutes: number;
+  booking_count: number;
+};
+
 // Marketplace rows — Owner PWA managed data, anon-readable via RLS
 // (verified live: services/staff/offers/salon_hours all 200 for anon).
 type ServiceRow = {
@@ -295,7 +314,7 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
     content = <PortalGateway expectedRole={legacyDashboardRoleFromPath(path) ?? undefined} navigate={navigate} signOut={signOut} />;
   else if (path === "/customer" || path === "/owner" || path === "/growth-partner")
     content = <RoleEntry path={path} navigate={navigate} />;
-  else content = <HomePage navigate={navigate} online={online} />;
+  else content = <HomePage navigate={navigate} online={online} authState={authState} />;
 
   return (
     <div className="site-shell">
@@ -352,14 +371,32 @@ function Header({
   );
 }
 
-function HomePage({ navigate, online }: { navigate: (path: string) => void; online: boolean }) {
+function HomePage({ navigate, online, authState }: { navigate: (path: string) => void; online: boolean; authState: AuthState }) {
   const { items, loading, error } = useCatalog(online);
+  const { statsBySalon } = useMarketplaceStats(online);
+  const { services: popularServices, loading: popularLoading } = usePopularServices(online);
+  const { personalized, favorites, ready } = useCustomerSuggestions(online, authState.session, items);
   const categories = Array.from(new Set(items.map(i=>i.business_category).filter(Boolean))) as string[];
-  const topRated = [...items].sort((a,b)=>Number(b.rating_average)-Number(a.rating_average)).slice(0,3);
-  const trending = [...items].sort((a,b)=>b.review_count - a.review_count).slice(0,3);
+  // Live customer signals: rating avg + review count from customer_reviews,
+  // booking counts from bookings (security-definer aggregates).
+  const ratingOf = (i: CatalogItem) => { const s = statsBySalon[i.id]; return s ? Number(s.rating_avg) : Number(i.rating_average); };
+  const reviewsOf = (i: CatalogItem) => { const s = statsBySalon[i.id]; return s ? Number(s.review_count) : Number(i.review_count); };
+  const bookingsOf = (i: CatalogItem) => { const s = statsBySalon[i.id]; return s ? Number(s.booking_count) : 0; };
+  const topRated = [...items].sort((a,b)=>ratingOf(b)-ratingOf(a) || reviewsOf(b)-reviewsOf(a)).slice(0,3);
+  const trending = [...items].sort((a,b)=>bookingsOf(b)-bookingsOf(a) || reviewsOf(b)-reviewsOf(a)).slice(0,3);
   const nearbyAreas = Array.from(new Set(items.map(i=>i.area).filter(Boolean))) as string[];
-  const recommended = [...items].sort((a,b)=>(Number(b.rating_average)*b.review_count)-(Number(a.rating_average)*a.review_count)).slice(0,3);
-  // Offers and Sponsored placeholders – will be live after offers/sponsored tables populated
+  const recommended = [...items].sort((a,b)=>((ratingOf(b)*reviewsOf(b))+bookingsOf(b))-((ratingOf(a)*reviewsOf(a))+bookingsOf(a))).slice(0,3);
+  // Recent public reviews across the catalog (Customer PWA content).
+  const reviewFeed = useMemo(() => {
+    const rows: Array<SalonStats["recent_reviews"][number] & { salonId: string; salonName: string; salonSlug: string }> = [];
+    for (const item of items) {
+      const s = statsBySalon[item.id];
+      for (const r of s?.recent_reviews ?? []) rows.push({ ...r, salonId: item.id, salonName: item.name, salonSlug: item.website.slug });
+    }
+    return rows.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")).slice(0, 3);
+  }, [items, statsBySalon]);
+  const isCustomer = authState.session && authState.role === "customer";
+  const showForYou = isCustomer && ready && (personalized !== null || favorites.length > 0);
 
   return (
     <main>
@@ -393,7 +430,7 @@ function HomePage({ navigate, online }: { navigate: (path: string) => void; onli
           <h2>Published salons</h2>
           <p>Only owner-approved, active salon websites appear here. Verified=true, is_active=true, is_published=true, deleted_at null.</p>
         </div>
-        <CatalogStrip navigate={navigate} online={online} />
+        <CatalogStrip navigate={navigate} online={online} statsBySalon={statsBySalon} />
       </section>
 
       {/* Categories */}
@@ -406,13 +443,13 @@ function HomePage({ navigate, online }: { navigate: (path: string) => void; onli
       {/* Top Rated */}
       <section className="section">
         <div className="section-heading"><span className="eyebrow">Top rated</span><h2>Top Rated Salons</h2><p>Sorted by rating_average desc – highest rated first.</p></div>
-        {topRated.length ? <div className="salon-grid">{topRated.map(item=><SalonCard key={item.id} item={item} navigate={navigate} />)}</div> : <SalonSkeletons count={3} />}
+        {topRated.length ? <div className="salon-grid">{topRated.map(item=><SalonCard key={item.id} item={item} navigate={navigate} stats={statsBySalon[item.id]} />)}</div> : <SalonSkeletons count={3} />}
       </section>
 
       {/* Trending */}
       <section className="section" style={{background:"var(--cream)"}}>
         <div className="section-heading"><span className="eyebrow">Trending</span><h2>Trending Now</h2><p>Sorted by review_count desc – most reviewed.</p></div>
-        {trending.length ? <div className="salon-grid">{trending.map(item=><SalonCard key={item.id} item={item} navigate={navigate} />)}</div> : <SalonSkeletons count={3} />}
+        {trending.length ? <div className="salon-grid">{trending.map(item=><SalonCard key={item.id} item={item} navigate={navigate} stats={statsBySalon[item.id]} />)}</div> : <SalonSkeletons count={3} />}
       </section>
 
       {/* Nearby */}
@@ -424,8 +461,19 @@ function HomePage({ navigate, online }: { navigate: (path: string) => void; onli
       {/* Recommended */}
       <section className="section" style={{background:"var(--cream)"}}>
         <div className="section-heading"><span className="eyebrow">Recommended</span><h2>Recommended For You</h2><p>Sorted by rating_average * review_count – recommended ranking.</p></div>
-        {recommended.length ? <div className="salon-grid">{recommended.map(item=><SalonCard key={item.id} item={item} navigate={navigate} />)}</div> : <SalonSkeletons count={3} />}
+        {recommended.length ? <div className="salon-grid">{recommended.map(item=><SalonCard key={item.id} item={item} navigate={navigate} stats={statsBySalon[item.id]} />)}</div> : <SalonSkeletons count={3} />}
       </section>
+
+      {/* Customer-specific suggestions (logged-in customers) */}
+      {showForYou && (
+        <section className="section">
+          <div className="section-heading"><span className="eyebrow">For you</span><h2>Recommended For You</h2><p>{favorites.length > 0 ? "Based on your saved favourites and preferences." : "Based on your saved preferences — city, area and category."}</p></div>
+          {personalized && personalized.length > 0 ? <div className="salon-grid">{personalized.map(item=><SalonCard key={item.id} item={item} navigate={navigate} stats={statsBySalon[item.id]} />)}</div> : <StateCard title="Favourites only" text="Salons you favourited in the Customer app will appear here." />}
+          {favorites.length > 0 && (
+            <p className="section-hint"><button className="text-button" onClick={() => navigate(PORTAL_PATHS.customer)}>Open your favourites in the Customer app →</button></p>
+          )}
+        </section>
+      )}
 
       {/* Offers */}
       <section className="section">
@@ -449,6 +497,18 @@ function HomePage({ navigate, online }: { navigate: (path: string) => void; onli
         </div>
       </section>
 
+      {/* What customers say — public review content from the Customer PWA */}
+      <section className="section">
+        <div className="section-heading"><span className="eyebrow">Reviews</span><h2>What customers say</h2><p>Real reviews left by customers after their visits — public, verified bookings marked.</p></div>
+        {reviewFeed.length ? <div className="service-grid">{reviewFeed.map((r, i) => <article className="service-card" key={i}><div><h3>{r.salonName}</h3><p>“{r.comment}”</p><small>★ {Number(r.rating).toFixed(1)} · {r.author}{r.verified_booking ? " · ✓ verified booking" : ""}</small></div><button className="text-button" onClick={() => navigate(`/salons/${r.salonSlug}`)}>View salon</button></article>)}</div> : <StateCard title="No reviews yet" text="Reviews customers leave in the Customer PWA appear here once published." />}
+      </section>
+
+      {/* Popular services — most-booked services across the catalog */}
+      <section className="section" style={{ background: "var(--cream)" }}>
+        <div className="section-heading"><span className="eyebrow">Popular services</span><h2>Most Booked Services</h2><p>Services customers book the most — live from booking activity.</p></div>
+        {popularLoading ? <SalonSkeletons count={3} /> : popularServices.length ? <div className="service-grid">{popularServices.map((svc) => <article className="service-card" key={svc.service_id}><div><h3>{svc.service_name}</h3><p>{svc.salon_name}</p><small>{svc.duration_minutes} minutes · {svc.booking_count} bookings</small></div><div><b>{money(svc.price_paise)}</b><button className="text-button" onClick={() => navigate(`/salons/${items.find(i=>i.id===svc.salon_id)?.website.slug ?? ""}`)}>View salon</button></div></article>)}</div> : <StateCard title="No booking activity yet" text="Once customers start booking, the most popular services appear here." />}
+      </section>
+
       {/* Membership */}
       <section className="section" style={{background:"var(--cream)"}}>
         <div className="section-heading"><span className="eyebrow">Membership</span><h2>Nexora Membership Tiers</h2><p>Static tier config, future wallet / loyalty integration. Tier benefits increase with bookings.</p></div>
@@ -457,6 +517,7 @@ function HomePage({ navigate, online }: { navigate: (path: string) => void; onli
           <article className="role-card"><span className="role-icon">🥈</span><h3>Silver</h3><p>5-14 bookings – 5% reward points bonus, priority slots.</p></article>
           <article className="role-card"><span className="role-icon">🥇</span><h3>Gold</h3><p>15+ bookings – 10% bonus, free cancellation once, sponsored offers.</p></article>
         </div>
+        {isCustomer && <p className="section-hint"><button className="text-button" onClick={() => navigate(PORTAL_PATHS.customer)}>View your rewards &amp; loyalty points in the Customer app →</button></p>}
       </section>
 
       {/* About */}
@@ -540,12 +601,12 @@ function useCatalog(online: boolean) {
   return { items, loading, error, load };
 }
 
-function CatalogStrip({ navigate, online }: { navigate: (path: string) => void; online: boolean }) {
+function CatalogStrip({ navigate, online, statsBySalon }: { navigate: (path: string) => void; online: boolean; statsBySalon?: Record<string, SalonStats> }) {
   const { items, loading, error, load } = useCatalog(online);
   if (loading) return <SalonSkeletons count={3} />;
   if (error) return <StateCard title="Could not load salons" text={error} action="Retry" onAction={load} />;
   if (!items.length) return <StateCard title="No published salons yet" text="Owner-approved salon websites will appear here when published." />;
-  return <div className="salon-grid">{items.slice(0, 3).map((item) => <SalonCard key={item.id} item={item} navigate={navigate} />)}</div>;
+  return <div className="salon-grid">{items.slice(0, 3).map((item) => <SalonCard key={item.id} item={item} navigate={navigate} stats={statsBySalon?.[item.id]} />)}</div>;
 }
 
 /**
@@ -730,17 +791,116 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
 
 
 
-function SalonCard({ item, navigate }: { item: CatalogItem; navigate: (path: string) => void }) {
+function SalonCard({ item, navigate, stats }: { item: CatalogItem; navigate: (path: string) => void; stats?: SalonStats }) {
+  const rating = stats ? Number(stats.rating_avg) : Number(item.rating_average);
+  const reviews = stats ? Number(stats.review_count) : Number(item.review_count);
+  const bookings = stats ? Number(stats.booking_count) : 0;
   return (
     <article className="salon-card">
       <div className="salon-visual" style={item.cover_image_path?.startsWith("http") ? { backgroundImage: `url("${item.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>{!item.cover_image_path?.startsWith("http") && <span>✦</span>}<em>Verified</em></div>
-      <div className="salon-body"><div className="salon-meta"><span>{item.business_category ?? "Salon"}</span><span>★ {Number(item.rating_average).toFixed(1)} ({item.review_count})</span></div>
+      <div className="salon-body"><div className="salon-meta"><span>{item.business_category ?? "Salon"}</span><span>★ {rating.toFixed(1)} ({reviews}){bookings > 0 ? ` · ${bookings} bookings` : ""}</span></div>
       <h3>{item.name}</h3><p>{item.area ?? item.city}, {item.city}</p><div className="salon-bottom"><b>From {money(item.starting_price_paise)}</b><button onClick={() => navigate(`/salons/${item.website.slug}`)}>View salon</button></div></div>
     </article>
   );
 }
 
 const EMPTY_MARKETPLACE: SalonMarketplace = { services: [], staff: [], hours: [], offers: [] };
+
+/** Live aggregates per published salon (rating, reviews, bookings). */
+function useMarketplaceStats(online: boolean) {
+  const [statsBySalon, setStatsBySalon] = useState<Record<string, SalonStats>>({});
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const client = getClient();
+      if (!client) return;
+      const { data, error } = await client.rpc("marketplace_salon_stats");
+      if (error) throw error;
+      const map: Record<string, SalonStats> = {};
+      for (const row of (data ?? []) as SalonStats[]) map[row.salon_id] = row;
+      setStatsBySalon(map);
+    } catch { /* sections fall back to salons columns */ } finally { setLoading(false); }
+  }, []);
+  useEffect(() => {
+    const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
+    return () => window.clearTimeout(t);
+  }, [load, online]);
+  return { statsBySalon, loading, load };
+}
+
+/** Most-booked services across the published catalog. */
+function usePopularServices(online: boolean) {
+  const [services, setServices] = useState<PopularService[]>([]);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const client = getClient();
+      if (!client) return;
+      const { data, error } = await client.rpc("marketplace_popular_services", { p_limit: 6 });
+      if (error) throw error;
+      setServices((data ?? []) as PopularService[]);
+    } catch { setServices([]); } finally { setLoading(false); }
+  }, []);
+  useEffect(() => {
+    const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
+    return () => window.clearTimeout(t);
+  }, [load, online]);
+  return { services, loading, load };
+}
+
+/**
+ * Customer-specific suggestions when a customer is logged in: rank the
+ * catalog by the customer's preferred city/area/gender (profiles row — own
+ * read allowed by RLS) and surface favorited salons (favorite_salons —
+ * own rows). Falls back to a generic top-rated list for everyone else.
+ */
+function useCustomerSuggestions(online: boolean, session: Session | null, items: CatalogItem[]) {
+  const [prefs, setPrefs] = useState<{ city: string | null; area: string | null; gender: string | null }>({ city: null, area: null, gender: null });
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const client = getClient();
+        if (!client || !session?.user) { setReady(true); return; }
+        const [profileRes, favRes] = await Promise.all([
+          client.from("profiles").select("preferred_city,preferred_area,gender").eq("id", session.user.id).maybeSingle(),
+          client.from("favorite_salons").select("salon_id").eq("user_id", session.user.id),
+        ]);
+        if (!active) return;
+        const row = profileRes.data as { preferred_city?: string | null; preferred_area?: string | null; gender?: string | null } | null;
+        setPrefs({ city: row?.preferred_city ?? null, area: row?.preferred_area ?? null, gender: row?.gender ?? null });
+        setFavorites(((favRes.data ?? []) as { salon_id: string }[]).map((f) => f.salon_id).filter((id) => items.some((i) => i.id === id)));
+      } catch { /* suggestions are best-effort */ } finally { if (active) setReady(true); }
+    };
+    const t = window.setTimeout(() => { if (online) void load(); else setReady(true); }, 0);
+    return () => { active = false; window.clearTimeout(t); };
+  }, [online, session, items]);
+
+  const personalized = useMemo(() => {
+    const hasPrefs = Boolean(prefs.city || prefs.area || prefs.gender);
+    if (!hasPrefs && !favorites.length) return null;
+    const score = (item: CatalogItem) => {
+      let s = 0;
+      if (prefs.city && item.city?.toLowerCase() === prefs.city.toLowerCase()) s += 3;
+      if (prefs.area && item.area?.toLowerCase() === prefs.area.toLowerCase()) s += 2;
+      const category = (item.business_category ?? "").toLowerCase();
+      if (prefs.gender === "female" && /women|female|ladies/.test(category)) s += 2;
+      if (prefs.gender === "male" && /men|male|gents/.test(category)) s += 2;
+      if (favorites.includes(item.id)) s += 4;
+      return s;
+    };
+    const scored = items.map((i) => ({ item: i, score: score(i) })).filter((x) => x.score > 0);
+    if (!scored.length) return null;
+    return scored.sort((a, b) => b.score - a.score).slice(0, 3).map((x) => x.item);
+  }, [prefs, favorites, items]);
+
+  return { prefs, favorites, personalized, ready };
+}
 
 /**
  * Fetches Owner PWA managed data for one salon from the canonical DB tables
@@ -806,6 +966,7 @@ function SalonPage({
 }) {
   const [item, setItem] = useState<CatalogItem | null>(null);
   const [marketplace, setMarketplace] = useState<SalonMarketplace>(EMPTY_MARKETPLACE);
+  const [stats, setStats] = useState<SalonStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const load = useCallback(async () => {
@@ -818,6 +979,9 @@ function SalonPage({
       if (client) {
         // Canonical owner data from DB tables; page still renders on failure.
         setMarketplace(await fetchSalonMarketplace(client, match.id));
+        const { data: statsRows } = await client.rpc("marketplace_salon_stats");
+        const row = ((statsRows ?? []) as SalonStats[]).find((r) => r.salon_id === match.id);
+        if (row) setStats(row);
       }
     } catch (cause) { setError(friendlyError(cause)); } finally { setLoading(false); }
   }, [slug]);
@@ -858,7 +1022,7 @@ function SalonPage({
   };
   return (
     <main>
-      <section className="store-hero"><span className="verified-pill">✓ Nexora verified</span><h1>{item.name}</h1><p>{String(config.profile?.description ?? item.description ?? "Professional beauty services.")}</p><div className="store-facts"><span>★ {Number(item.rating_average).toFixed(1)} rating</span><span>⌖ {item.area ?? item.city}, {item.city}</span>{openingSummary.length > 0 && <span>🕑 {formatHours(String(openingSummary[0].opens_at ?? ""), String(openingSummary[0].closes_at ?? ""))}</span>}</div><button className="primary" onClick={() => navigate(customerPortalBookingPath())}>Continue in Customer app</button><p className="preview-note">Bookings, payment, history, reviews, and support are owned by the Customer PWA.</p></section>
+      <section className="store-hero"><span className="verified-pill">✓ Nexora verified</span><h1>{item.name}</h1><p>{String(config.profile?.description ?? item.description ?? "Professional beauty services.")}</p><div className="store-facts"><span>★ {stats ? Number(stats.rating_avg).toFixed(1) : Number(item.rating_average).toFixed(1)} ({stats ? Number(stats.review_count) : Number(item.review_count)} reviews)</span><span>⌖ {item.area ?? item.city}, {item.city}</span>{stats && Number(stats.booking_count) > 0 && <span>📅 {Number(stats.booking_count)} bookings</span>}{openingSummary.length > 0 && <span>🕑 {formatHours(String(openingSummary[0].opens_at ?? ""), String(openingSummary[0].closes_at ?? ""))}</span>}</div><button className="primary" onClick={() => navigate(customerPortalBookingPath())}>Continue in Customer app</button><p className="preview-note">Bookings, payment, history, reviews, and support are owned by the Customer PWA.</p></section>
       <section className="section"><div className="section-heading"><span className="eyebrow">Services</span><h2>Choose your service</h2><p>Browse the owner-published catalog, then continue to the Customer PWA to book.</p></div>
       {!services.length ? <StateCard title="No services published yet" text="This salon has not published bookable services." /> : <div className="service-grid">{services.map((service, index) => <article className="service-card" key={String(service.id ?? index)}><div><h3>{String(service.name ?? "Salon service")}</h3><p>{String(service.description ?? "Professional salon service")}</p><small>{Number(service.duration_minutes ?? 0)} minutes</small></div><div><b>{money(Number(service.price_paise ?? 0))}</b><button className="text-button" onClick={() => navigate(customerPortalBookingPath(String(service.name ?? "")))}>Book in Customer app</button></div></article>)}</div>}</section>
       {staffRows.length > 0 && (
@@ -877,6 +1041,12 @@ function SalonPage({
         <section className="section" style={{ background: "var(--cream)" }}>
           <div className="section-heading"><span className="eyebrow">Offers</span><h2>Active offers</h2><p>Live offers published by the shop owner.</p></div>
           <div className="service-grid">{marketplace.offers.map((offer) => <article className="service-card" key={offer.id}><div><h3>{offer.name ?? "Offer"}</h3><p>{offer.description || ""}</p><small>{offer.discount_type === "percent" ? `${offer.discount_value}% off` : offer.discount_value != null ? `${money(offer.discount_value * 100)} off` : "Limited offer"}</small></div><button className="text-button" onClick={() => navigate(customerPortalBookingPath())}>Book now</button></article>)}</div>
+        </section>
+      )}
+      {(stats?.recent_reviews?.length ?? 0) > 0 && (
+        <section className="section">
+          <div className="section-heading"><span className="eyebrow">Reviews</span><h2>Customer reviews</h2><p>What customers say about {item.name} — {Number(stats?.review_count ?? 0)} review{Number(stats?.review_count ?? 0) === 1 ? "" : "s"}.</p></div>
+          <div className="service-grid">{(stats?.recent_reviews ?? []).slice(0, 4).map((r, i) => <article className="service-card" key={i}><div><h3>★ {Number(r.rating).toFixed(1)}</h3><p>“{r.comment}”</p><small>{r.author}{r.verified_booking ? " · ✓ verified booking" : ""}</small></div></article>)}</div>
         </section>
       )}
       <section className="section salon-info"><div><span className="eyebrow">Visit</span><h2>{item.name}</h2><p>{item.address}, {item.city}</p></div><button className="secondary" onClick={() => navigate("/cancellation-refund")}>Cancellation policy</button></section>
