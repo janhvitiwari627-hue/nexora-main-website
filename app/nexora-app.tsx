@@ -29,6 +29,8 @@ type Salon = {
   is_active?: boolean;
   accepts_online_bookings?: boolean;
   organization_id?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 type Website = {
   salon_id: string;
@@ -428,8 +430,8 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
 
   let content: React.ReactNode;
   if (path === "/salons") content = <CatalogPage navigate={navigate} online={online} />;
-  else if (path.startsWith("/salons/"))
-    content = <SalonPage slug={safeDecodePathSegment(path.slice(8))} navigate={navigate} online={online} refCode={refCode} />;
+  else if (path.startsWith("/salons/") || path.startsWith("/shops/"))
+    content = <SalonPage slug={safeDecodePathSegment(path.slice(path.startsWith("/salons/") ? 8 : 7))} navigate={navigate} online={online} refCode={refCode} />;
   else if (path.startsWith("/booking/"))
     content = <LegacyBookingHandoff slug={safeDecodePathSegment(path.slice(9))} navigate={navigate} />;
   else if (path === "/terms") content = <LegalPage type="terms" />;
@@ -739,7 +741,7 @@ async function fetchCatalog(): Promise<CatalogItem[]> {
   if (!websites?.length) return [];
   const { data: salons, error: salonError } = await client
     .from("salons")
-    .select("id,slug,name,description,address,area,city,rating_average,review_count,starting_price_paise,cover_image_path,business_category")
+    .select("id,slug,name,description,address,area,city,rating_average,review_count,starting_price_paise,cover_image_path,business_category,latitude,longitude")
     .in("id", websites.map((item) => item.salon_id))
     .eq("verified", true)
     .eq("is_active", true)
@@ -1535,6 +1537,15 @@ async function fetchSalonMarketplace(client: SupabaseClient, salonId: string): P
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+/** Approximate distance for display only — never stored. */
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function formatHours(opens: string | null, closes: string | null): string {
   if (!opens || !closes) return "Hours unavailable";
   const to12 = (v: string) => {
@@ -1565,6 +1576,14 @@ function SalonPage({
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [distanceKm, setDistanceKm] = useState<number | null>(null);
+  const [geoDenied, setGeoDenied] = useState(false);
+  const [isFavourite, setIsFavourite] = useState(false);
+  const [nextSlot, setNextSlot] = useState<string | null>(null);
+  const [similar, setSimilar] = useState<NearbyRow[]>([]);
+  const [shareToast, setShareToast] = useState(false);
+  const [mySession, setMySession] = useState<Session | null>(null);
+  const { plans: membershipPlans } = useMembershipPlans(online);
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
@@ -1580,6 +1599,30 @@ function SalonPage({
         if (row) setStats(row);
         // Trending signal: record an authenticated view (deduped per day).
         recordMarketplaceEvent(match.id, "view");
+        // Next available slot + similar shops (public RPCs).
+        const { data: ns } = await client.rpc("marketplace_next_slots", { p_salon_ids: [match.id], p_tz: "Asia/Kolkata" });
+        if ((ns ?? [])[0]?.next_slot_iso) setNextSlot(String((ns ?? [])[0].next_slot_iso));
+        const { data: sim } = await client.rpc("marketplace_nearby", { p_area: match.area ?? null, p_city: match.city ?? null, p_limit: 3 });
+        setSimilar(((sim ?? []) as NearbyRow[]).filter((r) => r.id !== match.id));
+        // Distance when the browser grants location (never stored).
+        if ("geolocation" in navigator) {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              if (match.latitude != null && match.longitude != null) {
+                setDistanceKm(haversineKm(pos.coords.latitude, pos.coords.longitude, Number(match.latitude), Number(match.longitude)));
+              }
+            },
+            () => setGeoDenied(true),
+            { enableHighAccuracy: false, timeout: 6000, maximumAge: 600000 }
+          );
+        } else setGeoDenied(true);
+        // Favourite state (own rows only).
+        const { data: { session } } = await client.auth.getSession();
+        setMySession(session);
+        if (session?.user) {
+          const { data: fav } = await client.from("favorite_salons").select("salon_id").eq("user_id", session.user.id).eq("salon_id", match.id).maybeSingle();
+          setIsFavourite(Boolean(fav));
+        }
       }
     } catch (cause) { setError(friendlyError(cause)); } finally { setLoading(false); }
   }, [slug]);
@@ -1592,7 +1635,7 @@ function SalonPage({
   }, [load, online]);
   if (loading) return <main className="section page-top"><SalonSkeletons count={1} /></main>;
   if (error || !item) return <main className="center-page"><StateCard title="Salon unavailable" text={error || "This website is not public."} action="Back to salons" onAction={() => navigate("/salons")} /></main>;
-  const config = item.website.config as { profile?: Record<string, unknown>; services?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>> };
+  const config = item.website.config as { profile?: Record<string, unknown>; services?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; photos?: unknown; amenities?: unknown };
   const configServices = Array.isArray(config.services) ? config.services : [];
   const configStaff = Array.isArray(config.staff) ? config.staff : [];
   const configProfile = (config.profile ?? {}) as { opening_hours?: { opens?: string; closes?: string } };
@@ -1650,9 +1693,54 @@ function SalonPage({
     if (refCode) params.set("ref", refCode);
     return `/app/customer/?${params.toString()}`;
   };
+  // open/closed NOW (Asia/Kolkata)
+  const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  const nowMinutes = nowIST.getHours() * 60 + nowIST.getMinutes();
+  const todayHours = openingSummary.find((h) => h.day_of_week === nowIST.getDay()) ?? openingSummary[0];
+  const isOpenNow = Boolean(todayHours && !todayHours.is_closed && todayHours.opens_at && todayHours.closes_at
+    && nowMinutes >= Number(String(todayHours.opens_at).split(":").slice(0, 2).join(".").split(".")[0]) * 60 + Number(String(todayHours.opens_at).split(":")[1] ?? 0)
+    && nowMinutes <= Number(String(todayHours.closes_at).split(":")[0]) * 60 + Number(String(todayHours.closes_at).split(":")[1] ?? 0));
+  const gallery = (() => {
+    const photos = Array.isArray(config.photos) ? (config.photos as string[]).filter((p) => typeof p === "string" && p.startsWith("http")) : [];
+    const cover = item.cover_image_path?.startsWith("http") ? item.cover_image_path : null;
+    return Array.from(new Set([...(cover ? [cover] : []), ...photos])).slice(0, 6);
+  })();
+  const amenities = Array.isArray(config.amenities) ? (config.amenities as string[]).filter((a) => typeof a === "string") : [];
+  const maxMemberDiscount = membershipPlans.length ? Math.max(...membershipPlans.map((p) => Number(p.discount_percent))) : 0;
+  const mapsUrl = item.latitude != null && item.longitude != null
+    ? `https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${item.address} ${item.city}`)}`;
+  const toggleFavourite = async () => {
+    const client = getClient();
+    if (!client || !mySession?.user) { navigate("/login"); return; }
+    if (isFavourite) {
+      const { error } = await client.from("favorite_salons").delete().eq("user_id", mySession.user.id).eq("salon_id", item.id);
+      if (!error) setIsFavourite(false);
+    } else {
+      const { error } = await client.from("favorite_salons").insert({ user_id: mySession.user.id, salon_id: item.id });
+      if (!error) setIsFavourite(true);
+    }
+  };
+  const handleShare = async () => {
+    const url = window.location.href;
+    try {
+      if (navigator.share) { await navigator.share({ title: item.name, text: `Check out ${item.name} on Nexora`, url }); return; }
+      await navigator.clipboard.writeText(url);
+      setShareToast(true); window.setTimeout(() => setShareToast(false), 2000);
+    } catch { /* user cancelled */ }
+  };
   return (
     <main>
-      <section className="store-hero"><span className="verified-pill">✓ Nexora verified</span>{stats?.partner_onboarded && <span className="verified-pill" style={{ background: "var(--cream)", color: "var(--primary)" }}>✦ Partner onboarded</span>}<h1>{item.name}</h1><p>{String(config.profile?.description ?? item.description ?? "Professional beauty services.")}</p><div className="store-facts"><span>★ {stats ? Number(stats.rating_avg).toFixed(1) : Number(item.rating_average).toFixed(1)} ({stats ? Number(stats.review_count) : Number(item.review_count)} reviews)</span><span>⌖ {item.area ?? item.city}, {item.city}</span>{stats && Number(stats.booking_count) > 0 && <span>📅 {Number(stats.booking_count)} bookings</span>}{openingSummary.length > 0 && <span>🕑 {formatHours(String(openingSummary[0].opens_at ?? ""), String(openingSummary[0].closes_at ?? ""))}</span>}</div><button className="primary" onClick={() => navigate(customerPortalBookingPath())}>Continue in Customer app</button><p className="preview-note">Bookings, payment, history, reviews, and support are owned by the Customer PWA.</p></section>
+      <section className="store-hero" style={item.cover_image_path?.startsWith("http") ? { backgroundImage: `linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.55)), url("${item.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center", color: "#fff" } : undefined}><span className="verified-pill">✓ Nexora verified</span>{stats?.partner_onboarded && <span className="verified-pill" style={{ background: "var(--cream)", color: "var(--primary)" }}>✦ Partner onboarded</span>}<h1>{item.name}</h1><p style={{ color: "inherit" }}>{String(config.profile?.description ?? item.description ?? "Professional beauty services.")}</p><div className="store-facts"><span>★ {stats ? Number(stats.rating_avg).toFixed(1) : Number(item.rating_average).toFixed(1)} ({stats ? Number(stats.review_count) : Number(item.review_count)} reviews)</span><span>⌖ {item.area ?? item.city}, {item.city}</span>{stats && Number(stats.booking_count) > 0 && <span>📅 {Number(stats.booking_count)} bookings</span>}{openingSummary.length > 0 && <span>🕑 {formatHours(String(openingSummary[0].opens_at ?? ""), String(openingSummary[0].closes_at ?? ""))}</span>}{todayHours && <span>{isOpenNow ? "🟢 Open now" : "🔴 Closed now"}</span>}{distanceKm != null && <span>📍 {distanceKm.toFixed(1)} km away</span>}{geoDenied && <span>📍 location off</span>}{nextSlot && <span>⏭ next {new Date(nextSlot).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}</span>}</div>
+      <div className="button-row" style={{ marginTop: 8 }}><button className="primary" onClick={() => navigate(customerPortalBookingPath())}>Book Now</button><button className="secondary" onClick={() => window.open(mapsUrl, "_blank", "noopener")}>Directions ↗</button><button className="secondary" onClick={() => void toggleFavourite()}>{isFavourite ? "♥ Saved" : "♡ Save"}</button><button className="secondary" onClick={() => void handleShare()}>Share</button></div>
+      {shareToast && <p style={{ fontSize: 12, color: "#2e7d32" }}>Link copied to clipboard.</p>}
+      {maxMemberDiscount > 0 && <p className="preview-note" style={{ color: "inherit" }}>✦ Nexora members save up to {maxMemberDiscount}% here — benefits apply automatically at booking.</p>}
+      <p className="preview-note" style={{ color: "inherit" }}>Bookings, payment, history, reviews, and support are owned by the Customer PWA.</p></section>
+      {gallery.length > 1 && (
+        <section className="section" style={{ paddingTop: 8 }}>
+          <div className="button-row" style={{ overflowX: "auto", flexWrap: "nowrap" }}>{gallery.map((g, i) => <img key={i} src={g} alt={`${item.name} photo ${i + 1}`} style={{ width: 160, height: 100, objectFit: "cover", borderRadius: 12, flexShrink: 0 }} loading="lazy" referrerPolicy="no-referrer" />)}</div>
+        </section>
+      )}
       <section className="section"><div className="section-heading"><span className="eyebrow">Services</span><h2>Choose your service</h2><p>Browse the owner-published catalog, then continue to the Customer PWA to book.</p></div>
       {!services.length ? <StateCard title="No services published yet" text="This salon has not published bookable services." /> : <div className="service-grid">{services.map((service, index) => <article className="service-card" key={String(service.id ?? index)}><div><h3>{String(service.name ?? "Salon service")}</h3><p>{String(service.description ?? "Professional salon service")}</p><small>{Number(service.duration_minutes ?? 0)} minutes</small></div><div><b>{money(Number(service.price_paise ?? 0))}</b><button className="text-button" onClick={() => navigate(customerPortalBookingPath(String(service.name ?? "")))}>Book in Customer app</button></div></article>)}</div>}</section>
       {staffRows.length > 0 && (
