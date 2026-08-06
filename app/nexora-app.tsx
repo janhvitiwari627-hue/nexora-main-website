@@ -71,6 +71,36 @@ type PartnerPromo = {
   valid_until: string | null;
 };
 
+// Admin Panel / advanced discovery — public-safe RPC result types.
+type SearchRow = {
+  id: string; slug: string; name: string; business_category: string | null;
+  area: string | null; city: string | null; landmark: string | null; gender_category: string | null;
+  rating_avg: number; review_count: number; booking_count: number;
+  starting_price_paise: number | null; cover_image_path: string | null;
+  has_offer: boolean; score: number;
+};
+type Suggestion = { name: string; slug: string; kind: "salon" | "category" };
+type CategoryRow = { name: string; slug: string; icon: string; sort_order: number; salon_count: number; service_count: number };
+type SponsoredData = {
+  shops: Array<{ id: string; title: string; badge: string | null; image: string | null; salon_name: string; salon_slug: string; area: string | null; city: string | null; rating: number; review_count: number }>;
+  brands: Array<{ id: string; name: string; tagline: string | null; logo: string | null; website: string | null }>;
+  videos: Array<{ id: string; title: string; video_url: string | null; thumbnail: string | null }>;
+};
+type TopRatedRow = {
+  id: string; slug: string; name: string; business_category: string | null;
+  area: string | null; city: string | null; rating_avg: number; review_count: number;
+  booking_count: number; starting_price_paise: number | null; cover_image_path: string | null;
+  bayesian_rating: number;
+};
+type TrendingRow = {
+  id: string; slug: string; name: string; business_category: string | null;
+  area: string | null; city: string | null; rating_avg: number; review_count: number;
+  booking_count: number; trending_score: number; overridden: boolean;
+};
+
+const RECENT_SEARCHES_KEY = "nexora_recent_searches";
+const SEARCH_DEBOUNCE_MS = 300;
+
 const REF_CODE_KEY = "nexora_ref_code";
 
 /**
@@ -457,6 +487,10 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   const { statsBySalon } = useMarketplaceStats(online);
   const { services: popularServices, loading: popularLoading } = usePopularServices(online);
   const { personalized, favorites, ready } = useCustomerSuggestions(online, authState.session, items);
+  const { categories: adminCategories, loading: categoriesLoading } = useMarketplaceCategories(online);
+  const { sponsored, loading: sponsoredLoading } = useSponsored(online);
+  const { rows: topRatedRows, loading: topRatedLoading } = useTopRated(online);
+  const { rows: trendingRows, loading: trendingLoading } = useTrending(online);
   const categories = Array.from(new Set(items.map(i=>i.business_category).filter(Boolean))) as string[];
   // Live customer signals: rating avg + review count from customer_reviews,
   // booking counts from bookings (security-definer aggregates).
@@ -517,20 +551,20 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
       {/* Categories */}
       <section className="section" style={{background:"var(--cream)"}}>
         <div className="section-heading"><span className="eyebrow">Browse by category</span><h2>Categories</h2><p>Business categories from salons.business_category – smart search filter.</p></div>
-        {loading ? <div className="loader" /> : categories.length ? <div className="button-row">{categories.map(c=><button key={c} className="secondary" onClick={()=>navigate(`/salons?category=${encodeURIComponent(c)}`)}>{c}</button>)}</div> : <StateCard title="No categories yet" text="Categories appear when salons have business_category set." />}
+        {categoriesLoading ? <div className="loader" /> : adminCategories.length ? <div className="salon-grid">{adminCategories.map((c) => <article key={c.slug} className="role-card" onClick={() => navigate(`/salons?category=${encodeURIComponent(c.name)}`)} style={{ cursor: "pointer" }}><span className="role-icon">{(c.icon && c.icon !== "star") ? c.icon : "🗂"}</span><h3>{c.name}</h3><p>{c.salon_count} salon{c.salon_count === 1 ? "" : "s"} · {c.service_count} services</p></article>)}</div> : <StateCard title="No categories yet" text="Approved categories will appear here when set by the admin panel." />}
         {error && <div className="form-message">{error}</div>}
       </section>
 
       {/* Top Rated */}
       <section className="section">
         <div className="section-heading"><span className="eyebrow">Top rated</span><h2>Top Rated Salons</h2><p>Sorted by rating_average desc – highest rated first.</p></div>
-        {topRated.length ? <div className="salon-grid">{topRated.map(item=><SalonCard key={item.id} item={item} navigate={navigate} stats={statsBySalon[item.id]} />)}</div> : <SalonSkeletons count={3} />}
+        {topRatedLoading ? <SalonSkeletons count={3} /> : topRatedRows.length ? <div className="salon-grid">{topRatedRows.map((r) => <TopRatedCard key={r.id} row={r} navigate={navigate} />)}</div> : <StateCard title="Not enough reviews yet" text="Salons with at least 1 approved review appear here, ranked by a weighted rating." />}
       </section>
 
       {/* Trending */}
       <section className="section" style={{background:"var(--cream)"}}>
         <div className="section-heading"><span className="eyebrow">Trending</span><h2>Trending Now</h2><p>Sorted by review_count desc – most reviewed.</p></div>
-        {trending.length ? <div className="salon-grid">{trending.map(item=><SalonCard key={item.id} item={item} navigate={navigate} stats={statsBySalon[item.id]} />)}</div> : <SalonSkeletons count={3} />}
+        {trendingLoading ? <SalonSkeletons count={3} /> : trendingRows.length ? <div className="salon-grid">{trendingRows.map((r) => <TrendingCard key={r.id} row={r} navigate={navigate} />)}</div> : <StateCard title="No trending activity yet" text="Salons rise here from recent bookings, views and reviews (time-decayed). Admin overrides can boost any salon." />}
       </section>
 
       {/* Nearby */}
@@ -847,69 +881,210 @@ function OffersStrip({ navigate }: { navigate: (path: string) => void }) {
 
 
 function CatalogPage({ navigate, online }: { navigate: (path: string) => void; online: boolean }) {
-  const { items, loading, error, load } = useCatalog(online);
+  // ---- Smart search state ----
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
-  const [ratingFilter, setRatingFilter] = useState<number>(0);
-  const [sortBy, setSortBy] = useState<"rating"|"reviews"|"price"|"name">("rating");
+  const [priceFilter, setPriceFilter] = useState("");
+  const [ratingFilter, setRatingFilter] = useState(0);
+  const [offerOnly, setOfferOnly] = useState(false);
+  const [genderFilter, setGenderFilter] = useState("");
+  const [sortBy, setSortBy] = useState<"relevance"|"rating"|"popularity"|"price"|"availability"|"name">("relevance");
+  const [results, setResults] = useState<SearchRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState("");
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) ?? "[]"); } catch { return []; }
+  });
 
-  // Parse query params for smart search deep links ?category=&area=&city=
+  const searchParams = useMemo(() => ({ q: debouncedQuery, category: categoryFilter, location: locationFilter, price: priceFilter, rating: ratingFilter, offer: offerOnly, gender: genderFilter, sort: sortBy }), [debouncedQuery, categoryFilter, locationFilter, priceFilter, ratingFilter, offerOnly, genderFilter, sortBy]);
+
+  const runSearch = useCallback(async (offset: number) => {
+    const client = getClient();
+    if (!client) return { rows: [] as SearchRow[] };
+    const { data, error: rpcError } = await client.rpc("marketplace_search", {
+      p_query: searchParams.q,
+      p_category: searchParams.category || null,
+      p_area: searchParams.location || null,
+      p_min_rating: searchParams.rating,
+      p_max_price_paise: searchParams.price ? Number(searchParams.price) : null,
+      p_has_offer: searchParams.offer,
+      p_gender: searchParams.gender || null,
+      p_sort: searchParams.sort,
+      p_limit: 12,
+      p_offset: offset,
+    });
+    if (rpcError) throw rpcError;
+    return { rows: (data ?? []) as SearchRow[] };
+  }, [searchParams]);
+
+  // URL sync (q, category, area) — reflect search in the URL.
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const params = new URLSearchParams(window.location.search);
-      const cat = params.get("category"); if (cat) setCategoryFilter(cat);
-      // ?area= deep links (homepage "Nearby Areas") map to a Jaipur locality.
-      const area = params.get("area"); if (area) setLocationFilter(area);
-      const city = params.get("city"); if (city && !area) setLocationFilter(city);
-    }, 0);
-    return () => window.clearTimeout(timer);
+    const url = new URL(window.location.href);
+    if (debouncedQuery) url.searchParams.set("q", debouncedQuery); else url.searchParams.delete("q");
+    if (categoryFilter) url.searchParams.set("category", categoryFilter); else url.searchParams.delete("category");
+    if (locationFilter) url.searchParams.set("area", locationFilter); else url.searchParams.delete("area");
+    window.history.replaceState({}, "", url.toString());
+  }, [debouncedQuery, categoryFilter, locationFilter]);
+
+  // Deep links + initial params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("q"); if (q) { setQuery(q); setDebouncedQuery(q); }
+    const cat = params.get("category"); if (cat) setCategoryFilter(cat);
+    const area = params.get("area"); if (area) setLocationFilter(area);
+    const city = params.get("city"); if (city && !area) setLocationFilter(city);
   }, []);
 
-  const categories = useMemo(() => {
-    const dynamic = Array.from(new Set(items.map(i=>i.business_category).filter(Boolean))) as string[];
-    return Array.from(new Set([...CANONICAL_CATEGORIES, ...dynamic]));
-  }, [items]);
+  // Debounced search + suggestions
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedQuery(query.trim()), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+  }, [query]);
+  useEffect(() => {
+    if (!online) { setLoading(false); setError("You are offline. Reconnect to search salons."); return; }
+    let active = true;
+    setLoading(true); setError("");
+    const t = window.setTimeout(async () => {
+      try {
+        const client = getClient(); if (!client) { setLoading(false); return; }
+        const { rows } = await runSearch(0);
+        if (!active) return;
+        setResults(rows); setLoading(false);
+        if (debouncedQuery) {
+          const { data } = await client.rpc("marketplace_search_suggestions", { p_query: debouncedQuery, p_limit: 6 });
+          if (active) setSuggestions((data ?? []) as Suggestion[]);
+        } else setSuggestions([]);
+      } catch (cause) { if (active) { setError(friendlyError(cause)); setLoading(false); } }
+    }, 0);
+    return () => { active = false; window.clearTimeout(t); };
+  }, [runSearch, debouncedQuery, online]);
 
-  const filtered = useMemo(() => {
-    let list = items.filter(item => {
-      const hay = `${item.name} ${item.area} ${item.city} ${item.business_category}`.toLowerCase();
-      const q = query.toLowerCase();
-      const matchQuery = !q || hay.includes(q);
-      const matchCat = !categoryFilter || (item.business_category ?? "").toLowerCase() === categoryFilter.toLowerCase();
-      const matchLocation =
-        !locationFilter ||
-        (item.area ?? "").toLowerCase() === locationFilter.toLowerCase() ||
-        (item.city ?? "").toLowerCase() === locationFilter.toLowerCase();
-      const matchRating = !ratingFilter || Number(item.rating_average) >= ratingFilter;
-      return matchQuery && matchCat && matchLocation && matchRating;
+  const loadMore = async () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const { rows } = await runSearch(results.length);
+      setResults((prev) => [...prev, ...rows]);
+    } catch (cause) { setError(friendlyError(cause)); }
+    finally { setLoadingMore(false); }
+  };
+
+  const saveRecentSearch = (term: string) => {
+    const v = term.trim();
+    if (!v) return;
+    setRecentSearches((prev) => {
+      const next = [v, ...prev.filter((x) => x.toLowerCase() !== v.toLowerCase())].slice(0, 6);
+      try { localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
+      return next;
     });
-    if (sortBy==="rating") list = [...list].sort((a,b)=>Number(b.rating_average)-Number(a.rating_average));
-    else if (sortBy==="reviews") list = [...list].sort((a,b)=>b.review_count - a.review_count);
-    else if (sortBy==="price") list = [...list].sort((a,b)=>Number(a.starting_price_paise||0)-Number(b.starting_price_paise||0));
-    else if (sortBy==="name") list = [...list].sort((a,b)=>a.name.localeCompare(b.name));
-    return list;
-  }, [items, query, categoryFilter, locationFilter, ratingFilter, sortBy]);
+  };
+
+  const categories = useMemo(() => {
+    const dynamic = Array.from(new Set(results.map(i=>i.business_category).filter(Boolean))) as string[];
+    return Array.from(new Set([...CANONICAL_CATEGORIES, ...dynamic]));
+  }, [results]);
+
+  const priceOptions = [
+    { value: "", label: "Any price" },
+    { value: "50000", label: "Under ₹500" },
+    { value: "100000", label: "Under ₹1,000" },
+    { value: "200000", label: "Under ₹2,000" },
+  ];
 
   return (
     <main className="section page-top">
       <div className="section-heading">
-        <div><span className="eyebrow">Nexora marketplace – Smart Search</span><h1>Find your salon</h1><p>Every listing below is active, verified, and owner-published. Smart search: text (name/area/category), category filter, location filter (Jaipur zones &amp; localities), rating filter, sorting by rating/reviews/price/name. Owner-published data appears here via verified=true, is_active=true, is_published=true.</p></div>
+        <div><span className="eyebrow">Nexora marketplace – Smart Search</span><h1>Find your salon</h1><p>Search salons by name, service, category, city, area or landmark. Typo-tolerant, live results — only owner-approved, published salons.</p></div>
       </div>
-      <div style={{display:"grid", gap:12, gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))", marginBottom:20}}>
-        <label className="search" style={{minWidth:"auto"}}><span>⌕</span><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Search salon, area or city (smart)" /></label>
-        <label>Category<select value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}><option value="">All categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select></label>
-        <label>Location<select value={locationFilter} onChange={e=>setLocationFilter(e.target.value)}><option value="">All Jaipur</option>{JAIPUR_ZONES.map((z)=><optgroup key={z.zone} label={z.zone}>{z.areas.map((a)=><option key={a} value={a}>{a}</option>)}</optgroup>)}</select></label>
-        <label>Min rating<select value={ratingFilter} onChange={e=>setRatingFilter(Number(e.target.value))}><option value={0}>Any rating</option><option value={4}>4+ ★</option><option value={4.5}>4.5+ ★</option></select></label>
-        <label>Sort by<select value={sortBy} onChange={e=>setSortBy(e.target.value as "rating"|"reviews"|"price"|"name")}><option value="rating">Top Rated</option><option value="reviews">Trending (reviews)</option><option value="price">Price low-high</option><option value="name">Name A-Z</option></select></label>
+
+      {/* Search box + suggestions */}
+      <div style={{ position: "relative", marginBottom: 14 }}>
+        <label className="search" style={{ minWidth: "auto" }}><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} onFocus={() => setShowSuggestions(true)} onBlur={() => window.setTimeout(() => setShowSuggestions(false), 150)} onKeyDown={(e) => { if (e.key === "Enter") { saveRecentSearch(query); setDebouncedQuery(query.trim()); } }} placeholder="Search salon, service, area, landmark…" /></label>
+        {showSuggestions && (suggestions.length > 0 || (query.trim().length === 0 && recentSearches.length > 0)) && (
+          <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#fff", border: "1px solid #e8e8e8", borderRadius: 14, boxShadow: "0 12px 32px rgba(0,0,0,.12)", zIndex: 40, maxHeight: 320, overflowY: "auto" }}>
+            {query.trim().length === 0 && recentSearches.length > 0 && (
+              <div style={{ padding: "8px 12px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#8c7077", textTransform: "uppercase", marginBottom: 4 }}>Recent searches</div>
+                {recentSearches.map((r) => <button key={r} className="text-button" style={{ display: "block", padding: "6px 4px", fontSize: 13 }} onClick={() => { setQuery(r); setDebouncedQuery(r); saveRecentSearch(r); }}>🕘 {r}</button>)}
+              </div>
+            )}
+            {suggestions.map((sg) => (
+              <button key={sg.kind + sg.slug} className="text-button" style={{ display: "flex", gap: 8, width: "100%", textAlign: "left", padding: "10px 14px", fontSize: 13, borderBottom: "1px solid #f0e6ea" }}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  if (sg.kind === "category") { setCategoryFilter(sg.name); setQuery(""); }
+                  else { setQuery(sg.name); setDebouncedQuery(sg.name); }
+                  saveRecentSearch(sg.name);
+                  setShowSuggestions(false);
+                }}>
+                <span>{sg.kind === "category" ? "🗂" : "🏬"}</span><span><strong>{sg.name}</strong> <em style={{ fontSize: 10, color: "#8c7077" }}>{sg.kind}</em></span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-      <div className="trust-row" style={{marginBottom:16}}><span>✓ Smart: name+area+city+category</span><span>✓ Filter: category, city, rating</span><span>✓ Sort: rating, reviews, price</span><span>✓ RLS: only published</span></div>
-      {loading ? <SalonSkeletons count={6} /> : error ? <StateCard title="Could not load salons" text={error} action="Retry" onAction={load} /> : !filtered.length ? <StateCard title={items.length ? "No matching salon" : "No published salons yet"} text={items.length ? "Try another salon name, area, city, category or rating." : "Draft and unpublished websites are kept private. Owner publish via Proposals tab → appears here."} /> : <div className="salon-grid">{filtered.map((item) => <SalonCard key={item.id} item={item} navigate={navigate} />)}</div>}
+
+      {/* Filters + sort */}
+      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", marginBottom: 14 }}>
+        <label>Category<select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}><option value="">All categories</option>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</select></label>
+        <label>Location<select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}><option value="">All Jaipur</option>{JAIPUR_ZONES.map((z) => <optgroup key={z.zone} label={z.zone}>{z.areas.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>)}</select></label>
+        <label>Price<select value={priceFilter} onChange={(e) => setPriceFilter(e.target.value)}>{priceOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
+        <label>Min rating<select value={ratingFilter} onChange={(e) => setRatingFilter(Number(e.target.value))}><option value={0}>Any rating</option><option value={4}>4+ ★</option><option value={4.5}>4.5+ ★</option></select></label>
+        <label>Audience<select value={genderFilter} onChange={(e) => setGenderFilter(e.target.value)}><option value="">Any</option><option value="female">Women</option><option value="male">Men</option><option value="unisex">Unisex</option></select></label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, paddingTop: 6 }}><input type="checkbox" checked={offerOnly} onChange={(e) => setOfferOnly(e.target.checked)} /> Offers only</label>
+        <label>Sort by<select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}><option value="relevance">Relevance</option><option value="rating">Rating</option><option value="popularity">Popularity</option><option value="price">Price low-high</option><option value="availability">Availability</option><option value="name">Name A-Z</option></select></label>
+      </div>
+
+      {/* States */}
+      {loading ? <SalonSkeletons count={6} /> : error ? <StateCard title="Could not search salons" text={error} action="Retry" onAction={() => { setLoading(true); void runSearch(0).then(({ rows }) => setResults(rows)).finally(() => setLoading(false)); }} /> : !results.length ? <StateCard title={query || categoryFilter || locationFilter ? "No matching salon" : "No published salons yet"} text={query || categoryFilter || locationFilter ? "Try another name, area, category or clear some filters." : "Owner-approved salon websites will appear here when published."} /> : (
+        <>
+          <p style={{ fontSize: 12, color: "#8c7077", margin: "0 0 12px" }}>{results.length} result{results.length === 1 ? "" : "s"}{query ? ` for “${query}”` : ""}{categoryFilter ? ` · ${categoryFilter}` : ""}{locationFilter ? ` · ${locationFilter}` : ""}</p>
+          <div className="salon-grid">{results.map((item) => <SearchSalonCard key={item.id} row={item} navigate={navigate} />)}</div>
+          {results.length >= 12 && (
+            <div style={{ textAlign: "center", marginTop: 20 }}>
+              <button className="secondary" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Loading…" : "Load more salons"}</button>
+            </div>
+          )}
+        </>
+      )}
     </main>
   );
 }
 
+function SearchSalonCard({ row, navigate }: { row: SearchRow; navigate: (path: string) => void }) {
+  return (
+    <article className="salon-card">
+      <div className="salon-visual" style={row.cover_image_path?.startsWith("http") ? { backgroundImage: `url("${row.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>{!row.cover_image_path?.startsWith("http") && <span>✦</span>}<em>Verified</em>{row.has_offer && <em style={{ right: 8, background: "#e6007e" }}>OFFER</em>}</div>
+      <div className="salon-body"><div className="salon-meta"><span>{row.business_category ?? "Salon"}</span><span>★ {Number(row.rating_avg).toFixed(1)} ({row.review_count}) · {row.booking_count} bookings</span></div>
+      <h3>{row.name}</h3><p>{row.area ?? row.city}, {row.city}{row.landmark ? ` · ${row.landmark}` : ""}</p><div className="salon-bottom"><b>From {money(row.starting_price_paise)}</b><button onClick={() => navigate(`/salons/${row.slug}`)}>View salon</button></div></div>
+    </article>
+  );
+}
 
+function TopRatedCard({ row, navigate }: { row: TopRatedRow; navigate: (path: string) => void }) {
+  return (
+    <article className="salon-card">
+      <div className="salon-visual" style={row.cover_image_path?.startsWith("http") ? { backgroundImage: `url("${row.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>{!row.cover_image_path?.startsWith("http") && <span>✦</span>}<em>Verified</em></div>
+      <div className="salon-body"><div className="salon-meta"><span>{row.business_category ?? "Salon"}</span><span>★ {Number(row.bayesian_rating).toFixed(1)} ({row.review_count} reviews)</span></div>
+      <h3>{row.name}</h3><p>{row.area ?? row.city}, {row.city}</p><div className="salon-bottom"><b>From {money(row.starting_price_paise)}</b><button onClick={() => navigate(`/salons/${row.slug}`)}>View salon</button></div></div>
+    </article>
+  );
+}
+
+function TrendingCard({ row, navigate }: { row: TrendingRow; navigate: (path: string) => void }) {
+  return (
+    <article className="salon-card">
+      <div className="salon-visual"><span>🔥</span><em>{row.overridden ? "ADMIN FEATURED" : "TRENDING"}</em></div>
+      <div className="salon-body"><div className="salon-meta"><span>{row.business_category ?? "Salon"}</span><span>★ {Number(row.rating_avg).toFixed(1)} ({row.review_count})</span></div>
+      <h3>{row.name}</h3><p>{row.area ?? row.city}, {row.city} · {row.booking_count} recent bookings</p><div className="salon-bottom"><button onClick={() => navigate(`/salons/${row.slug}`)}>View salon</button></div></div>
+    </article>
+  );
+}
 
 function SalonCard({ item, navigate, stats }: { item: CatalogItem; navigate: (path: string) => void; stats?: SalonStats }) {
   const rating = stats ? Number(stats.rating_avg) : Number(item.rating_average);
@@ -924,9 +1099,10 @@ function SalonCard({ item, navigate, stats }: { item: CatalogItem; navigate: (pa
   );
 }
 
+
 const EMPTY_MARKETPLACE: SalonMarketplace = { services: [], staff: [], hours: [], offers: [] };
 
-/** Live aggregates per published salon (rating, reviews, bookings). */
+
 function useMarketplaceStats(online: boolean) {
   const [statsBySalon, setStatsBySalon] = useState<Record<string, SalonStats>>({});
   const [loading, setLoading] = useState(true);
@@ -968,6 +1144,93 @@ function usePopularServices(online: boolean) {
     return () => window.clearTimeout(t);
   }, [load, online]);
   return { services, loading, load };
+}
+
+/** Admin-managed categories (approved + active, admin order). */
+function useMarketplaceCategories(online: boolean) {
+  const [categories, setCategories] = useState<CategoryRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const client = getClient(); if (!client) return;
+      const { data, error } = await client.rpc("marketplace_categories");
+      if (error) throw error;
+      setCategories((data ?? []) as CategoryRow[]);
+    } catch { setCategories([]); } finally { setLoading(false); }
+  }, []);
+  useEffect(() => {
+    const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
+    return () => window.clearTimeout(t);
+  }, [load, online]);
+  return { categories, loading, load };
+}
+
+/** Admin-sponsored shops/brands/videos (active + in window, published salons). */
+function useSponsored(online: boolean) {
+  const [sponsored, setSponsored] = useState<SponsoredData>({ shops: [], brands: [], videos: [] });
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const client = getClient(); if (!client) return;
+      const { data, error } = await client.rpc("marketplace_sponsored");
+      if (error) throw error;
+      setSponsored((data ?? { shops: [], brands: [], videos: [] }) as SponsoredData);
+    } catch { /* keep empty */ } finally { setLoading(false); }
+  }, []);
+  useEffect(() => {
+    const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
+    return () => window.clearTimeout(t);
+  }, [load, online]);
+  return { sponsored, loading, load };
+}
+
+/** Top rated — Bayesian weighted rating, min-review threshold. */
+function useTopRated(online: boolean) {
+  const [rows, setRows] = useState<TopRatedRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const client = getClient(); if (!client) return;
+      const { data, error } = await client.rpc("marketplace_top_rated", { p_min_reviews: 1, p_limit: 6 });
+      if (error) throw error;
+      setRows((data ?? []) as TopRatedRow[]);
+    } catch { setRows([]); } finally { setLoading(false); }
+  }, []);
+  useEffect(() => {
+    const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
+    return () => window.clearTimeout(t);
+  }, [load, online]);
+  return { rows, loading, load };
+}
+
+/** Trending — time-decayed score (bookings/events/reviews) + admin overrides. */
+function useTrending(online: boolean) {
+  const [rows, setRows] = useState<TrendingRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const client = getClient(); if (!client) return;
+      const { data, error } = await client.rpc("marketplace_trending", { p_limit: 6 });
+      if (error) throw error;
+      setRows((data ?? []) as TrendingRow[]);
+    } catch { setRows([]); } finally { setLoading(false); }
+  }, []);
+  useEffect(() => {
+    const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
+    return () => window.clearTimeout(t);
+  }, [load, online]);
+  return { rows, loading, load };
+}
+
+/** Record public-marketplace interaction events (auth required, deduped server-side). */
+function recordMarketplaceEvent(salonId: string, eventType: "view" | "search_click") {
+  const client = getClient();
+  if (!client) return;
+  void client.rpc("record_marketplace_event", { p_salon_id: salonId, p_event_type: eventType }).then(() => {});
 }
 
 /**
@@ -1104,6 +1367,8 @@ function SalonPage({
         const { data: statsRows } = await client.rpc("marketplace_salon_stats");
         const row = ((statsRows ?? []) as SalonStats[]).find((r) => r.salon_id === match.id);
         if (row) setStats(row);
+        // Trending signal: record an authenticated view (deduped per day).
+        recordMarketplaceEvent(match.id, "view");
       }
     } catch (cause) { setError(friendlyError(cause)); } finally { setLoading(false); }
   }, [slug]);
