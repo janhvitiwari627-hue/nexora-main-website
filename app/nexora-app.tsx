@@ -31,6 +31,7 @@ type Salon = {
   organization_id?: string | null;
   latitude?: number | null;
   longitude?: number | null;
+  phone?: string | null;
 };
 type Website = {
   salon_id: string;
@@ -741,7 +742,7 @@ async function fetchCatalog(): Promise<CatalogItem[]> {
   if (!websites?.length) return [];
   const { data: salons, error: salonError } = await client
     .from("salons")
-    .select("id,slug,name,description,address,area,city,rating_average,review_count,starting_price_paise,cover_image_path,business_category,latitude,longitude")
+    .select("id,slug,name,description,address,area,city,rating_average,review_count,starting_price_paise,cover_image_path,business_category,latitude,longitude,phone")
     .in("id", websites.map((item) => item.salon_id))
     .eq("verified", true)
     .eq("is_active", true)
@@ -1749,6 +1750,12 @@ function SalonPage({
           <div className="role-grid">{staffRows.map((staff) => <article className="role-card" key={staff.id || staff.name}><span className="role-icon">✦</span><h3>{staff.name}</h3><p>{staff.role}{staff.specialty ? ` · ${staff.specialty}` : ""}</p></article>)}</div>
         </section>
       )}
+      {amenities.length > 0 && (
+        <section className="section">
+          <div className="section-heading"><span className="eyebrow">Amenities</span><h2>What you get</h2><p>Facilities and comforts offered by the shop.</p></div>
+          <div className="button-row">{amenities.map((a) => <span key={a} className="secondary compact" style={{ padding: "6px 12px", fontSize: 12 }}>✓ {a}</span>)}</div>
+        </section>
+      )}
       {openingSummary.length > 0 && (
         <section className="section">
           <div className="section-heading"><span className="eyebrow">Opening hours</span><h2>When to visit</h2><p>Weekly opening hours set by the shop owner.</p></div>
@@ -1780,7 +1787,13 @@ function SalonPage({
           <div className="service-grid">{(stats?.recent_reviews ?? []).slice(0, 4).map((r, i) => <article className="service-card" key={i}><div><h3>★ {Number(r.rating).toFixed(1)}</h3><p>“{r.comment}”</p><small>{r.author}{r.verified_booking ? " · ✓ verified booking" : ""}</small></div></article>)}</div>
         </section>
       )}
-      <section className="section salon-info"><div><span className="eyebrow">Visit</span><h2>{item.name}</h2><p>{item.address}, {item.city}</p></div><button className="secondary" onClick={() => navigate("/cancellation-refund")}>Cancellation policy</button></section>
+      {similar.length > 0 && (
+        <section className="section">
+          <div className="section-heading"><span className="eyebrow">You may also like</span><h2>Similar salons nearby</h2><p>Other published salons in the same area or city.</p></div>
+          <div className="salon-grid">{similar.map((row) => <article key={row.id} className="salon-card"><div className="salon-visual" style={row.cover_image_path?.startsWith("http") ? { backgroundImage: `url("${row.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>{!row.cover_image_path?.startsWith("http") && <span>✦</span>}<em>Verified</em></div><div className="salon-body"><div className="salon-meta"><span>{row.business_category ?? "Salon"}</span><span>📍 {Number(row.distance_km).toFixed(1)} km</span></div><h3>{row.name}</h3><p>{row.area ?? row.city}, {row.city}</p><div className="salon-bottom"><b>From {money(row.starting_price_paise)}</b><button onClick={() => { window.scrollTo({ top: 0 }); navigate(`/salons/${row.slug}`); }}>View salon</button></div></div></article>)}</div>
+        </section>
+      )}
+      <section className="section salon-info"><div><span className="eyebrow">Visit</span><h2>{item.name}</h2><p>{item.address}, {item.city}{item.area ? ` · ${item.area}` : ""}</p>{item.phone && <p>📞 {item.phone}</p>}</div><div className="button-row"><button className="secondary" onClick={() => window.open(mapsUrl, "_blank", "noopener")}>Get directions ↗</button><button className="secondary" onClick={() => navigate("/cancellation-refund")}>Cancellation policy</button></div></section>
     </main>
   );
 }
