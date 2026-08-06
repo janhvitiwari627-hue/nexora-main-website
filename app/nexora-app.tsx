@@ -38,6 +38,45 @@ type Website = {
   published_at: string | null;
 };
 type CatalogItem = Salon & { website: Website };
+
+// Marketplace rows — Owner PWA managed data, anon-readable via RLS
+// (verified live: services/staff/offers/salon_hours all 200 for anon).
+type ServiceRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  duration_minutes: number | null;
+  price_paise: number | null;
+  image_path: string | null;
+};
+type StaffRow = {
+  id: string;
+  name: string;
+  role: string | null;
+  specialty: string | null;
+  avatar_path: string | null;
+};
+type HoursRow = {
+  day_of_week: number;
+  opens_at: string | null;
+  closes_at: string | null;
+  is_closed: boolean;
+};
+type OfferRow = {
+  id: string;
+  salon_id: string;
+  name: string | null;
+  description: string | null;
+  discount_type: string | null;
+  discount_value: number | null;
+  valid_until: string | null;
+};
+type SalonMarketplace = {
+  services: ServiceRow[];
+  staff: StaffRow[];
+  hours: HoursRow[];
+  offers: OfferRow[];
+};
 type AuthState = {
   loading: boolean;
   session: Session | null;
@@ -396,8 +435,8 @@ function HomePage({ navigate, online }: { navigate: (path: string) => void; onli
 
       {/* Available Slots */}
       <section className="section" style={{background:"var(--cream)"}}>
-        <div className="section-heading"><span className="eyebrow">Slots</span><h2>Available Slots Today</h2><p>Derived from salon_hours / opening hours – client-derived grid, no mock slots, real opening hours.</p></div>
-        <StateCard title="Slots are live" text="Slots are generated from real opening hours (salon_hours table or config.profile.opening_hours). Booking page shows date/time picker with future validation." />
+        <div className="section-heading"><span className="eyebrow">Slots</span><h2>Open Today</h2><p>Real opening hours from salon_hours (owner managed) with config fallback — no mock slots.</p></div>
+        <OpenTodayStrip items={items} navigate={navigate} />
       </section>
 
       {/* Sponsored Shops / Brands / Videos */}
@@ -509,35 +548,126 @@ function CatalogStrip({ navigate, online }: { navigate: (path: string) => void; 
   return <div className="salon-grid">{items.slice(0, 3).map((item) => <SalonCard key={item.id} item={item} navigate={navigate} />)}</div>;
 }
 
+/**
+ * "Open Today" strip — real opening hours for the published catalog.
+ * Source of truth: salon_hours table (owner managed); falls back to the
+ * website config opening_hours (proposal payload) when the table is empty.
+ * Shows the earliest opening salon first; never fabricates slots.
+ */
+function OpenTodayStrip({ items, navigate }: { items: CatalogItem[]; navigate: (path: string) => void }) {
+  const [todayRows, setTodayRows] = useState<Record<string, { opens: string | null; closes: string | null; closed: boolean }>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const client = getClient();
+        if (!client || !items.length) { setLoading(false); return; }
+        const today = new Date().getDay(); // JS: 0=Sunday — same as Postgres day_of_week
+        const { data } = await client
+          .from("salon_hours")
+          .select("salon_id,day_of_week,opens_at,closes_at,is_closed")
+          .in("salon_id", items.map((i) => i.id))
+          .eq("day_of_week", today);
+        if (!active) return;
+        const rows = (data ?? []) as (HoursRow & { salon_id: string })[];
+        const map: Record<string, { opens: string | null; closes: string | null; closed: boolean }> = {};
+        for (const row of rows) {
+          map[row.salon_id] = { opens: row.opens_at, closes: row.closes_at, closed: Boolean(row.is_closed) };
+        }
+        // Config fallback for salons with no salon_hours rows yet.
+        for (const item of items) {
+          if (map[item.id]) continue;
+          const cfg = (item.website.config as { profile?: { opening_hours?: { opens?: string; closes?: string } } })?.profile?.opening_hours;
+          if (cfg?.opens) map[item.id] = { opens: cfg.opens, closes: cfg.closes ?? null, closed: false };
+        }
+        setTodayRows(map);
+      } catch { /* degrade to empty */ } finally { if (active) setLoading(false); }
+    };
+    const t = setTimeout(() => void load(), 0);
+    return () => { active = false; clearTimeout(t); };
+  }, [items]);
+
+  if (loading) return <SalonSkeletons count={3} />;
+  const openNow = items.filter((i) => todayRows[i.id] && !todayRows[i.id].closed);
+  if (!openNow.length) return <StateCard title="No opening hours yet" text="Shop owners set weekly hours in the Owner PWA (salon_hours table). They appear here as soon as they are published." />;
+  return (
+    <div className="button-row">
+      {openNow.slice(0, 8).map((item) => (
+        <button key={item.id} className="secondary compact" onClick={() => navigate(`/salons/${item.website.slug}`)}>
+          {item.name} · {formatHours(todayRows[item.id].opens, todayRows[item.id].closes)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 
 type Offer = {
   id: string;
   salon_id: string;
-  title: string | null;
+  name: string | null;
   description: string | null;
   discount_type: string | null;
   discount_value: number | null;
   is_active: boolean;
 };
 
+function OfferCard({ offer, salonName, salonSlug, navigate }: { offer: Offer; salonName: string | null; salonSlug: string | null; navigate: (path: string) => void }) {
+  return (
+    <article className="service-card">
+      <div>
+        <h3>{offer.name ?? "Offer"}</h3>
+        <p>{offer.description || ""}</p>
+        <small>{offer.discount_type === "percent" ? `${offer.discount_value}% off` : offer.discount_value != null ? `${money(offer.discount_value * 100)} off` : "Limited offer"}{salonName ? ` · ${salonName}` : ""}</small>
+      </div>
+      <button className="text-button" onClick={() => navigate(salonSlug ? `/salons/${salonSlug}` : "/salons")}>View salon</button>
+    </article>
+  );
+}
+
 function OffersStrip({ navigate }: { navigate: (path: string) => void }) {
   const [offers, setOffers] = useState<Offer[]>([]);
+  const [salonIndex, setSalonIndex] = useState<Record<string, { name: string; slug: string }>>({});
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    let active=true;
+    let active = true;
     const load = async () => {
       try {
         const client = getClient(); if (!client) { setLoading(false); return; }
-        const { data } = await client.from("offers").select("id,salon_id,title,description,discount_type,discount_value,is_active").eq("is_active", true).limit(6);
-        if (active && data) setOffers(data as Offer[]);
-      } catch {} finally { if (active) setLoading(false); }
+        // Live schema: offers.name (not title). Owner PWA writes name.
+        const { data } = await client.from("offers").select("id,salon_id,name,description,discount_type,discount_value,is_active").eq("is_active", true).limit(12);
+        if (!active || !data) return;
+        const rows = data as Offer[];
+        setOffers(rows);
+        if (rows.length) {
+          // Join salon name + published slug so "View salon" opens the right page.
+          const salonIds = Array.from(new Set(rows.map((o) => o.salon_id)));
+          const [websitesRes, salonsRes] = await Promise.all([
+            client.from("salon_public_websites").select("salon_id,slug").in("salon_id", salonIds).eq("is_published", true),
+            client.from("salons").select("id,name").in("id", salonIds).eq("verified", true).eq("is_active", true),
+          ]);
+          if (active && websitesRes.data && salonsRes.data) {
+            const slugBySalon = new Map((websitesRes.data as { salon_id: string; slug: string }[]).map((w) => [w.salon_id, w.slug]));
+            const nameBySalon = new Map((salonsRes.data as { id: string; name: string }[]).map((s) => [s.id, s.name]));
+            const index: Record<string, { name: string; slug: string }> = {};
+            for (const id of salonIds) {
+              const slug = slugBySalon.get(id);
+              const name = nameBySalon.get(id) ?? null;
+              if (slug) index[id] = { name: name ?? "Salon", slug };
+            }
+            setSalonIndex(index);
+          }
+        }
+      } catch { /* marketplace strip degrades gracefully */ } finally { if (active) setLoading(false); }
     };
-    const t = setTimeout(()=>void load(), 0);
-    return () => { active=false; clearTimeout(t); };
+    const t = setTimeout(() => void load(), 0);
+    return () => { active = false; clearTimeout(t); };
   }, []);
   if (loading) return <SalonSkeletons count={3} />;
-  if (!offers.length) return <StateCard title="No active offers yet" text="Offers from offers table where is_active=true. RLS public read. When shop owners create offers for their salon_id, they appear here." />;
-  return <div className="service-grid">{offers.map((o: Offer)=><div key={o.id} className="service-card"><div><h3>{o.title ?? "Offer"}</h3><p>{o.description||""}</p><small>{o.discount_type} {o.discount_value}</small></div><button className="text-button" onClick={()=>navigate("/salons")}>View salon</button></div>)}</div>;
+  if (!offers.length) return <StateCard title="No active offers yet" text="Offers created by shop owners (offers table, is_active=true) appear here — live public read." />;
+  return <div className="service-grid">{offers.map((o: Offer) => <OfferCard key={o.id} offer={o} salonName={salonIndex[o.salon_id]?.name ?? null} salonSlug={salonIndex[o.salon_id]?.slug ?? null} navigate={navigate} />)}</div>;
 }
 
 
@@ -610,6 +740,61 @@ function SalonCard({ item, navigate }: { item: CatalogItem; navigate: (path: str
   );
 }
 
+const EMPTY_MARKETPLACE: SalonMarketplace = { services: [], staff: [], hours: [], offers: [] };
+
+/**
+ * Fetches Owner PWA managed data for one salon from the canonical DB tables
+ * (services, staff, salon_hours, offers) — all anon-readable via RLS.
+ * Each read is isolated so a missing/empty table never blocks the page.
+ */
+async function fetchSalonMarketplace(client: SupabaseClient, salonId: string): Promise<SalonMarketplace> {
+  const [servicesRes, staffRes, hoursRes, offersRes] = await Promise.all([
+    client
+      .from("services")
+      .select("id,name,description,duration_minutes,price_paise,image_path")
+      .eq("salon_id", salonId)
+      .eq("is_active", true)
+      .eq("is_bookable_online", true)
+      .is("deleted_at", null)
+      .order("name"),
+    client
+      .from("staff")
+      .select("id,name,role,specialty,avatar_path")
+      .eq("salon_id", salonId)
+      .is("deleted_at", null)
+      .order("name"),
+    client
+      .from("salon_hours")
+      .select("day_of_week,opens_at,closes_at,is_closed")
+      .eq("salon_id", salonId)
+      .order("day_of_week"),
+    client
+      .from("offers")
+      .select("id,salon_id,name,description,discount_type,discount_value,valid_until")
+      .eq("salon_id", salonId)
+      .eq("is_active", true),
+  ]);
+  return {
+    services: (servicesRes.data ?? []) as ServiceRow[],
+    staff: (staffRes.data ?? []) as StaffRow[],
+    hours: (hoursRes.data ?? []) as HoursRow[],
+    offers: (offersRes.data ?? []) as OfferRow[],
+  };
+}
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function formatHours(opens: string | null, closes: string | null): string {
+  if (!opens || !closes) return "Hours unavailable";
+  const to12 = (v: string) => {
+    const [h, m] = v.split(":").map(Number);
+    const suffix = h >= 12 ? "PM" : "AM";
+    const hour = h % 12 === 0 ? 12 : h % 12;
+    return `${hour}:${String(m ?? 0).padStart(2, "0")} ${suffix}`;
+  };
+  return `${to12(opens)} – ${to12(closes)}`;
+}
+
 function SalonPage({
   slug,
   navigate,
@@ -620,14 +805,20 @@ function SalonPage({
   online: boolean;
 }) {
   const [item, setItem] = useState<CatalogItem | null>(null);
+  const [marketplace, setMarketplace] = useState<SalonMarketplace>(EMPTY_MARKETPLACE);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
+      const client = getClient();
       const match = (await fetchCatalog()).find((entry) => entry.website.slug === slug);
       if (!match) throw new Error("This salon website is not published or is unavailable.");
       setItem(match);
+      if (client) {
+        // Canonical owner data from DB tables; page still renders on failure.
+        setMarketplace(await fetchSalonMarketplace(client, match.id));
+      }
     } catch (cause) { setError(friendlyError(cause)); } finally { setLoading(false); }
   }, [slug]);
   useEffect(() => {
@@ -639,8 +830,24 @@ function SalonPage({
   }, [load, online]);
   if (loading) return <main className="section page-top"><SalonSkeletons count={1} /></main>;
   if (error || !item) return <main className="center-page"><StateCard title="Salon unavailable" text={error || "This website is not public."} action="Back to salons" onAction={() => navigate("/salons")} /></main>;
-  const config = item.website.config as { profile?: Record<string, unknown>; services?: Array<Record<string, unknown>> };
-  const services = Array.isArray(config.services) ? config.services : [];
+  const config = item.website.config as { profile?: Record<string, unknown>; services?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>> };
+  const configServices = Array.isArray(config.services) ? config.services : [];
+  const configStaff = Array.isArray(config.staff) ? config.staff : [];
+  const configProfile = (config.profile ?? {}) as { opening_hours?: { opens?: string; closes?: string } };
+  // DB is the source of truth; website config is the fallback (owner may
+  // still be publishing via the proposal payload before using the PWA CRUD).
+  const services = marketplace.services.length
+    ? marketplace.services.map((s) => ({ id: s.id, name: s.name, description: s.description ?? "Professional salon service", duration_minutes: s.duration_minutes ?? 0, price_paise: s.price_paise ?? 0 }))
+    : configServices;
+  const staffRows = marketplace.staff.length
+    ? marketplace.staff.map((s) => ({ id: s.id, name: s.name, role: s.role ?? "Stylist", specialty: s.specialty ?? null }))
+    : configStaff.map((s) => ({ id: String(s.id ?? ""), name: String(s.name ?? "Professional"), role: String(s.role ?? "Stylist"), specialty: s.specialty != null ? String(s.specialty) : null }));
+  const configOpening = configProfile.opening_hours;
+  const openingSummary = marketplace.hours.length
+    ? marketplace.hours
+    : configOpening?.opens
+      ? [{ day_of_week: -1, opens_at: configOpening.opens, closes_at: configOpening.closes ?? null, is_closed: false }]
+      : [];
   const customerPortalBookingPath = (serviceName?: string) => {
     const params = new URLSearchParams();
     // Pass only the public salon id and a safe return path; never tokens.
@@ -651,9 +858,27 @@ function SalonPage({
   };
   return (
     <main>
-      <section className="store-hero"><span className="verified-pill">✓ Nexora verified</span><h1>{item.name}</h1><p>{String(config.profile?.description ?? item.description ?? "Professional beauty services.")}</p><div className="store-facts"><span>★ {Number(item.rating_average).toFixed(1)} rating</span><span>⌖ {item.area ?? item.city}, {item.city}</span></div><button className="primary" onClick={() => navigate(customerPortalBookingPath())}>Continue in Customer app</button><p className="preview-note">Bookings, payment, history, reviews, and support are owned by the Customer PWA.</p></section>
+      <section className="store-hero"><span className="verified-pill">✓ Nexora verified</span><h1>{item.name}</h1><p>{String(config.profile?.description ?? item.description ?? "Professional beauty services.")}</p><div className="store-facts"><span>★ {Number(item.rating_average).toFixed(1)} rating</span><span>⌖ {item.area ?? item.city}, {item.city}</span>{openingSummary.length > 0 && <span>🕑 {formatHours(String(openingSummary[0].opens_at ?? ""), String(openingSummary[0].closes_at ?? ""))}</span>}</div><button className="primary" onClick={() => navigate(customerPortalBookingPath())}>Continue in Customer app</button><p className="preview-note">Bookings, payment, history, reviews, and support are owned by the Customer PWA.</p></section>
       <section className="section"><div className="section-heading"><span className="eyebrow">Services</span><h2>Choose your service</h2><p>Browse the owner-published catalog, then continue to the Customer PWA to book.</p></div>
       {!services.length ? <StateCard title="No services published yet" text="This salon has not published bookable services." /> : <div className="service-grid">{services.map((service, index) => <article className="service-card" key={String(service.id ?? index)}><div><h3>{String(service.name ?? "Salon service")}</h3><p>{String(service.description ?? "Professional salon service")}</p><small>{Number(service.duration_minutes ?? 0)} minutes</small></div><div><b>{money(Number(service.price_paise ?? 0))}</b><button className="text-button" onClick={() => navigate(customerPortalBookingPath(String(service.name ?? "")))}>Book in Customer app</button></div></article>)}</div>}</section>
+      {staffRows.length > 0 && (
+        <section className="section" style={{ background: "var(--cream)" }}>
+          <div className="section-heading"><span className="eyebrow">Team</span><h2>Meet the team</h2><p>Staff managed by the shop owner — live from the shared Supabase project.</p></div>
+          <div className="role-grid">{staffRows.map((staff) => <article className="role-card" key={staff.id || staff.name}><span className="role-icon">✦</span><h3>{staff.name}</h3><p>{staff.role}{staff.specialty ? ` · ${staff.specialty}` : ""}</p></article>)}</div>
+        </section>
+      )}
+      {openingSummary.length > 0 && (
+        <section className="section">
+          <div className="section-heading"><span className="eyebrow">Opening hours</span><h2>When to visit</h2><p>Weekly opening hours set by the shop owner.</p></div>
+          <div className="role-grid">{openingSummary.map((hours, index) => <article className="role-card" key={hours.day_of_week === -1 ? "default" : hours.day_of_week}><span className="role-icon">🕑</span><h3>{hours.day_of_week === -1 ? "Open daily" : DAY_NAMES[hours.day_of_week]}</h3><p>{hours.is_closed ? "Closed" : formatHours(hours.opens_at, hours.closes_at)}</p></article>)}</div>
+        </section>
+      )}
+      {marketplace.offers.length > 0 && (
+        <section className="section" style={{ background: "var(--cream)" }}>
+          <div className="section-heading"><span className="eyebrow">Offers</span><h2>Active offers</h2><p>Live offers published by the shop owner.</p></div>
+          <div className="service-grid">{marketplace.offers.map((offer) => <article className="service-card" key={offer.id}><div><h3>{offer.name ?? "Offer"}</h3><p>{offer.description || ""}</p><small>{offer.discount_type === "percent" ? `${offer.discount_value}% off` : offer.discount_value != null ? `${money(offer.discount_value * 100)} off` : "Limited offer"}</small></div><button className="text-button" onClick={() => navigate(customerPortalBookingPath())}>Book now</button></article>)}</div>
+        </section>
+      )}
       <section className="section salon-info"><div><span className="eyebrow">Visit</span><h2>{item.name}</h2><p>{item.address}, {item.city}</p></div><button className="secondary" onClick={() => navigate("/cancellation-refund")}>Cancellation policy</button></section>
     </main>
   );
