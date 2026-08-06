@@ -47,6 +47,7 @@ type SalonStats = {
   review_count: number;
   booking_count: number;
   recent_reviews: Array<{ author: string; rating: number; comment: string; verified_booking: boolean; created_at: string }>;
+  partner_onboarded: boolean;
 };
 type PopularService = {
   service_id: string;
@@ -57,6 +58,57 @@ type PopularService = {
   duration_minutes: number;
   booking_count: number;
 };
+
+type PartnerPromo = {
+  offer_id: string;
+  salon_id: string;
+  salon_name: string;
+  salon_slug: string;
+  offer_name: string;
+  description: string | null;
+  discount_type: string | null;
+  discount_value: number | null;
+  valid_until: string | null;
+};
+
+const REF_CODE_KEY = "nexora_ref_code";
+
+/**
+ * Partner attribution capture: reads ?ref= / ?code= / ?partner= from the URL,
+ * validates it against the shared project (resolve_partner_code RPC — returns
+ * only validity + kind, never partner identity or commissions), and persists
+ * the valid code for the session so it survives navigation and is passed into
+ * sign-up and the booking handoff. Invalid codes are dropped silently.
+ */
+function useReferralCode(online: boolean) {
+  const [refCode, setRefCode] = useState<string>(() => {
+    try { return sessionStorage.getItem(REF_CODE_KEY) ?? ""; } catch { return ""; }
+  });
+
+  useEffect(() => {
+    if (!online) return;
+    let active = true;
+    const capture = async () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const candidate = (params.get("ref") || params.get("code") || params.get("partner") || "").trim();
+        if (!candidate) return;
+        const client = getClient();
+        if (!client) return;
+        const { data } = await client.rpc("resolve_partner_code", { p_code: candidate });
+        const row = (data ?? [])[0] as { valid?: boolean } | undefined;
+        if (active && row?.valid) {
+          setRefCode(candidate.toUpperCase());
+          try { sessionStorage.setItem(REF_CODE_KEY, candidate.toUpperCase()); } catch { /* storage unavailable */ }
+        }
+      } catch { /* attribution capture is best-effort */ }
+    };
+    const t = window.setTimeout(() => void capture(), 0);
+    return () => { active = false; window.clearTimeout(t); };
+  }, [online]);
+
+  return refCode;
+}
 
 // Jaipur localities from Jaipur_Zones_Localities.pdf (5 zones, 124 areas).
 const JAIPUR_ZONES: Array<{ zone: string; areas: string[] }> = [
@@ -231,6 +283,7 @@ function parseSupabaseAuthError(error: unknown): string {
 export function NexoraApp({ initialPath }: { initialPath: string }) {
   const [path, setPath] = useState(initialPath);
   const [online, setOnline] = useState(true);
+  const refCode = useReferralCode(online);
   const [authState, setAuthState] = useState<AuthState>({
     loading: Boolean(supabaseUrl && supabaseKey),
     session: null,
@@ -322,14 +375,14 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   let content: React.ReactNode;
   if (path === "/salons") content = <CatalogPage navigate={navigate} online={online} />;
   else if (path.startsWith("/salons/"))
-    content = <SalonPage slug={safeDecodePathSegment(path.slice(8))} navigate={navigate} online={online} />;
+    content = <SalonPage slug={safeDecodePathSegment(path.slice(8))} navigate={navigate} online={online} refCode={refCode} />;
   else if (path.startsWith("/booking/"))
     content = <LegacyBookingHandoff slug={safeDecodePathSegment(path.slice(9))} navigate={navigate} />;
   else if (path === "/terms") content = <LegalPage type="terms" />;
   else if (path === "/privacy") content = <LegalPage type="privacy" />;
   else if (path === "/cancellation-refund") content = <LegalPage type="refund" />;
   else if (path === "/login" || path === "/signup")
-    content = <AuthPage mode={path === "/login" ? "login" : "signup"} navigate={navigate} />;
+    content = <AuthPage mode={path === "/login" ? "login" : "signup"} navigate={navigate} refCode={refCode} />;
   else if (path === "/forgot-password") content = <ForgotPasswordPage navigate={navigate} />;
   else if (path === "/reset-password") content = <ResetPasswordPage navigate={navigate} />;
   else if (path === "/auth/callback") content = <AuthCallbackPage navigate={navigate} />;
@@ -342,7 +395,7 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
     content = <PortalGateway expectedRole={legacyDashboardRoleFromPath(path) ?? undefined} navigate={navigate} signOut={signOut} />;
   else if (path === "/customer" || path === "/owner" || path === "/growth-partner")
     content = <RoleEntry path={path} navigate={navigate} />;
-  else content = <HomePage navigate={navigate} online={online} authState={authState} />;
+  else content = <HomePage navigate={navigate} online={online} authState={authState} refCode={refCode} />;
 
   return (
     <div className="site-shell">
@@ -399,7 +452,7 @@ function Header({
   );
 }
 
-function HomePage({ navigate, online, authState }: { navigate: (path: string) => void; online: boolean; authState: AuthState }) {
+function HomePage({ navigate, online, authState, refCode }: { navigate: (path: string) => void; online: boolean; authState: AuthState; refCode: string }) {
   const { items, loading, error } = useCatalog(online);
   const { statsBySalon } = useMarketplaceStats(online);
   const { services: popularServices, loading: popularLoading } = usePopularServices(online);
@@ -440,7 +493,7 @@ function HomePage({ navigate, online, authState }: { navigate: (path: string) =>
             <button className="secondary" onClick={() => navigate("/signup")}>Create account</button>
           </div>
           <div className="trust-row">
-            <span>✓ Published salons only</span><span>✓ Secure role access</span><span>✓ Clear payment status</span><span>✓ Phase 1 Connected</span>
+            <span>✓ Published salons only</span><span>✓ Secure role access</span><span>✓ Clear payment status</span><span>✓ Phase 1 Connected</span>{refCode && <span style={{ borderColor: "var(--primary)" }}>✦ Partner referral active</span>}
           </div>
         </div>
         <div className="hero-card" aria-label="Nexora platform overview">
@@ -507,6 +560,12 @@ function HomePage({ navigate, online, authState }: { navigate: (path: string) =>
       <section className="section">
         <div className="section-heading"><span className="eyebrow">Offers</span><h2>Active Offers</h2><p>From offers table where is_active=true – RLS public read. Shows discount_type, discount_value.</p></div>
         <OffersStrip navigate={navigate} />
+      </section>
+
+      {/* Partner-approved promotions — only active + approved (published) */}
+      <section className="section" style={{ background: "var(--cream)" }}>
+        <div className="section-heading"><span className="eyebrow">Partner promotions</span><h2>Partner Approved Offers</h2><p>Active offers from Growth Partner onboarded salons — shown only after owner approval. Commission and partner details stay private.</p></div>
+        <PartnerPromosStrip navigate={navigate} />
       </section>
 
       {/* Available Slots */}
@@ -627,6 +686,33 @@ function useCatalog(online: boolean) {
     return () => window.clearTimeout(timer);
   }, [load, online]);
   return { items, loading, error, load };
+}
+
+/**
+ * Partner-approved promotions: active offers on salons that (a) are published
+ * (owner/admin approved), (b) have an active shop attribution. The RPC is
+ * security definer so commission/partner identity is never exposed — only
+ * public offer + salon fields.
+ */
+function PartnerPromosStrip({ navigate }: { navigate: (path: string) => void }) {
+  const [promos, setPromos] = useState<PartnerPromo[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      try {
+        const client = getClient(); if (!client) { setLoading(false); return; }
+        const { data, error } = await client.rpc("marketplace_partner_promos");
+        if (error) throw error;
+        if (active) setPromos((data ?? []) as PartnerPromo[]);
+      } catch { /* strip degrades gracefully */ } finally { if (active) setLoading(false); }
+    };
+    const t = setTimeout(() => void load(), 0);
+    return () => { active = false; clearTimeout(t); };
+  }, []);
+  if (loading) return <SalonSkeletons count={3} />;
+  if (!promos.length) return <StateCard title="No partner promotions yet" text="When a Growth Partner onboarded salon publishes an active offer, it appears here — only after owner approval." />;
+  return <div className="service-grid">{promos.map((promo) => <article className="service-card" key={promo.offer_id}><div><h3>{promo.offer_name ?? "Offer"} <em style={{ fontWeight: 400, fontSize: 10, color: "var(--primary)" }}>✦ partner approved</em></h3><p>{promo.description || ""}</p><small>{promo.salon_name} · {promo.discount_type === "percent" ? `${promo.discount_value}% off` : promo.discount_value != null ? `${money(promo.discount_value * 100)} off` : "Limited offer"}</small></div><button className="text-button" onClick={() => navigate(`/salons/${promo.salon_slug}`)}>View salon</button></article>)}</div>;
 }
 
 function CatalogStrip({ navigate, online, statsBySalon }: { navigate: (path: string) => void; online: boolean; statsBySalon?: Record<string, SalonStats> }) {
@@ -993,10 +1079,12 @@ function SalonPage({
   slug,
   navigate,
   online,
+  refCode,
 }: {
   slug: string;
   navigate: (path: string) => void;
   online: boolean;
+  refCode: string;
 }) {
   const [item, setItem] = useState<CatalogItem | null>(null);
   const [marketplace, setMarketplace] = useState<SalonMarketplace>(EMPTY_MARKETPLACE);
@@ -1052,11 +1140,13 @@ function SalonPage({
     params.set("salon", item.id);
     params.set("returnTo", `/salons/${encodeURIComponent(slug)}`);
     if (serviceName) params.set("service", serviceName);
+    // Preserve partner attribution into the booking handoff.
+    if (refCode) params.set("ref", refCode);
     return `/app/customer/?${params.toString()}`;
   };
   return (
     <main>
-      <section className="store-hero"><span className="verified-pill">✓ Nexora verified</span><h1>{item.name}</h1><p>{String(config.profile?.description ?? item.description ?? "Professional beauty services.")}</p><div className="store-facts"><span>★ {stats ? Number(stats.rating_avg).toFixed(1) : Number(item.rating_average).toFixed(1)} ({stats ? Number(stats.review_count) : Number(item.review_count)} reviews)</span><span>⌖ {item.area ?? item.city}, {item.city}</span>{stats && Number(stats.booking_count) > 0 && <span>📅 {Number(stats.booking_count)} bookings</span>}{openingSummary.length > 0 && <span>🕑 {formatHours(String(openingSummary[0].opens_at ?? ""), String(openingSummary[0].closes_at ?? ""))}</span>}</div><button className="primary" onClick={() => navigate(customerPortalBookingPath())}>Continue in Customer app</button><p className="preview-note">Bookings, payment, history, reviews, and support are owned by the Customer PWA.</p></section>
+      <section className="store-hero"><span className="verified-pill">✓ Nexora verified</span>{stats?.partner_onboarded && <span className="verified-pill" style={{ background: "var(--cream)", color: "var(--primary)" }}>✦ Partner onboarded</span>}<h1>{item.name}</h1><p>{String(config.profile?.description ?? item.description ?? "Professional beauty services.")}</p><div className="store-facts"><span>★ {stats ? Number(stats.rating_avg).toFixed(1) : Number(item.rating_average).toFixed(1)} ({stats ? Number(stats.review_count) : Number(item.review_count)} reviews)</span><span>⌖ {item.area ?? item.city}, {item.city}</span>{stats && Number(stats.booking_count) > 0 && <span>📅 {Number(stats.booking_count)} bookings</span>}{openingSummary.length > 0 && <span>🕑 {formatHours(String(openingSummary[0].opens_at ?? ""), String(openingSummary[0].closes_at ?? ""))}</span>}</div><button className="primary" onClick={() => navigate(customerPortalBookingPath())}>Continue in Customer app</button><p className="preview-note">Bookings, payment, history, reviews, and support are owned by the Customer PWA.</p></section>
       <section className="section"><div className="section-heading"><span className="eyebrow">Services</span><h2>Choose your service</h2><p>Browse the owner-published catalog, then continue to the Customer PWA to book.</p></div>
       {!services.length ? <StateCard title="No services published yet" text="This salon has not published bookable services." /> : <div className="service-grid">{services.map((service, index) => <article className="service-card" key={String(service.id ?? index)}><div><h3>{String(service.name ?? "Salon service")}</h3><p>{String(service.description ?? "Professional salon service")}</p><small>{Number(service.duration_minutes ?? 0)} minutes</small></div><div><b>{money(Number(service.price_paise ?? 0))}</b><button className="text-button" onClick={() => navigate(customerPortalBookingPath(String(service.name ?? "")))}>Book in Customer app</button></div></article>)}</div>}</section>
       {staffRows.length > 0 && (
@@ -1119,7 +1209,7 @@ function mapRequestedRoleToPlatformRole(requested: string | null): Role {
   return "customer";
 }
 
-function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (path: string) => void }) {
+function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navigate: (path: string) => void; refCode: string }) {
   // Keep the first render identical on server and client (hydration-safe);
   // query params are applied only after mount.
   const [role, setRole] = useState<Role>("customer");
@@ -1199,7 +1289,7 @@ function AuthPage({ mode, navigate }: { mode: "login" | "signup"; navigate: (pat
           email: trimmedEmail,
           password,
           options: {
-            data: { full_name: trimmedName || trimmedEmail.split("@")[0], signup_role: role },
+            data: { full_name: trimmedName || trimmedEmail.split("@")[0], signup_role: role, ...(refCode ? { ref_code: refCode } : {}) },
             emailRedirectTo: typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined,
           },
         });
