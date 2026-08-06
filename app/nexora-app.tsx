@@ -58,6 +58,34 @@ type PopularService = {
   booking_count: number;
 };
 
+// Jaipur localities from Jaipur_Zones_Localities.pdf (5 zones, 124 areas).
+const JAIPUR_ZONES: Array<{ zone: string; areas: string[] }> = [
+  {
+    zone: "Central Jaipur",
+    areas: ["C-Scheme", "Civil Lines", "Bani Park", "Pink City", "M I Road", "Sindhi Camp", "Lal Kothi", "Bais Godam", "Sethi Colony", "Ashok Nagar", "Adarsh Nagar", "Bapu Nagar", "Tilak Nagar", "Raja Park", "Jawahar Nagar", "Ramganj", "Brahmpuri", "Transport Nagar", "Jalupura", "Gopalbari", "Moti Dongri Road", "Laxmi Narayan Puri", "Purani Basti", "Anita Colony", "Sagram Colony", "Raj Bhavan Road", "Subhash Marg", "Sahdev Marg", "Lajpat Marg", "Vivekanand Marg", "Sachivalaya Nagar", "Bhawani Singh Road"],
+  },
+  {
+    zone: "East Jaipur",
+    areas: ["Malviya Nagar", "Jagatpura", "Pratap Nagar", "Tonk Road", "Agra Road", "Kanota", "JLN Marg", "Durgapura", "Sitapura", "Mahal Road", "Paldi Meena", "Jamdoli", "Bassi", "Jamwa Ramgarh", "Goner Road", "Vatika", "Shivdaspura", "Chaksu", "Bagrana", "Mangarh Khokhawala", "Kho Nagoriyan", "Ghati Karolan", "Dholai"],
+  },
+  {
+    zone: "North Jaipur",
+    areas: ["Vidhyadhar Nagar", "Jhotwara", "Kalwar Road", "Sikar Road", "Niwaru", "Shastri Nagar", "Ambabari", "Benad Road", "Muralipura", "Vishwakarma Industrial Area", "Amer", "Chomu", "Kotputli", "Achrol", "Boytawala", "Sarna Doongar", "Nari Ka Bas", "Shiv Nagar", "Govindpura"],
+  },
+  {
+    zone: "South Jaipur",
+    areas: ["Mansarovar", "New Sanganer Road", "Muhana", "Sanganer", "Shiprapath", "Triveni Nagar", "Patrakar Colony", "Mahaveer Nagar", "Sidharth Nagar", "Narayan Vihar", "Shanti Nagar", "Budhsinghpura", "Mahapura", "Diggi Road", "Phagi Road", "Padampura", "Renwal Phagi Road", "Doongri", "Jairampura", "Ramsinghpura", "Shikarpura", "Ganatpura", "Bhambori", "Madhorajpura - Chandma Road"],
+  },
+  {
+    zone: "West Jaipur",
+    areas: ["Vaishali Nagar", "Sirsi Road", "Gandhi Path", "Chitrakoot", "Kanakpura", "Khatipura", "Gopalpura", "Gopalpura By Pass", "Sodala", "Nirman Nagar", "Shyam Nagar", "Ajmer Road", "Jaipur-Ajmer Express Highway", "Bhankrota", "Bagru", "Mahalan Ajmer Road", "Heerawala", "Brijlalpura", "Hasanpura", "Lalarpura", "Tagore Nagar", "Milap Nagar", "Marudhar Nagar", "Bhan Nagar", "Officers Campus Colony", "Udyog Nagar"],
+  },
+];
+
+// Canonical business categories — "Salon" is the default owner category;
+// dynamic categories from live data are appended when they aren't in this set.
+const CANONICAL_CATEGORIES = ["Salon", "Spa", "Tattoo Studio", "Clinic", "Beauty Parlour", "Nail Studio", "Hair Studio", "Makeup Studio", "Unisex Salon"];
+
 // Marketplace rows — Owner PWA managed data, anon-readable via RLS
 // (verified live: services/staff/offers/salon_hours all 200 for anon).
 type ServiceRow = {
@@ -736,7 +764,7 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
   const { items, loading, error, load } = useCatalog(online);
   const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
-  const [cityFilter, setCityFilter] = useState("");
+  const [locationFilter, setLocationFilter] = useState("");
   const [ratingFilter, setRatingFilter] = useState<number>(0);
   const [sortBy, setSortBy] = useState<"rating"|"reviews"|"price"|"name">("rating");
 
@@ -745,41 +773,47 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
       const cat = params.get("category"); if (cat) setCategoryFilter(cat);
-      const area = params.get("area"); if (area) setQuery(area);
-      const city = params.get("city"); if (city) setCityFilter(city);
+      // ?area= deep links (homepage "Nearby Areas") map to a Jaipur locality.
+      const area = params.get("area"); if (area) setLocationFilter(area);
+      const city = params.get("city"); if (city && !area) setLocationFilter(city);
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
 
-  const categories = Array.from(new Set(items.map(i=>i.business_category).filter(Boolean))) as string[];
-  const cities = Array.from(new Set(items.map(i=>i.city).filter(Boolean))) as string[];
+  const categories = useMemo(() => {
+    const dynamic = Array.from(new Set(items.map(i=>i.business_category).filter(Boolean))) as string[];
+    return Array.from(new Set([...CANONICAL_CATEGORIES, ...dynamic]));
+  }, [items]);
 
   const filtered = useMemo(() => {
     let list = items.filter(item => {
       const hay = `${item.name} ${item.area} ${item.city} ${item.business_category}`.toLowerCase();
       const q = query.toLowerCase();
       const matchQuery = !q || hay.includes(q);
-      const matchCat = !categoryFilter || item.business_category === categoryFilter;
-      const matchCity = !cityFilter || item.city === cityFilter;
+      const matchCat = !categoryFilter || (item.business_category ?? "").toLowerCase() === categoryFilter.toLowerCase();
+      const matchLocation =
+        !locationFilter ||
+        (item.area ?? "").toLowerCase() === locationFilter.toLowerCase() ||
+        (item.city ?? "").toLowerCase() === locationFilter.toLowerCase();
       const matchRating = !ratingFilter || Number(item.rating_average) >= ratingFilter;
-      return matchQuery && matchCat && matchCity && matchRating;
+      return matchQuery && matchCat && matchLocation && matchRating;
     });
     if (sortBy==="rating") list = [...list].sort((a,b)=>Number(b.rating_average)-Number(a.rating_average));
     else if (sortBy==="reviews") list = [...list].sort((a,b)=>b.review_count - a.review_count);
     else if (sortBy==="price") list = [...list].sort((a,b)=>Number(a.starting_price_paise||0)-Number(b.starting_price_paise||0));
     else if (sortBy==="name") list = [...list].sort((a,b)=>a.name.localeCompare(b.name));
     return list;
-  }, [items, query, categoryFilter, cityFilter, ratingFilter, sortBy]);
+  }, [items, query, categoryFilter, locationFilter, ratingFilter, sortBy]);
 
   return (
     <main className="section page-top">
       <div className="section-heading">
-        <div><span className="eyebrow">Nexora marketplace – Smart Search</span><h1>Find your salon</h1><p>Every listing below is active, verified, and owner-published. Smart search: text (name/area/city/category), category filter, city filter, rating filter, sorting by rating/reviews/price/name. Owner-published data appears here via verified=true, is_active=true, is_published=true.</p></div>
+        <div><span className="eyebrow">Nexora marketplace – Smart Search</span><h1>Find your salon</h1><p>Every listing below is active, verified, and owner-published. Smart search: text (name/area/category), category filter, location filter (Jaipur zones &amp; localities), rating filter, sorting by rating/reviews/price/name. Owner-published data appears here via verified=true, is_active=true, is_published=true.</p></div>
       </div>
       <div style={{display:"grid", gap:12, gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))", marginBottom:20}}>
         <label className="search" style={{minWidth:"auto"}}><span>⌕</span><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Search salon, area or city (smart)" /></label>
         <label>Category<select value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)}><option value="">All categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select></label>
-        <label>City<select value={cityFilter} onChange={e=>setCityFilter(e.target.value)}><option value="">All cities</option>{cities.map(c=><option key={c} value={c}>{c}</option>)}</select></label>
+        <label>Location<select value={locationFilter} onChange={e=>setLocationFilter(e.target.value)}><option value="">All Jaipur</option>{JAIPUR_ZONES.map((z)=><optgroup key={z.zone} label={z.zone}>{z.areas.map((a)=><option key={a} value={a}>{a}</option>)}</optgroup>)}</select></label>
         <label>Min rating<select value={ratingFilter} onChange={e=>setRatingFilter(Number(e.target.value))}><option value={0}>Any rating</option><option value={4}>4+ ★</option><option value={4.5}>4.5+ ★</option></select></label>
         <label>Sort by<select value={sortBy} onChange={e=>setSortBy(e.target.value as "rating"|"reviews"|"price"|"name")}><option value="rating">Top Rated</option><option value="reviews">Trending (reviews)</option><option value="price">Price low-high</option><option value="name">Name A-Z</option></select></label>
       </div>
