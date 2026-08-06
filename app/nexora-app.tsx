@@ -101,6 +101,19 @@ type TrendingRow = {
 const RECENT_SEARCHES_KEY = "nexora_recent_searches";
 const SEARCH_DEBOUNCE_MS = 300;
 
+// Parts 7-9 types.
+type OfferDetail = {
+  offer_id: string; salon_id: string; salon_name: string; salon_slug: string;
+  name: string | null; description: string | null; terms: string | null;
+  discount_type: string | null; discount_value: number | null;
+  maximum_discount_paise: number | null; minimum_booking_paise: number | null;
+  valid_from: string | null; valid_until: string | null;
+  code: string | null; membership_only: boolean;
+  eligible_services: Array<{ service_id: string; service_name: string }>;
+  remaining_global: number | null;
+};
+type SlotRow = { slot_start: string; slot_end: string; staff_id: string | null; staff_name: string | null };
+
 const REF_CODE_KEY = "nexora_ref_code";
 
 /**
@@ -610,14 +623,22 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         <OpenTodayStrip items={items} navigate={navigate} />
       </section>
 
-      {/* Sponsored Shops / Brands / Videos */}
+      {/* Sponsored — admin-managed, clearly labelled, active + in-window only */}
       <section className="section">
-        <div className="section-heading"><span className="eyebrow">Sponsored</span><h2>Sponsored Shops, Brands, Videos</h2><p>Tables sponsored_shops / sponsored_brands / sponsored_videos were MISSING live per audit – now placeholder ready, will show when populated.</p></div>
-        <div className="role-grid">
-          <article className="role-card"><h3>Sponsored Shops</h3><p>Table sponsored_shops was missing live – placeholder. When populated, sponsored shops appear here with is_active filter.</p></article>
-          <article className="role-card"><h3>Sponsored Brands</h3><p>Table sponsored_brands missing – placeholder for brand logos.</p></article>
-          <article className="role-card"><h3>Sponsored Videos</h3><p>Table sponsored_videos missing – placeholder for video banners.</p></article>
-        </div>
+        <div className="section-heading"><span className="eyebrow">Sponsored</span><h2>Sponsored</h2><p>Admin-approved sponsored content — always labelled, never mixed into organic results without the badge. Expired or paused campaigns hide automatically.</p></div>
+        {sponsoredLoading ? <SalonSkeletons count={3} /> : sponsored.shops.length || sponsored.brands.length || sponsored.videos.length ? (
+          <>
+            {sponsored.shops.length > 0 && (
+              <div className="salon-grid">{sponsored.shops.map((sh) => <article key={sh.id} className="salon-card"><div className="salon-visual" style={sh.image?.startsWith("http") ? { backgroundImage: `url("${sh.image}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>{!sh.image?.startsWith("http") && <span>✦</span>}<em>{(sh.badge ?? "Sponsored").toUpperCase()}</em></div><div className="salon-body"><div className="salon-meta"><span>Sponsored</span><span>★ {Number(sh.rating).toFixed(1)} ({sh.review_count})</span></div><h3>{sh.salon_name}</h3><p>{sh.area ?? sh.city}, {sh.city}</p><div className="salon-bottom"><button onClick={() => { recordSponsoredClick("shop", sh.id); navigate(`/salons/${sh.salon_slug}`); }}>View salon</button></div></div></article>)}</div>
+            )}
+            {sponsored.brands.length > 0 && (
+              <div className="button-row" style={{ marginTop: 12 }}>{sponsored.brands.map((b) => <button key={b.id} className="secondary compact" onClick={() => { recordSponsoredClick("brand", b.id); if (b.website) window.open(b.website, "_blank", "noopener"); }} title={b.tagline ?? b.name}>{b.name}{b.tagline ? ` — ${b.tagline}` : ""}</button>)}</div>
+            )}
+            {sponsored.videos.length > 0 && (
+              <div className="role-grid" style={{ marginTop: 12 }}>{sponsored.videos.map((v) => <article key={v.id} className="role-card" onClick={() => recordSponsoredClick("video", v.id)} style={{ cursor: "pointer" }}><span className="role-icon">▶</span><h3>{v.title}</h3><p>Editorial video · {v.video_url ? "Watch on the platform" : "Coming soon"}</p></article>)}</div>
+            )}
+          </>
+        ) : <StateCard title="No sponsored content yet" text="Admin-approved sponsored shops, brands and videos appear here." />}
       </section>
 
       {/* What customers say — public review content from the Customer PWA */}
@@ -839,46 +860,52 @@ function OfferCard({ offer, salonName, salonSlug, navigate }: { offer: Offer; sa
 }
 
 function OffersStrip({ navigate }: { navigate: (path: string) => void }) {
-  const [offers, setOffers] = useState<Offer[]>([]);
-  const [salonIndex, setSalonIndex] = useState<Record<string, { name: string; slug: string }>>({});
+  const [offers, setOffers] = useState<OfferDetail[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     let active = true;
     const load = async () => {
       try {
         const client = getClient(); if (!client) { setLoading(false); return; }
-        // Live schema: offers.name (not title). Owner PWA writes name.
-        const { data } = await client.from("offers").select("id,salon_id,name,description,discount_type,discount_value,is_active").eq("is_active", true).limit(12);
-        if (!active || !data) return;
-        const rows = data as Offer[];
-        setOffers(rows);
-        if (rows.length) {
-          // Join salon name + published slug so "View salon" opens the right page.
-          const salonIds = Array.from(new Set(rows.map((o) => o.salon_id)));
-          const [websitesRes, salonsRes] = await Promise.all([
-            client.from("salon_public_websites").select("salon_id,slug").in("salon_id", salonIds).eq("is_published", true),
-            client.from("salons").select("id,name").in("id", salonIds).eq("verified", true).eq("is_active", true),
-          ]);
-          if (active && websitesRes.data && salonsRes.data) {
-            const slugBySalon = new Map((websitesRes.data as { salon_id: string; slug: string }[]).map((w) => [w.salon_id, w.slug]));
-            const nameBySalon = new Map((salonsRes.data as { id: string; name: string }[]).map((s) => [s.id, s.name]));
-            const index: Record<string, { name: string; slug: string }> = {};
-            for (const id of salonIds) {
-              const slug = slugBySalon.get(id);
-              const name = nameBySalon.get(id) ?? null;
-              if (slug) index[id] = { name: name ?? "Salon", slug };
-            }
-            setSalonIndex(index);
-          }
-        }
-      } catch { /* marketplace strip degrades gracefully */ } finally { if (active) setLoading(false); }
+        const { data, error } = await client.rpc("marketplace_offers", { p_limit: 12 });
+        if (error) throw error;
+        if (active) setOffers((data ?? []) as OfferDetail[]);
+      } catch { /* strip degrades gracefully */ } finally { if (active) setLoading(false); }
     };
     const t = setTimeout(() => void load(), 0);
     return () => { active = false; clearTimeout(t); };
   }, []);
   if (loading) return <SalonSkeletons count={3} />;
-  if (!offers.length) return <StateCard title="No active offers yet" text="Offers created by shop owners (offers table, is_active=true) appear here — live public read." />;
-  return <div className="service-grid">{offers.map((o: Offer) => <OfferCard key={o.id} offer={o} salonName={salonIndex[o.salon_id]?.name ?? null} salonSlug={salonIndex[o.salon_id]?.slug ?? null} navigate={navigate} />)}</div>;
+  if (!offers.length) return <StateCard title="No active offers yet" text="Approved, in-date offers from published salons appear here — usage limits and eligibility enforced server-side." />;
+  return <div className="service-grid">{offers.map((o) => <OfferDetailCard key={o.offer_id} offer={o} navigate={navigate} />)}</div>;
+}
+
+function OfferDetailCard({ offer, navigate }: { offer: OfferDetail; navigate: (path: string) => void }) {
+  const pct = offer.discount_type === "percent";
+  const discountLabel = pct ? `${offer.discount_value}% off` : offer.discount_value != null ? `${money(offer.discount_value * 100)} off` : "Limited offer";
+  const maxCap = offer.maximum_discount_paise != null && offer.maximum_discount_paise > 0 ? ` · up to ${money(offer.maximum_discount_paise)} off` : "";
+  const minSpend = offer.minimum_booking_paise != null && offer.minimum_booking_paise > 0 ? `Min. spend ${money(offer.minimum_booking_paise)}` : null;
+  const validity = offer.valid_from || offer.valid_until
+    ? `Valid ${offer.valid_from ? "from " + new Date(offer.valid_from).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""}${offer.valid_until ? " till " + new Date(offer.valid_until).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : ""}`
+    : null;
+  return (
+    <article className="service-card">
+      <div>
+        <h3>{offer.name ?? "Offer"} <em style={{ fontSize: 10, color: "#e6007e" }}>{offer.membership_only ? "· members" : ""}</em></h3>
+        <p>{offer.description || ""}</p>
+        <small style={{ display: "block", marginBottom: 4 }}><b>{discountLabel}</b>{maxCap}{minSpend ? ` · ${minSpend}` : ""}</small>
+        {offer.eligible_services.length > 0 && <small style={{ display: "block" }}>On: {offer.eligible_services.map((sv) => sv.service_name).join(", ")}</small>}
+        {offer.terms && <small style={{ display: "block", color: "#8c7077" }}>Terms: {offer.terms}</small>}
+        {validity && <small style={{ display: "block", color: "#8c7077" }}>🕑 {validity}</small>}
+        {offer.code && <small style={{ display: "block", fontWeight: 700, color: "#8e004b" }}>Coupon: {offer.code}</small>}
+        {offer.remaining_global != null && offer.remaining_global <= 10 && <small style={{ display: "block", color: "#b45309" }}>Only {Math.max(offer.remaining_global, 0)} left</small>}
+      </div>
+      <div>
+        <button className="text-button" onClick={() => navigate(`/salons/${offer.salon_slug}`)}>{offer.salon_name} →</button>
+        <button className="primary" style={{ marginTop: 6, fontSize: 12, padding: "8px 12px" }} onClick={() => navigate(`/salons/${offer.salon_slug}`)}>Book Now</button>
+      </div>
+    </article>
+  );
 }
 
 
@@ -1196,7 +1223,26 @@ function useSponsored(online: boolean) {
     const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
     return () => window.clearTimeout(t);
   }, [load, online]);
+  useEffect(() => {
+    if (!loading && online) {
+      for (const sh of sponsored.shops) clientRpcSafe("record_sponsored_event", { p_content_type: "shop", p_content_id: sh.id, p_event_type: "impression" });
+      for (const b of sponsored.brands) clientRpcSafe("record_sponsored_event", { p_content_type: "brand", p_content_id: b.id, p_event_type: "impression" });
+      for (const v of sponsored.videos) clientRpcSafe("record_sponsored_event", { p_content_type: "video", p_content_id: v.id, p_event_type: "impression" });
+    }
+  }, [loading, online, sponsored]);
   return { sponsored, loading, load };
+}
+
+/** Fire-and-forget RPC (non-critical tracking). */
+function clientRpcSafe(name: string, args: Record<string, unknown>) {
+  const client = getClient();
+  if (!client) return;
+  void client.rpc(name, args).then(() => {});
+}
+
+/** Record a sponsored click — no personal data (content + date counters only). */
+function recordSponsoredClick(kind: "shop" | "brand" | "video", id: string) {
+  clientRpcSafe("record_sponsored_event", { p_content_type: kind, p_content_id: id, p_event_type: "click" });
 }
 
 /** Top rated — Bayesian weighted rating, min-review threshold. */
@@ -1448,6 +1494,9 @@ function SalonPage({
   const [item, setItem] = useState<CatalogItem | null>(null);
   const [marketplace, setMarketplace] = useState<SalonMarketplace>(EMPTY_MARKETPLACE);
   const [stats, setStats] = useState<SalonStats | null>(null);
+  const [slots, setSlots] = useState<SlotRow[]>([]);
+  const [slotsDate, setSlotsDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [slotsLoading, setSlotsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const load = useCallback(async () => {
@@ -1495,6 +1544,28 @@ function SalonPage({
     : configOpening?.opens
       ? [{ day_of_week: -1, opens_at: configOpening.opens, closes_at: configOpening.closes ?? null, is_closed: false }]
       : [];
+  const loadSlots = useCallback(async (dateStr: string, serviceId?: string) => {
+    const client = getClient();
+    const firstService = serviceId ?? marketplace.services[0]?.id;
+    if (!client || !firstService) { setSlots([]); return; }
+    setSlotsLoading(true);
+    try {
+      const { data, error } = await client.rpc("marketplace_slots", {
+        p_salon_id: item?.id,
+        p_service_ids: [firstService],
+        p_date: dateStr,
+        p_tz: "Asia/Kolkata",
+      });
+      if (error) throw error;
+      setSlots((data ?? []) as SlotRow[]);
+    } catch { setSlots([]); } finally { setSlotsLoading(false); }
+  }, [item, marketplace.services]);
+  useEffect(() => {
+    if (!item) return;
+    const t = window.setTimeout(() => void loadSlots(slotsDate), 0);
+    return () => window.clearTimeout(t);
+  }, [item, slotsDate, loadSlots]);
+
   const customerPortalBookingPath = (serviceName?: string) => {
     const params = new URLSearchParams();
     // Pass only the public salon id and a safe return path; never tokens.
@@ -1502,6 +1573,14 @@ function SalonPage({
     params.set("returnTo", `/salons/${encodeURIComponent(slug)}`);
     if (serviceName) params.set("service", serviceName);
     // Preserve partner attribution into the booking handoff.
+    if (refCode) params.set("ref", refCode);
+    return `/app/customer/?${params.toString()}`;
+  };
+  const customerPortalBookingPathForSlot = (slotStart: string) => {
+    const params = new URLSearchParams();
+    params.set("salon", item.id);
+    params.set("returnTo", `/salons/${encodeURIComponent(slug)}`);
+    params.set("slot", slotStart);
     if (refCode) params.set("ref", refCode);
     return `/app/customer/?${params.toString()}`;
   };
@@ -1528,6 +1607,19 @@ function SalonPage({
           <div className="service-grid">{marketplace.offers.map((offer) => <article className="service-card" key={offer.id}><div><h3>{offer.name ?? "Offer"}</h3><p>{offer.description || ""}</p><small>{offer.discount_type === "percent" ? `${offer.discount_value}% off` : offer.discount_value != null ? `${money(offer.discount_value * 100)} off` : "Limited offer"}</small></div><button className="text-button" onClick={() => navigate(customerPortalBookingPath())}>Book now</button></article>)}</div>
         </section>
       )}
+      <section className="section" style={{ background: "var(--cream)" }}>
+        <div className="section-heading"><span className="eyebrow">Availability</span><h2>Available slots</h2><p>Live server-verified slots — opening hours, staff schedules, buffers and existing bookings are all checked before anything is shown.</p></div>
+        <label style={{ marginBottom: 10, display: "inline-block" }}>Date <input type="date" value={slotsDate} min={new Date().toISOString().slice(0, 10)} onChange={(e) => setSlotsDate(e.target.value)} /></label>
+        {slotsLoading ? <SalonSkeletons count={3} /> : slots.length ? (
+          <div className="button-row">{slots.slice(0, 12).map((slot, i) => (
+            <button key={i} className="secondary compact" onClick={() => navigate(customerPortalBookingPathForSlot(slot.slot_start))}>
+              {new Date(slot.slot_start).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })} {slot.staff_name ? `· ${slot.staff_name}` : ""}
+            </button>
+          ))}</div>
+        ) : <StateCard title="No slots available" text="This salon has no bookable slot for the selected date — try another date." />}
+        <p className="section-hint" style={{ marginTop: 8 }}><small>Slots revalidate at booking time in the Customer app — double-booking is blocked server-side.</small></p>
+      </section>
+
       {(stats?.recent_reviews?.length ?? 0) > 0 && (
         <section className="section">
           <div className="section-heading"><span className="eyebrow">Reviews</span><h2>Customer reviews</h2><p>What customers say about {item.name} — {Number(stats?.review_count ?? 0)} review{Number(stats?.review_count ?? 0) === 1 ? "" : "s"}.</p></div>
