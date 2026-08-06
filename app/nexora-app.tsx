@@ -491,6 +491,7 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   const { sponsored, loading: sponsoredLoading } = useSponsored(online);
   const { rows: topRatedRows, loading: topRatedLoading } = useTopRated(online);
   const { rows: trendingRows, loading: trendingLoading } = useTrending(online);
+  const { rows: nearbyRows, loading: nearbyLoading, geoStatus } = useNearby(online);
   const categories = Array.from(new Set(items.map(i=>i.business_category).filter(Boolean))) as string[];
   // Live customer signals: rating avg + review count from customer_reviews,
   // booking counts from bookings (security-definer aggregates).
@@ -567,10 +568,11 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         {trendingLoading ? <SalonSkeletons count={3} /> : trendingRows.length ? <div className="salon-grid">{trendingRows.map((r) => <TrendingCard key={r.id} row={r} navigate={navigate} />)}</div> : <StateCard title="No trending activity yet" text="Salons rise here from recent bookings, views and reviews (time-decayed). Admin overrides can boost any salon." />}
       </section>
 
-      {/* Nearby */}
+      {/* Nearby — browser location (permission only), fallback to Jaipur center */}
       <section className="section">
-        <div className="section-heading"><span className="eyebrow">Nearby</span><h2>Nearby Areas</h2><p>Group by area / locality from salons.area – nearby filter for smart search.</p></div>
-        {nearbyAreas.length ? <div className="button-row">{nearbyAreas.slice(0,8).map(a=><button key={a} className="secondary compact" onClick={()=>navigate(`/salons?area=${encodeURIComponent(a)}`)}>{a}</button>)}</div> : <StateCard title="No nearby areas" text="Areas appear from salons.area." />}
+        <div className="section-heading"><span className="eyebrow">Nearby</span><h2>Salons near you</h2><p>{geoStatus === "granted" ? "Sorted by your location — nothing is stored." : geoStatus === "denied" ? "Location permission denied — showing salons around Jaipur instead." : "Based on Jaipur (allow location to personalise)."}</p></div>
+        {nearbyLoading ? <SalonSkeletons count={3} /> : nearbyRows.length ? <div className="salon-grid">{nearbyRows.map((row) => <article key={row.id} className="salon-card"><div className="salon-visual" style={row.cover_image_path?.startsWith("http") ? { backgroundImage: `url("${row.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>{!row.cover_image_path?.startsWith("http") && <span>✦</span>}<em>Verified</em></div><div className="salon-body"><div className="salon-meta"><span>{row.business_category ?? "Salon"}</span><span>📍 {Number(row.distance_km).toFixed(1)} km</span></div><h3>{row.name}</h3><p>{row.area ?? row.city}, {row.city}</p><div className="salon-bottom"><b>From {money(row.starting_price_paise)}</b><button onClick={() => navigate(`/salons/${row.slug}`)}>View salon</button></div></div></article>)}</div> : <StateCard title="No salons nearby yet" text="Salons with location coordinates set by their owner appear here, sorted by distance." />}
+        <p className="section-hint" style={{ marginTop: 10 }}><button className="text-button" onClick={() => navigate("/salons")}>Open full search →</button></p>
       </section>
 
       {/* Recommended */}
@@ -1231,6 +1233,53 @@ function recordMarketplaceEvent(salonId: string, eventType: "view" | "search_cli
   const client = getClient();
   if (!client) return;
   void client.rpc("record_marketplace_event", { p_salon_id: salonId, p_event_type: eventType }).then(() => {});
+}
+
+type NearbyRow = {
+  id: string; slug: string; name: string; business_category: string | null;
+  area: string | null; city: string | null; latitude: number; longitude: number;
+  distance_km: number; rating_avg: number; review_count: number;
+  starting_price_paise: number | null; cover_image_path: string | null;
+};
+
+/**
+ * Nearby salons: browser geolocation ONLY after explicit permission; on
+ * denial/absence falls back to the admin default city center. Distance is
+ * computed server-side (haversine) and never stored client-side. Salons
+ * without valid coordinates are excluded by the RPC.
+ */
+function useNearby(online: boolean, radiusKm?: number) {
+  const [rows, setRows] = useState<NearbyRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [geoStatus, setGeoStatus] = useState<"idle" | "granted" | "denied" | "unavailable">("idle");
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const client = getClient(); if (!client) { setLoading(false); return; }
+      const coords = await new Promise<{ lat: number; lng: number } | null>((resolve) => {
+        if (typeof navigator === "undefined" || !("geolocation" in navigator)) { setGeoStatus("unavailable"); resolve(null); return; }
+        // Ask for permission explicitly; precise location is NOT stored.
+        navigator.geolocation.getCurrentPosition(
+          (pos) => { setGeoStatus("granted"); resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }); },
+          () => { setGeoStatus("denied"); resolve(null); },
+          { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 }
+        );
+      });
+      const { data, error } = await client.rpc("marketplace_nearby", {
+        p_lat: coords?.lat ?? null,
+        p_lng: coords?.lng ?? null,
+        p_radius_km: radiusKm ?? null,
+        p_limit: 6,
+      });
+      if (error) throw error;
+      setRows((data ?? []) as NearbyRow[]);
+    } catch { setRows([]); } finally { setLoading(false); }
+  }, [radiusKm]);
+  useEffect(() => {
+    const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
+    return () => window.clearTimeout(t);
+  }, [load, online]);
+  return { rows, loading, geoStatus, load };
 }
 
 /**
