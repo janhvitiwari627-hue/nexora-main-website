@@ -11,7 +11,7 @@ import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
 const moduleDir = new URL("../app/lib/location/", import.meta.url);
-const files = (await readdir(moduleDir)).filter((f) => f.endsWith(".ts"));
+const files = (await readdir(moduleDir)).filter((f) => f.endsWith(".ts") || f.endsWith(".tsx"));
 const sources = Object.fromEntries(
   await Promise.all(files.map(async (f) => [f, await readFile(new URL(f, moduleDir), "utf8")])),
 );
@@ -241,4 +241,50 @@ test("every GPS update logs the required debug fields", () => {
   ]) {
     assert.match(service, new RegExp(field), `GPS log should include ${field}`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// 9. Auto-start on sign-in + the header location icon.
+// ---------------------------------------------------------------------------
+
+test("GPS re-arms automatically when a user signs up or logs in", () => {
+  // The effect keys off the authenticated user id and re-triggers acquisition.
+  assert.match(mainApp, /authState\.session\?\.user\?\.id/);
+  assert.match(mainApp, /armedForUser/);
+  assert.match(mainApp, /locationService\.retry\(\)/);
+  assert.match(mainApp, /locationService\.getFix\(\)/);
+});
+
+test("the app-wide watcher is started once from the shell", () => {
+  // useLocation() is called in NexoraApp so a single reference-counted
+  // watchPosition serves the header, homepage and salon pages.
+  const shell = mainApp.slice(mainApp.indexOf("export function NexoraApp"));
+  assert.match(shell, /const location = useLocation\(\)/);
+  assert.match(shell, /<Header[^>]*location=\{location\}/);
+});
+
+test("header renders a location badge with a pin icon", () => {
+  const badge = sources["LocationBadge.tsx"];
+  assert.ok(badge, "LocationBadge.tsx should exist");
+  assert.match(badge, /<svg/);
+  assert.match(badge, /aria-label=\{`Location: /);
+  assert.match(mainApp, /<LocationBadge location=\{location\} \/>/);
+});
+
+test("badge works whether or not permission is granted", () => {
+  const badge = sources["LocationBadge.tsx"];
+  // Every tone is reachable, including the denied/unsupported "off" state.
+  for (const tone of ["live", "waiting", "manual", "off"]) {
+    assert.match(badge, new RegExp(`"${tone}"`), `missing badge tone ${tone}`);
+  }
+  // Denied users still get a retry and a manual picker.
+  assert.match(badge, /Try again/);
+  assert.match(badge, /setManualArea/);
+  assert.match(badge, /clearManualArea/);
+});
+
+test("badge stays visible on mobile where other nav buttons are hidden", async () => {
+  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  assert.match(css, /\.loc-badge-button/);
+  assert.match(css, /:not\(\.loc-badge-button\)/);
 });

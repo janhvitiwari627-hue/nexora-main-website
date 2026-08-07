@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient, Session, SupabaseClient } from "@supabase/supabase-js";
 import {
   PORTAL_PATHS,
@@ -22,6 +22,7 @@ import {
   type RankedItem,
   type UseLocationResult,
 } from "./lib/location";
+import { LocationBadge } from "./lib/location/LocationBadge";
 
 type Role = "customer" | "business_user" | "growth_partner";
 type Salon = {
@@ -432,6 +433,31 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
     };
   }, []);
 
+  // Auto GPS for the whole app. The watcher starts on mount and is shared by
+  // every screen (reference-counted singleton), so the header badge, the
+  // homepage and salon pages all read one fix from one watchPosition listener.
+  const location = useLocation();
+
+  // Re-arm GPS the moment a user signs up or logs in. A fresh account often
+  // has never been asked for location, and a returning user may have granted
+  // it in OS settings since the last visit — this re-triggers acquisition
+  // exactly once per sign-in. If permission is refused nothing breaks: the
+  // service simply reports "denied" and the manual picker stays available.
+  const armedForUser = useRef<string | null>(null);
+  useEffect(() => {
+    const userId = authState.session?.user?.id ?? null;
+    if (!userId) { armedForUser.current = null; return; }
+    if (armedForUser.current === userId) return;
+    armedForUser.current = userId;
+    // Deferred so it never runs inside the auth state commit.
+    const timer = window.setTimeout(() => {
+      // Already have a good fix? Leave it alone rather than restarting the radio.
+      if (locationService.getFix()) { locationService.start(); return; }
+      locationService.retry();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [authState.session?.user?.id]);
+
   const navigate = useCallback((target: string) => {
     window.history.pushState({}, "", target);
     setPath(new URL(target, window.location.origin).pathname);
@@ -473,7 +499,7 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
     <div className="site-shell">
       {!online && <div className="offline-banner">Offline — live salon and account data may be unavailable.</div>}
       {!getClient() && <div className="offline-banner" style={{ background: "#7b244a" }}>Supabase not configured: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY for project {SUPABASE_PROJECT_REF}.</div>}
-      <Header navigate={navigate} authState={authState} signOut={signOut} />
+      <Header navigate={navigate} authState={authState} signOut={signOut} location={location} />
       {content}
       <Footer navigate={navigate} />
     </div>
@@ -484,10 +510,12 @@ function Header({
   navigate,
   authState,
   signOut,
+  location,
 }: {
   navigate: (path: string) => void;
   authState: AuthState;
   signOut: (destination?: string) => Promise<void>;
+  location: UseLocationResult;
 }) {
   const dashboardLabel =
     authState.role === "business_user"
@@ -507,6 +535,9 @@ function Header({
         <span>Nexora</span>
       </button>
       <nav aria-label="Main navigation">
+        {/* Always visible, permission granted or not, so the customer can see
+            and fix their GPS state from anywhere in the app. */}
+        <LocationBadge location={location} />
         <button onClick={() => navigate("/salons")}>Find salons</button>
         <button onClick={() => navigate(PORTAL_PATHS.customer)}>Customer</button>
         <button onClick={() => navigate(PORTAL_PATHS.business_user)}>Shop Owner</button>
