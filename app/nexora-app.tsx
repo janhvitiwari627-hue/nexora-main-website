@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient, Session, SupabaseClient } from "@supabase/supabase-js";
 import {
   PORTAL_PATHS,
@@ -10,6 +10,19 @@ import {
   portalRoleFromPath,
   roleQueryForPortalRole,
 } from "./lib/portalRoutes";
+// GPS location system — browser-native geolocation only. No Google
+// Geolocation/Maps Geocoding, no Mapbox, no Nominatim, no API keys.
+import {
+  formatAccuracy,
+  formatDistance,
+  haversineKm,
+  locationService,
+  useLocation,
+  useNearbySalons,
+  type RankedItem,
+  type UseLocationResult,
+} from "./lib/location";
+import { LocationBadge } from "./lib/location/LocationBadge";
 
 type Role = "customer" | "business_user" | "growth_partner";
 type Salon = {
@@ -420,6 +433,31 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
     };
   }, []);
 
+  // Auto GPS for the whole app. The watcher starts on mount and is shared by
+  // every screen (reference-counted singleton), so the header badge, the
+  // homepage and salon pages all read one fix from one watchPosition listener.
+  const location = useLocation();
+
+  // Re-arm GPS the moment a user signs up or logs in. A fresh account often
+  // has never been asked for location, and a returning user may have granted
+  // it in OS settings since the last visit — this re-triggers acquisition
+  // exactly once per sign-in. If permission is refused nothing breaks: the
+  // service simply reports "denied" and the manual picker stays available.
+  const armedForUser = useRef<string | null>(null);
+  useEffect(() => {
+    const userId = authState.session?.user?.id ?? null;
+    if (!userId) { armedForUser.current = null; return; }
+    if (armedForUser.current === userId) return;
+    armedForUser.current = userId;
+    // Deferred so it never runs inside the auth state commit.
+    const timer = window.setTimeout(() => {
+      // Already have a good fix? Leave it alone rather than restarting the radio.
+      if (locationService.getFix()) { locationService.start(); return; }
+      locationService.retry();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [authState.session?.user?.id]);
+
   const navigate = useCallback((target: string) => {
     window.history.pushState({}, "", target);
     setPath(new URL(target, window.location.origin).pathname);
@@ -461,7 +499,7 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
     <div className="site-shell">
       {!online && <div className="offline-banner">Offline — live salon and account data may be unavailable.</div>}
       {!getClient() && <div className="offline-banner" style={{ background: "#7b244a" }}>Supabase not configured: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY for project {SUPABASE_PROJECT_REF}.</div>}
-      <Header navigate={navigate} authState={authState} signOut={signOut} />
+      <Header navigate={navigate} authState={authState} signOut={signOut} location={location} />
       {content}
       <Footer navigate={navigate} />
     </div>
@@ -472,10 +510,12 @@ function Header({
   navigate,
   authState,
   signOut,
+  location,
 }: {
   navigate: (path: string) => void;
   authState: AuthState;
   signOut: (destination?: string) => Promise<void>;
+  location: UseLocationResult;
 }) {
   const dashboardLabel =
     authState.role === "business_user"
@@ -495,6 +535,9 @@ function Header({
         <span>Nexora</span>
       </button>
       <nav aria-label="Main navigation">
+        {/* Always visible, permission granted or not, so the customer can see
+            and fix their GPS state from anywhere in the app. */}
+        <LocationBadge location={location} />
         <button onClick={() => navigate("/salons")}>Find salons</button>
         <button onClick={() => navigate(PORTAL_PATHS.customer)}>Customer</button>
         <button onClick={() => navigate(PORTAL_PATHS.business_user)}>Shop Owner</button>
@@ -529,7 +572,10 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   const { sponsored, loading: sponsoredLoading } = useSponsored(online);
   const { rows: topRatedRows, loading: topRatedLoading } = useTopRated(online);
   const { rows: trendingRows, loading: trendingLoading } = useTrending(online);
-  const { rows: nearbyRows, loading: nearbyLoading, geoStatus } = useNearby(online);
+  const { rows: nearbyRows, loading: nearbyLoading } = useNearby(online);
+  // Live GPS (watchPosition) + on-device Haversine ranking.
+  const location = useLocation();
+  const { buckets: nearbyBuckets, ranked: nearbyRanked } = useNearbySalons(nearbyRows, location.fix);
   const categories = Array.from(new Set(items.map(i=>i.business_category).filter(Boolean))) as string[];
   // Live customer signals: rating avg + review count from customer_reviews,
   // booking counts from bookings (security-definer aggregates).
@@ -612,8 +658,25 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
 
 {visible('nearby') && (
 <section className="section">
-        <div className="section-heading"><span className="eyebrow">Nearby</span><h2>Salons near you</h2><p>{geoStatus === "granted" ? "Sorted by your location — nothing is stored." : geoStatus === "denied" ? "Location permission denied — showing salons around Jaipur instead." : "Based on Jaipur (allow location to personalise)."}</p></div>
-        {nearbyLoading ? <SalonSkeletons count={3} /> : nearbyRows.length ? <div className="salon-grid">{nearbyRows.map((row) => <article key={row.id} className="salon-card"><div className="salon-visual" style={row.cover_image_path?.startsWith("http") ? { backgroundImage: `url("${row.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>{!row.cover_image_path?.startsWith("http") && <span>✦</span>}<em>Verified</em></div><div className="salon-body"><div className="salon-meta"><span>{row.business_category ?? "Salon"}</span><span>📍 {Number(row.distance_km).toFixed(1)} km</span></div><h3>{row.name}</h3><p>{row.area ?? row.city}, {row.city}</p><div className="salon-bottom"><b>From {money(row.starting_price_paise)}</b><button onClick={() => navigate(`/salons/${row.slug}`)}>View salon</button></div></div></article>)}</div> : <StateCard title="No salons nearby yet" text="Salons with location coordinates set by their owner appear here, sorted by distance." />}
+        <div className="section-heading"><span className="eyebrow">Nearby</span><h2>Salons near you</h2><p>{locationHeadline(location)}</p></div>
+        <LocationNotice location={location} />
+        {location.isImproving && !location.fix && (
+          <div className="state-card" style={{ padding: 20, marginBottom: 18 }} role="status" aria-live="polite">
+            <p style={{ margin: 0 }}>{location.status === "improving" ? "Improving your location…" : "Locating you…"}{location.candidateAccuracy != null ? ` (best so far ${formatAccuracy(location.candidateAccuracy)})` : ""}</p>
+          </div>
+        )}
+        {nearbyLoading ? <SalonSkeletons count={3} /> : !nearbyRanked.length ? (
+          <StateCard title="No salons nearby yet" text="Salons with location coordinates set by their owner appear here, sorted by distance calculated on your device." />
+        ) : !location.fix ? (
+          <div className="salon-grid">{nearbyRanked.slice(0, 6).map((row) => <NearbyDistanceCard key={row.id} row={row} navigate={navigate} />)}</div>
+        ) : (
+          nearbyBuckets.map((bucket) => (
+            <div key={bucket.key} style={{ marginBottom: 26 }}>
+              <div className="section-heading" style={{ marginBottom: 16 }}><h3 style={{ fontSize: 22, marginBottom: 4 }}>{bucket.title}</h3><p style={{ margin: 0, fontSize: 13 }}>{bucket.subtitle} · {bucket.items.length} salon{bucket.items.length === 1 ? "" : "s"}</p></div>
+              <div className="salon-grid">{bucket.items.slice(0, 6).map((row) => <NearbyDistanceCard key={row.id} row={row} navigate={navigate} />)}</div>
+            </div>
+          ))
+        )}
         <p className="section-hint" style={{ marginTop: 10 }}><button className="text-button" onClick={() => navigate("/salons")}>Open full search →</button></p>
       </section>)}
 
@@ -1464,33 +1527,25 @@ type NearbyRow = {
 };
 
 /**
- * Nearby salons: browser geolocation ONLY after explicit permission; on
- * denial/absence falls back to the admin default city center. Distance is
- * computed server-side (haversine) and never stored client-side. Salons
- * without valid coordinates are excluded by the RPC.
+ * Nearby salons — the salon rows themselves come from Supabase (each already
+ * carries latitude/longitude); the position comes from the device's own GPS via
+ * `navigator.geolocation.watchPosition()`, and every distance is computed
+ * locally with the Haversine formula. No Google Geolocation API, no Maps
+ * Geocoding, no Distance Matrix, no Mapbox, no Nominatim, no API keys.
+ *
+ * The list re-ranks automatically whenever the customer moves more than 100 m —
+ * no page refresh required.
  */
 function useNearby(online: boolean, radiusKm?: number) {
   const [rows, setRows] = useState<NearbyRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [geoStatus, setGeoStatus] = useState<"idle" | "granted" | "denied" | "unavailable">("idle");
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const client = getClient(); if (!client) { setLoading(false); return; }
-      const coords = await new Promise<{ lat: number; lng: number } | null>((resolve) => {
-        if (typeof navigator === "undefined" || !("geolocation" in navigator)) { setGeoStatus("unavailable"); resolve(null); return; }
-        // Ask for permission explicitly; precise location is NOT stored.
-        navigator.geolocation.getCurrentPosition(
-          (pos) => { setGeoStatus("granted"); resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }); },
-          () => { setGeoStatus("denied"); resolve(null); },
-          { enableHighAccuracy: false, timeout: 8000, maximumAge: 600000 }
-        );
-      });
+      // Pull the catalogue only — the RPC is never asked to rank by distance.
       const { data, error } = await client.rpc("marketplace_nearby", {
-        p_lat: coords?.lat ?? null,
-        p_lng: coords?.lng ?? null,
-        p_radius_km: radiusKm ?? null,
-        p_limit: 6,
+        p_lat: null, p_lng: null, p_radius_km: radiusKm ?? null, p_limit: 60,
       });
       if (error) throw error;
       setRows((data ?? []) as NearbyRow[]);
@@ -1500,7 +1555,91 @@ function useNearby(online: boolean, radiusKm?: number) {
     const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
     return () => window.clearTimeout(t);
   }, [load, online]);
-  return { rows, loading, geoStatus, load };
+  return { rows, loading, load };
+}
+
+/** Short status line describing what the GPS pipeline is currently doing. */
+function locationHeadline(location: UseLocationResult): string {
+  if (location.fix?.source === "manual") return `Showing salons around ${location.fix.label} — sorted on your device.`;
+  switch (location.status) {
+    case "ready":
+      return `Sorted by live GPS distance (${formatAccuracy(location.fix?.accuracy)} accuracy) — calculated on your device, nothing is stored.`;
+    case "improving":
+      return "Improving your location…";
+    case "acquiring":
+    case "prompting":
+      return "Locating you… allow location to see the closest salons first.";
+    case "denied":
+      return "Please enable location to discover nearby salons.";
+    case "offline":
+      return "You are offline — reconnect to refresh salons near you.";
+    case "timeout":
+      return "GPS is taking longer than usual. Keep this screen open or retry.";
+    case "unsupported":
+      return "This browser cannot access GPS — choose your area manually.";
+    case "unavailable":
+      return "No GPS signal yet. Move to an open area and retry.";
+    default:
+      return "Allow location to sort salons by real distance.";
+  }
+}
+
+/** Permission / error / manual-selection panel. Never crashes the page. */
+function LocationNotice({ location }: { location: UseLocationResult }) {
+  const showManual =
+    location.status === "denied" || location.status === "unsupported" ||
+    location.status === "unavailable" || location.status === "timeout" ||
+    location.status === "manual" || location.status === "offline";
+  if (!showManual && !location.error) return null;
+  return (
+    <div className="state-card" style={{ textAlign: "left", padding: 20, marginBottom: 18 }} role="status" aria-live="polite">
+      <p style={{ margin: 0, fontWeight: 600, color: "var(--primary)" }}>
+        {location.error?.message ?? location.message}
+      </p>
+      <div className="button-row" style={{ marginTop: 12, flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+        <button className="secondary" onClick={location.retry}>Retry location</button>
+        <label style={{ fontSize: 13, color: "var(--muted)", display: "flex", gap: 8, alignItems: "center" }}>
+          Or pick your area
+          <select
+            value={location.fix?.source === "manual" ? (location.manualAreas.find((a) => a.label === location.fix?.label)?.id ?? "") : ""}
+            onChange={(e) => { if (e.target.value) location.setManualArea(e.target.value); else location.clearManualArea(); }}
+            style={{ padding: "8px 12px", borderRadius: 12, border: "1px solid #e8e8e8", fontSize: 13 }}
+          >
+            <option value="">Select area…</option>
+            {location.manualAreas.map((area) => <option key={area.id} value={area.id}>{area.label}</option>)}
+          </select>
+        </label>
+        {location.fix?.source === "manual" && (
+          <button className="text-button" onClick={location.clearManualArea}>Use my GPS instead</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** One salon card inside a distance section. */
+function NearbyDistanceCard({ row, navigate }: { row: RankedItem<NearbyRow>; navigate: (path: string) => void }) {
+  const cover = row.cover_image_path?.startsWith("http") ? row.cover_image_path : null;
+  return (
+    <article className="salon-card">
+      <div className="salon-visual" style={cover ? { backgroundImage: `url("${cover.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>
+        {!cover && <span>✦</span>}<em>Verified</em>
+      </div>
+      <div className="salon-body">
+        <div className="salon-meta">
+          <span>{row.business_category ?? "Salon"}</span>
+          <span>📍 {row.distanceKm != null ? formatDistance(row.distanceKm) : "Distance unavailable"}</span>
+        </div>
+        <h3>{row.name}</h3>
+        <p>{row.area ?? row.city}, {row.city}</p>
+        <div className="salon-meta"><span>★ {Number(row.rating_avg ?? 0).toFixed(1)} ({Number(row.review_count ?? 0)})</span></div>
+        <div className="salon-bottom">
+          <b>From {money(row.starting_price_paise)}</b>
+          <button onClick={() => navigate(`/salons/${row.slug}`)}>View salon</button>
+        </div>
+      </div>
+    </article>
+  );
 }
 
 type RecommendationRow = {
@@ -1633,15 +1772,6 @@ async function fetchSalonMarketplace(client: SupabaseClient, salonId: string): P
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
-/** Approximate distance for display only — never stored. */
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLng = ((lng2 - lng1) * Math.PI) / 180;
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
 function formatHours(opens: string | null, closes: string | null): string {
   if (!opens || !closes) return "Hours unavailable";
   const to12 = (v: string) => {
@@ -1672,9 +1802,14 @@ function SalonPage({
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [distanceKm, setDistanceKm] = useState<number | null>(null);
-  const [geoDenied, setGeoDenied] = useState(false);
+  // Live GPS distance from the shared LocationService (watchPosition only).
+  const location = useLocation();
   const [isFavourite, setIsFavourite] = useState(false);
+  // Haversine, computed on-device — no Distance Matrix, no external call.
+  const distanceKm = useMemo(() => {
+    if (!location.fix || item?.latitude == null || item?.longitude == null) return null;
+    return haversineKm(location.fix.latitude, location.fix.longitude, Number(item.latitude), Number(item.longitude));
+  }, [location.fix, item?.latitude, item?.longitude]);
   const [nextSlot, setNextSlot] = useState<string | null>(null);
   const [similar, setSimilar] = useState<NearbyRow[]>([]);
   const [shareToast, setShareToast] = useState(false);
@@ -1700,18 +1835,6 @@ function SalonPage({
         if ((ns ?? [])[0]?.next_slot_iso) setNextSlot(String((ns ?? [])[0].next_slot_iso));
         const { data: sim } = await client.rpc("marketplace_nearby", { p_area: match.area ?? null, p_city: match.city ?? null, p_limit: 3 });
         setSimilar(((sim ?? []) as NearbyRow[]).filter((r) => r.id !== match.id));
-        // Distance when the browser grants location (never stored).
-        if ("geolocation" in navigator) {
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              if (match.latitude != null && match.longitude != null) {
-                setDistanceKm(haversineKm(pos.coords.latitude, pos.coords.longitude, Number(match.latitude), Number(match.longitude)));
-              }
-            },
-            () => setGeoDenied(true),
-            { enableHighAccuracy: false, timeout: 6000, maximumAge: 600000 }
-          );
-        } else setGeoDenied(true);
         // Favourite state (own rows only).
         const { data: { session } } = await client.auth.getSession();
         setMySession(session);
@@ -1827,7 +1950,7 @@ function SalonPage({
   };
   return (
     <main>
-      <section className="store-hero" style={item.cover_image_path?.startsWith("http") ? { backgroundImage: `linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.55)), url("${item.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center", color: "#fff" } : undefined}><span className="verified-pill">✓ Nexora verified</span>{stats?.partner_onboarded && <span className="verified-pill" style={{ background: "var(--cream)", color: "var(--primary)" }}>✦ Partner onboarded</span>}<h1>{item.name}</h1><p style={{ color: "inherit" }}>{String(config.profile?.description ?? item.description ?? "Professional beauty services.")}</p><div className="store-facts"><span>★ {stats ? Number(stats.rating_avg).toFixed(1) : Number(item.rating_average).toFixed(1)} ({stats ? Number(stats.review_count) : Number(item.review_count)} reviews)</span><span>⌖ {item.area ?? item.city}, {item.city}</span>{stats && Number(stats.booking_count) > 0 && <span>📅 {Number(stats.booking_count)} bookings</span>}{openingSummary.length > 0 && <span>🕑 {formatHours(String(openingSummary[0].opens_at ?? ""), String(openingSummary[0].closes_at ?? ""))}</span>}{todayHours && <span>{isOpenNow ? "🟢 Open now" : "🔴 Closed now"}</span>}{distanceKm != null && <span>📍 {distanceKm.toFixed(1)} km away</span>}{geoDenied && <span>📍 location off</span>}{nextSlot && <span>⏭ next {new Date(nextSlot).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}</span>}</div>
+      <section className="store-hero" style={item.cover_image_path?.startsWith("http") ? { backgroundImage: `linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.55)), url("${item.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center", color: "#fff" } : undefined}><span className="verified-pill">✓ Nexora verified</span>{stats?.partner_onboarded && <span className="verified-pill" style={{ background: "var(--cream)", color: "var(--primary)" }}>✦ Partner onboarded</span>}<h1>{item.name}</h1><p style={{ color: "inherit" }}>{String(config.profile?.description ?? item.description ?? "Professional beauty services.")}</p><div className="store-facts"><span>★ {stats ? Number(stats.rating_avg).toFixed(1) : Number(item.rating_average).toFixed(1)} ({stats ? Number(stats.review_count) : Number(item.review_count)} reviews)</span><span>⌖ {item.area ?? item.city}, {item.city}</span>{stats && Number(stats.booking_count) > 0 && <span>📅 {Number(stats.booking_count)} bookings</span>}{openingSummary.length > 0 && <span>🕑 {formatHours(String(openingSummary[0].opens_at ?? ""), String(openingSummary[0].closes_at ?? ""))}</span>}{todayHours && <span>{isOpenNow ? "🟢 Open now" : "🔴 Closed now"}</span>}{distanceKm != null && <span>📍 {formatDistance(distanceKm)} away</span>}{distanceKm == null && location.status === "denied" && <span>📍 location off</span>}{nextSlot && <span>⏭ next {new Date(nextSlot).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })}</span>}</div>
       <div className="button-row" style={{ marginTop: 8 }}><button className="primary" onClick={() => navigate(customerPortalBookingPath())}>Book Now</button><button className="secondary" onClick={() => window.open(mapsUrl, "_blank", "noopener")}>Directions ↗</button><button className="secondary" onClick={() => void toggleFavourite()}>{isFavourite ? "♥ Saved" : "♡ Save"}</button><button className="secondary" onClick={() => void handleShare()}>Share</button></div>
       {shareToast && <p style={{ fontSize: 12, color: "#2e7d32" }}>Link copied to clipboard.</p>}
       {maxMemberDiscount > 0 && <p className="preview-note" style={{ color: "inherit" }}>✦ Nexora members save up to {maxMemberDiscount}% here — benefits apply automatically at booking.</p>}
