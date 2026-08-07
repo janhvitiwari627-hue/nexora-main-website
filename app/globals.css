@@ -15,6 +15,33 @@ button { cursor:pointer; }
 .topbar nav button { border:0; background:none; color:#59444d; padding:11px 13px; border-radius:12px; font-size:14px; }
 .topbar nav button:hover { background:#fff0f7; color:var(--pink-dark); }
 .topbar nav .nav-cta { background:var(--ink); color:#fff; padding-inline:19px; margin-left:8px; }
+/* ---- Header location badge (native GPS only, no map provider) ---- */
+.loc-badge { position:relative; display:flex; align-items:center; }
+.loc-badge-button { display:flex; align-items:center; gap:7px; border:1px solid var(--line); background:#fff; color:#59444d; padding:8px 12px; border-radius:999px; font-size:13px; font-weight:700; max-width:190px; }
+.loc-badge-button:hover { background:#fff0f7; color:var(--pink-dark); border-color:#f4cede; }
+.loc-pin { display:grid; place-items:center; flex:none; }
+.loc-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.loc-dot { width:8px; height:8px; border-radius:50%; flex:none; }
+.loc-dot-live { background:var(--green); }
+.loc-dot-waiting { background:#e0a80b; animation:loc-pulse 1.25s ease-in-out infinite; }
+.loc-dot-manual { background:var(--pink); }
+.loc-dot-off { background:#b9a3ac; }
+.loc-badge-button.loc-live { color:var(--green); border-color:#bfe3d3; background:#f3fbf7; }
+.loc-badge-button.loc-off { color:#8c6b78; border-color:#f0d3de; background:#fff7fa; }
+@keyframes loc-pulse { 0%,100% { opacity:1; } 50% { opacity:.28; } }
+@media(prefers-reduced-motion:reduce) { .loc-dot-waiting { animation:none; } }
+.loc-panel { position:absolute; top:calc(100% + 10px); right:0; width:302px; max-width:calc(100vw - 30px); background:#fff; border:1px solid var(--line); border-radius:18px; box-shadow:0 22px 52px #55132f1f; padding:16px; z-index:60; display:grid; gap:12px; text-align:left; }
+.loc-panel-status { margin:0; font-size:13px; font-weight:700; color:var(--ink); line-height:1.5; }
+.loc-panel-hint { margin:0; font-size:12px; color:var(--muted); line-height:1.55; }
+.loc-facts { margin:0; display:grid; gap:6px; }
+.loc-facts>div { display:flex; justify-content:space-between; gap:12px; font-size:12px; }
+.loc-facts dt { color:var(--muted); margin:0; }
+.loc-facts dd { margin:0; font-weight:700; color:var(--ink); text-align:right; }
+.loc-manual { display:grid; gap:6px; font-size:12px; color:var(--muted); font-weight:700; }
+.loc-manual select { padding:9px 11px; border-radius:12px; border:1px solid var(--line); font-size:13px; background:#fff; color:var(--ink); width:100%; }
+.loc-panel-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.loc-panel-actions .secondary { min-height:38px; padding:0 15px; font-size:13px; }
+
 .hero { min-height:680px; padding:92px clamp(24px,7vw,110px); display:grid; grid-template-columns:1.12fr .88fr; gap:70px; align-items:center; background:radial-gradient(circle at 15% 15%,#ffd9eb 0,transparent 32%),linear-gradient(135deg,#fff 0,#fff7fb 65%,#fce3ee 100%); }
 .hero-copy { max-width:720px; }
 .eyebrow { display:inline-block; color:var(--pink-dark); font-size:12px; font-weight:850; letter-spacing:.15em; text-transform:uppercase; margin-bottom:14px; }
@@ -172,7 +199,7 @@ footer>div:not(:first-child) { display:flex; flex-direction:column; align-items:
 footer button { color:#d7bdc8; padding:0; }
 footer .brand { color:#fff; padding:0; }
 @media(max-width:920px) {
-  .topbar nav button:not(.nav-cta) { display:none; }
+  .topbar nav button:not(.nav-cta):not(.loc-badge-button) { display:none; }
   .hero { grid-template-columns:1fr; min-height:auto; padding-top:70px; }
   .salon-grid,.role-grid { grid-template-columns:1fr 1fr; }
   .section-heading.split { align-items:stretch; flex-direction:column; }
@@ -186,6 +213,8 @@ footer .brand { color:#fff; padding:0; }
   .brand { font-size:18px; }
   .brand-mark { width:35px; height:35px; }
   .topbar nav .nav-cta { padding:9px 13px; }
+  .loc-badge-button { max-width:132px; padding:7px 10px; font-size:12px; }
+  .loc-panel { right:-8px; width:min(302px, calc(100vw - 24px)); }
   .hero { padding:60px 20px; gap:38px; }
   .hero h1 { font-size:46px; }
   .hero-card { padding:27px; }
