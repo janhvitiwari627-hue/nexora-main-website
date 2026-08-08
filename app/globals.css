@@ -15,6 +15,10 @@ button { cursor:pointer; }
 .topbar nav button { border:0; background:none; color:#59444d; padding:11px 13px; border-radius:12px; font-size:14px; }
 .topbar nav button:hover { background:#fff0f7; color:var(--pink-dark); }
 .topbar nav .nav-cta { background:var(--ink); color:#fff; padding-inline:19px; margin-left:8px; }
+.topbar nav .job-portal-link { color:var(--pink-dark); font-weight:850; border:1px solid #f4cede; background:#fff7fa; }
+.topbar nav .job-portal-link:hover { background:#ffe7f2; border-color:#efb9cf; }
+.mobile-menu-toggle { display:none; width:42px; height:42px; border:1px solid var(--line); border-radius:12px; background:#fff; align-items:center; justify-content:center; flex-direction:column; gap:4px; }
+.mobile-menu-toggle span { width:19px; height:2px; border-radius:2px; background:var(--ink); }
 /* ---- Header location badge (native GPS only, no map provider) ---- */
 .loc-badge { position:relative; display:flex; align-items:center; }
 .loc-badge-button { display:flex; align-items:center; gap:7px; border:1px solid var(--line); background:#fff; color:#59444d; padding:8px 12px; border-radius:999px; font-size:13px; font-weight:700; max-width:190px; }
@@ -199,7 +203,15 @@ footer>div:not(:first-child) { display:flex; flex-direction:column; align-items:
 footer button { color:#d7bdc8; padding:0; }
 footer .brand { color:#fff; padding:0; }
 @media(max-width:920px) {
-  .topbar nav button:not(.nav-cta):not(.loc-badge-button) { display:none; }
+  .mobile-menu-toggle { display:flex; }
+  .topbar nav { display:none; position:absolute; left:16px; right:16px; top:calc(100% + 8px); max-height:calc(100vh - 96px); overflow:auto; padding:14px; border:1px solid var(--line); border-radius:20px; background:rgba(255,255,255,.98); box-shadow:0 22px 52px #55132f24; align-items:stretch; flex-direction:column; }
+  .topbar nav.mobile-open { display:flex; }
+  .topbar nav button { width:100%; text-align:left; padding:12px 14px; }
+  .topbar nav .nav-cta { margin-left:0; text-align:center; }
+  .topbar nav .job-portal-link { text-align:center; }
+  .topbar .loc-badge { width:100%; }
+  .topbar .loc-badge-button { width:100%; max-width:none; justify-content:flex-start; }
+  .topbar .loc-panel { left:0; right:auto; width:100%; }
   .hero { grid-template-columns:1fr; min-height:auto; padding-top:70px; }
   .salon-grid,.role-grid { grid-template-columns:1fr 1fr; }
   .section-heading.split { align-items:stretch; flex-direction:column; }

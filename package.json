@@ -2,20 +2,26 @@
   "name": "nexora-main",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "job-portal"
+  ],
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
     "install:ci": "bash scripts/install-ci.sh",
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vite",
+    "build:job-portal": "bash scripts/build-job-portal.sh",
+    "prebuild": "npm run build:job-portal",
     "build": "bash scripts/build-verified.sh",
+    "prebuild:next": "npm run build:job-portal",
     "build:next": "next build",
     "deploy": "npm run build && wrangler deploy",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
-    "test:contracts": "node --test tests/auth-config-contract.test.mjs tests/booking-role-guard.test.mjs tests/business-rules-contract.test.mjs tests/proposal-flow-contract.test.mjs tests/phase1-customer-contract.test.mjs tests/path-routing-contract.test.mjs tests/phase2-owner-package-contract.test.mjs tests/phase3-growth-partner-package-contract.test.mjs tests/phase7-contract.test.mjs tests/phase8-contract.test.mjs tests/full-website-test.mjs tests/production-auth-security-contract.test.mjs",
+    "test:contracts": "node --test tests/auth-config-contract.test.mjs tests/booking-role-guard.test.mjs tests/business-rules-contract.test.mjs tests/proposal-flow-contract.test.mjs tests/phase1-customer-contract.test.mjs tests/path-routing-contract.test.mjs tests/phase2-owner-package-contract.test.mjs tests/phase3-growth-partner-package-contract.test.mjs tests/phase7-contract.test.mjs tests/phase8-contract.test.mjs tests/full-website-test.mjs tests/job-portal-integration.test.mjs tests/production-auth-security-contract.test.mjs",
     "validate:artifact": "bash scripts/validate-artifact.sh",
-    "lint": "bash scripts/sites-env.sh -- eslint . --ignore-pattern dist --ignore-pattern .next",
+    "lint": "bash scripts/sites-env.sh -- eslint app db worker next.config.ts vite.config.ts && npm run lint --workspace=@nexora/job-portal",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate",
     "test:phase14": "npm run test:phase14:contracts && npm run test:phase14:integration && npm run test:phase14:e2e",
     "test:phase14:contracts": "node --test tests/phase14/contracts/*.test.mjs",

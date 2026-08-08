@@ -527,28 +527,43 @@ function Header({
           : "Account";
   // Canonical same-origin portal paths keep all PWAs on one browser origin.
   const dashboardPath = authState.role ? portalPathForRole(authState.role) : "/dashboard";
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const go = (target: string) => { setMobileMenuOpen(false); navigate(target); };
+  const openJobPortal = () => {
+    setMobileMenuOpen(false);
+    window.location.assign("/job-portal");
+  };
 
   return (
     <header className="topbar">
-      <button className="brand" onClick={() => navigate("/")} aria-label="Nexora home">
+      <button className="brand" onClick={() => go("/")} aria-label="Nexora home">
         <span className="brand-mark">N</span>
         <span>Nexora</span>
       </button>
-      <nav aria-label="Main navigation">
-        {/* Always visible, permission granted or not, so the customer can see
-            and fix their GPS state from anywhere in the app. */}
+      <button
+        type="button"
+        className="mobile-menu-toggle"
+        aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+        aria-expanded={mobileMenuOpen}
+        aria-controls="main-navigation"
+        onClick={() => setMobileMenuOpen((open) => !open)}
+      >
+        <span /> <span /> <span />
+      </button>
+      <nav id="main-navigation" aria-label="Main navigation" className={mobileMenuOpen ? "mobile-open" : ""}>
         <LocationBadge location={location} />
-        <button onClick={() => navigate("/salons")}>Find salons</button>
-        <button onClick={() => navigate(PORTAL_PATHS.customer)}>Customer</button>
-        <button onClick={() => navigate(PORTAL_PATHS.business_user)}>Shop Owner</button>
-        <button onClick={() => navigate(PORTAL_PATHS.growth_partner)}>Growth Partner</button>
+        <button onClick={() => go("/salons")}>Find salons</button>
+        <button onClick={() => { setMobileMenuOpen(false); navigate(PORTAL_PATHS.customer); }}>Customer</button>
+        <button onClick={() => { setMobileMenuOpen(false); navigate(PORTAL_PATHS.business_user); }}>Shop Owner</button>
+        <button onClick={() => { setMobileMenuOpen(false); navigate(PORTAL_PATHS.growth_partner); }}>Growth Partner</button>
+        <button className="job-portal-link" onClick={openJobPortal}>Job Portal</button>
         {authState.session ? (
           <>
-            <button className="nav-cta" onClick={() => navigate(dashboardPath)}>{dashboardLabel}</button>
-            <button onClick={() => void signOut()}>Sign out</button>
+            <button className="nav-cta" onClick={() => go(dashboardPath)}>{dashboardLabel}</button>
+            <button onClick={() => { setMobileMenuOpen(false); void signOut(); }}>Sign out</button>
           </>
         ) : (
-          !authState.loading && <button className="nav-cta" onClick={() => navigate("/login")}>Log in</button>
+          !authState.loading && <button className="nav-cta" onClick={() => go("/login")}>Log in</button>
         )}
       </nav>
     </header>
@@ -818,6 +833,7 @@ function RoleEntry({ path, navigate }: { path: string; navigate: (path: string) 
   );
 }
 
+// Public catalog contract: verified=true, is_active=true, is_published=true, deleted_at null.
 async function fetchCatalog(): Promise<CatalogItem[]> {
   const client = getClient();
   if (!client) throw new Error(missingSupabaseConfigMessage);
@@ -1079,11 +1095,14 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
 
   // Deep links + initial params
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const q = params.get("q"); if (q) { setQuery(q); setDebouncedQuery(q); }
-    const cat = params.get("category"); if (cat) setCategoryFilter(cat);
-    const area = params.get("area"); if (area) setLocationFilter(area);
-    const city = params.get("city"); if (city && !area) setLocationFilter(city);
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const q = params.get("q"); if (q) { setQuery(q); setDebouncedQuery(q); }
+      const cat = params.get("category"); if (cat) setCategoryFilter(cat);
+      const area = params.get("area"); if (area) setLocationFilter(area);
+      const city = params.get("city"); if (city && !area) setLocationFilter(city);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   // Debounced search + suggestions
@@ -1092,10 +1111,13 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
     return () => window.clearTimeout(t);
   }, [query]);
   useEffect(() => {
-    if (!online) { setLoading(false); setError("You are offline. Reconnect to search salons."); return; }
+    if (!online) {
+      const offlineTimer = window.setTimeout(() => { setLoading(false); setError("You are offline. Reconnect to search salons."); }, 0);
+      return () => window.clearTimeout(offlineTimer);
+    }
     let active = true;
-    setLoading(true); setError("");
     const t = window.setTimeout(async () => {
+      setLoading(true); setError("");
       try {
         const client = getClient(); if (!client) { setLoading(false); return; }
         const { rows } = await runSearch(0);
@@ -1359,8 +1381,10 @@ function useRecentlyViewed(online: boolean, session: Session | null) {
   }, []);
 
   useEffect(() => {
-    if (!online || !session?.user || !consent) { setRows([]); return; }
-    const t = window.setTimeout(() => void load(), 0);
+    const t = window.setTimeout(() => {
+      if (!online || !session?.user || !consent) setRows([]);
+      else void load();
+    }, 0);
     return () => window.clearTimeout(t);
   }, [online, session, consent, load]);
 
@@ -1852,26 +1876,6 @@ function SalonPage({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [load, online]);
-  if (loading) return <main className="section page-top"><SalonSkeletons count={1} /></main>;
-  if (error || !item) return <main className="center-page"><StateCard title="Salon unavailable" text={error || "This website is not public."} action="Back to salons" onAction={() => navigate("/salons")} /></main>;
-  const config = item.website.config as { profile?: Record<string, unknown>; services?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; photos?: unknown; amenities?: unknown };
-  const configServices = Array.isArray(config.services) ? config.services : [];
-  const configStaff = Array.isArray(config.staff) ? config.staff : [];
-  const configProfile = (config.profile ?? {}) as { opening_hours?: { opens?: string; closes?: string } };
-  // DB is the source of truth; website config is the fallback (owner may
-  // still be publishing via the proposal payload before using the PWA CRUD).
-  const services = marketplace.services.length
-    ? marketplace.services.map((s) => ({ id: s.id, name: s.name, description: s.description ?? "Professional salon service", duration_minutes: s.duration_minutes ?? 0, price_paise: s.price_paise ?? 0 }))
-    : configServices;
-  const staffRows = marketplace.staff.length
-    ? marketplace.staff.map((s) => ({ id: s.id, name: s.name, role: s.role ?? "Stylist", specialty: s.specialty ?? null }))
-    : configStaff.map((s) => ({ id: String(s.id ?? ""), name: String(s.name ?? "Professional"), role: String(s.role ?? "Stylist"), specialty: s.specialty != null ? String(s.specialty) : null }));
-  const configOpening = configProfile.opening_hours;
-  const openingSummary = marketplace.hours.length
-    ? marketplace.hours
-    : configOpening?.opens
-      ? [{ day_of_week: -1, opens_at: configOpening.opens, closes_at: configOpening.closes ?? null, is_closed: false }]
-      : [];
   const loadSlots = useCallback(async (dateStr: string, serviceId?: string) => {
     const client = getClient();
     const firstService = serviceId ?? marketplace.services[0]?.id;
@@ -1894,6 +1898,26 @@ function SalonPage({
     return () => window.clearTimeout(t);
   }, [item, slotsDate, loadSlots]);
 
+  if (loading) return <main className="section page-top"><SalonSkeletons count={1} /></main>;
+  if (error || !item) return <main className="center-page"><StateCard title="Salon unavailable" text={error || "This website is not public."} action="Back to salons" onAction={() => navigate("/salons")} /></main>;
+  const config = item.website.config as { profile?: Record<string, unknown>; services?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; photos?: unknown; amenities?: unknown };
+  const configServices = Array.isArray(config.services) ? config.services : [];
+  const configStaff = Array.isArray(config.staff) ? config.staff : [];
+  const configProfile = (config.profile ?? {}) as { opening_hours?: { opens?: string; closes?: string } };
+  // DB is the source of truth; website config is the fallback (owner may
+  // still be publishing via the proposal payload before using the PWA CRUD).
+  const services = marketplace.services.length
+    ? marketplace.services.map((s) => ({ id: s.id, name: s.name, description: s.description ?? "Professional salon service", duration_minutes: s.duration_minutes ?? 0, price_paise: s.price_paise ?? 0 }))
+    : configServices;
+  const staffRows = marketplace.staff.length
+    ? marketplace.staff.map((s) => ({ id: s.id, name: s.name, role: s.role ?? "Stylist", specialty: s.specialty ?? null }))
+    : configStaff.map((s) => ({ id: String(s.id ?? ""), name: String(s.name ?? "Professional"), role: String(s.role ?? "Stylist"), specialty: s.specialty != null ? String(s.specialty) : null }));
+  const configOpening = configProfile.opening_hours;
+  const openingSummary = marketplace.hours.length
+    ? marketplace.hours
+    : configOpening?.opens
+      ? [{ day_of_week: -1, opens_at: configOpening.opens, closes_at: configOpening.closes ?? null, is_closed: false }]
+      : [];
   const customerPortalBookingPath = (serviceName?: string) => {
     const params = new URLSearchParams();
     // Pass only the public salon id and a safe return path; never tokens.
@@ -1961,7 +1985,7 @@ function SalonPage({
         </section>
       )}
       <section className="section"><div className="section-heading"><span className="eyebrow">Services</span><h2>Choose your service</h2><p>Browse the owner-published catalog, then continue to the Customer PWA to book.</p></div>
-      {!services.length ? <StateCard title="No services published yet" text="This salon has not published bookable services." /> : <div className="service-grid">{services.map((service, index) => <article className="service-card" key={String(service.id ?? index)}><div><h3>{String(service.name ?? "Salon service")}</h3><p>{String(service.description ?? "Professional salon service")}</p><small>{Number(service.duration_minutes ?? 0)} minutes</small></div><div><b>{money(Number(service.price_paise ?? 0))}</b><button className="text-button" onClick={() => navigate(customerPortalBookingPath(String(service.name ?? "")))}>Book in Customer app</button></div></article>)}</div>}</section>
+      {!services.length ? <StateCard title="No services published yet" text="This salon has not published bookable services." /> : <div className="service-grid">{services.map((service, index) => <article className="service-card" key={String(service.id ?? index)}><div><h3>{String(service.name ?? "Salon service")}</h3><p>{String(service.description ?? "Professional salon service")}</p><small>{Number(service.duration_minutes ?? 0)} minutes</small></div><div><b>{money(Number(service.price_paise ?? 0))}</b><button className="text-button" onClick={() => navigate(customerPortalBookingPath(String(service.name ?? "")))}>Continue in Customer app</button></div></article>)}</div>}</section>
       {staffRows.length > 0 && (
         <section className="section" style={{ background: "var(--cream)" }}>
           <div className="section-heading"><span className="eyebrow">Team</span><h2>Meet the team</h2><p>Staff managed by the shop owner — live from the shared Supabase project.</p></div>
@@ -2731,5 +2755,5 @@ function SalonSkeletons({ count }: { count: number }) {
 }
 
 function Footer({ navigate }: { navigate: (path: string) => void }) {
-  return <footer><div><div className="brand"><span className="brand-mark">N</span><span>Nexora</span></div><p>One connected platform for salons, customers, owners, and growth partners.</p></div><div><b>Explore</b><button onClick={() => navigate("/salons")}>Published salons</button><button onClick={() => navigate("/login")}>Log in</button></div><div><b>Legal</b><button onClick={() => navigate("/terms")}>Terms & Conditions</button><button onClick={() => navigate("/privacy")}>Privacy Policy</button><button onClick={() => navigate("/cancellation-refund")}>Cancellation & Refund</button></div></footer>;
+  return <footer><div><div className="brand"><span className="brand-mark">N</span><span>Nexora</span></div><p>One connected platform for salons, customers, owners, growth partners, and beauty careers.</p></div><div><b>Explore</b><button onClick={() => navigate("/salons")}>Published salons</button><button onClick={() => window.location.assign("/job-portal")}>Job Portal</button><button onClick={() => navigate("/login")}>Log in</button></div><div><b>Legal</b><button onClick={() => navigate("/terms")}>Terms & Conditions</button><button onClick={() => navigate("/privacy")}>Privacy Policy</button><button onClick={() => navigate("/cancellation-refund")}>Cancellation & Refund</button></div></footer>;
 }

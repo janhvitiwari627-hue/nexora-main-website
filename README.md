@@ -4,6 +4,17 @@ A clean full-stack starter running on
 [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
 Drizzle support.
 
+## Integrated Job Portal
+
+The existing React/Vite + Supabase Job Portal is built as an isolated npm workspace and mounted in this deployment at `/job-portal`. Its CSS, dependencies, PWA worker, and assets remain scoped to that base path; the standalone Job Portal deployment remains available for rollback.
+
+```bash
+npm run build:job-portal   # generates public/job-portal (ignored)
+npm run build:next        # runs the portal build first, then Next
+```
+
+See [`docs/JOB_PORTAL_INTEGRATION_REPORT.md`](docs/JOB_PORTAL_INTEGRATION_REPORT.md) for architecture, routes, environment variables, security evidence, tests, and known limitations.
+
 ## Prerequisites
 
 - Node.js `>=22.13.0`
