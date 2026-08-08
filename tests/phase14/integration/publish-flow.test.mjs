@@ -1,19 +1,8 @@
 // Phase 14 Integration Tests - Publish Flow
-import { test, describe } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
-import { getEnv, isLiveTestConfigured, createBlockedReport } from '../helpers/env.mjs';
-
-const blockReport = createBlockedReport([
-  'Partner can create draft',
-  'Partner can submit proposal',
-  'Owner can request changes',
-  'Partner can edit and resubmit',
-  'Owner can approve',
-  'Owner can publish',
-  'Invalid transitions fail',
-  'Public visibility after publish'
-]);
+import { getEnv, isLiveTestConfigured } from '../helpers/env.mjs';
 
 test.describe('Publish Flow - Live Integration Tests', () => {
   let client;

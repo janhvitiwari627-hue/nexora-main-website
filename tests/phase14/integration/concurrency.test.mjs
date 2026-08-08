@@ -1,6 +1,6 @@
 // Phase 14 Integration Tests - Concurrency
 // Tests genuinely simultaneous requests for same slot
-import { test, describe } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
 import { getEnv, isLiveTestConfigured } from '../helpers/env.mjs';
@@ -41,8 +41,6 @@ test.describe('Concurrency - Live Integration Tests', () => {
     }
     
     const sameSlot = new Date(Date.now() + 86400000).toISOString();
-    let results = [];
-    
     // Genuinely concurrent requests
     const promiseA = clientA.rpc('create_booking', {
       customer_id: env.ACCEPTANCE_CUSTOMER_A_EMAIL, // Would be user ID in real test

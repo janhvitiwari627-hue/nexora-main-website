@@ -1,5 +1,5 @@
 // Phase 14 Integration Tests - Public Privacy
-import { test, describe } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
 import { getEnv, isLiveTestConfigured } from '../helpers/env.mjs';

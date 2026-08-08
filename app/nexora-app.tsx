@@ -10,11 +10,12 @@ import {
   portalRoleFromPath,
   roleQueryForPortalRole,
 } from "./lib/portalRoutes";
-// GPS location system — browser-native geolocation only. No Google
-// Geolocation/Maps Geocoding, no Mapbox, no Nominatim, no API keys.
+// GPS coordinates come from browser-native geolocation. Readable area/city
+// names are resolved from the accepted fix through Google Reverse Geocoding.
 import {
   formatAccuracy,
   formatDistance,
+  formatLocation,
   haversineKm,
   locationService,
   useLocation,
@@ -183,29 +184,16 @@ function useReferralCode(online: boolean) {
   return refCode;
 }
 
-// Jaipur localities from Jaipur_Zones_Localities.pdf (5 zones, 124 areas).
-const JAIPUR_ZONES: Array<{ zone: string; areas: string[] }> = [
-  {
-    zone: "Central Jaipur",
-    areas: ["C-Scheme", "Civil Lines", "Bani Park", "Pink City", "M I Road", "Sindhi Camp", "Lal Kothi", "Bais Godam", "Sethi Colony", "Ashok Nagar", "Adarsh Nagar", "Bapu Nagar", "Tilak Nagar", "Raja Park", "Jawahar Nagar", "Ramganj", "Brahmpuri", "Transport Nagar", "Jalupura", "Gopalbari", "Moti Dongri Road", "Laxmi Narayan Puri", "Purani Basti", "Anita Colony", "Sagram Colony", "Raj Bhavan Road", "Subhash Marg", "Sahdev Marg", "Lajpat Marg", "Vivekanand Marg", "Sachivalaya Nagar", "Bhawani Singh Road"],
-  },
-  {
-    zone: "East Jaipur",
-    areas: ["Malviya Nagar", "Jagatpura", "Pratap Nagar", "Tonk Road", "Agra Road", "Kanota", "JLN Marg", "Durgapura", "Sitapura", "Mahal Road", "Paldi Meena", "Jamdoli", "Bassi", "Jamwa Ramgarh", "Goner Road", "Vatika", "Shivdaspura", "Chaksu", "Bagrana", "Mangarh Khokhawala", "Kho Nagoriyan", "Ghati Karolan", "Dholai"],
-  },
-  {
-    zone: "North Jaipur",
-    areas: ["Vidhyadhar Nagar", "Jhotwara", "Kalwar Road", "Sikar Road", "Niwaru", "Shastri Nagar", "Ambabari", "Benad Road", "Muralipura", "Vishwakarma Industrial Area", "Amer", "Chomu", "Kotputli", "Achrol", "Boytawala", "Sarna Doongar", "Nari Ka Bas", "Shiv Nagar", "Govindpura"],
-  },
-  {
-    zone: "South Jaipur",
-    areas: ["Mansarovar", "New Sanganer Road", "Muhana", "Sanganer", "Shiprapath", "Triveni Nagar", "Patrakar Colony", "Mahaveer Nagar", "Sidharth Nagar", "Narayan Vihar", "Shanti Nagar", "Budhsinghpura", "Mahapura", "Diggi Road", "Phagi Road", "Padampura", "Renwal Phagi Road", "Doongri", "Jairampura", "Ramsinghpura", "Shikarpura", "Ganatpura", "Bhambori", "Madhorajpura - Chandma Road"],
-  },
-  {
-    zone: "West Jaipur",
-    areas: ["Vaishali Nagar", "Sirsi Road", "Gandhi Path", "Chitrakoot", "Kanakpura", "Khatipura", "Gopalpura", "Gopalpura By Pass", "Sodala", "Nirman Nagar", "Shyam Nagar", "Ajmer Road", "Jaipur-Ajmer Express Highway", "Bhankrota", "Bagru", "Mahalan Ajmer Road", "Heerawala", "Brijlalpura", "Hasanpura", "Lalarpura", "Tagore Nagar", "Milap Nagar", "Marudhar Nagar", "Bhan Nagar", "Officers Campus Colony", "Udyog Nagar"],
-  },
-];
+function collectLocationOptions<T extends { area?: string | null; city?: string | null }>(rows: T[]): string[] {
+  const values = new Set<string>();
+  for (const row of rows) {
+    const area = row.area?.trim();
+    const city = row.city?.trim();
+    if (area) values.add(area);
+    if (city) values.add(city);
+  }
+  return Array.from(values).sort((left, right) => left.localeCompare(right));
+}
 
 // Canonical business categories — "Salon" is the default owner category;
 // dynamic categories from live data are appended when they aren't in this set.
@@ -576,6 +564,8 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   // Live GPS (watchPosition) + on-device Haversine ranking.
   const location = useLocation();
   const { buckets: nearbyBuckets, ranked: nearbyRanked } = useNearbySalons(nearbyRows, location.fix);
+  const formattedCurrentLocation = formatLocation(location.location);
+  const locationOptions = useMemo(() => collectLocationOptions(items), [items]);
   const categories = Array.from(new Set(items.map(i=>i.business_category).filter(Boolean))) as string[];
   // Live customer signals: rating avg + review count from customer_reviews,
   // booking counts from bookings (security-definer aggregates).
@@ -610,8 +600,8 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
             <input value={homeQuery} onChange={(e) => setHomeQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") navigate(`/salons?q=${encodeURIComponent(homeQuery.trim())}`); }} placeholder="Search salon, service, area…" style={{ minWidth: 220, padding: "10px 14px", borderRadius: 12, border: "1px solid #e8e8e8", fontSize: 14 }} />
             <button className="primary" onClick={() => navigate(`/salons?q=${encodeURIComponent(homeQuery.trim())}`)}>Search</button>
             <select value={homeLocation} onChange={(e) => navigate(e.target.value ? `/salons?area=${encodeURIComponent(e.target.value)}` : "/salons")} style={{ padding: "10px 14px", borderRadius: 12, border: "1px solid #e8e8e8", fontSize: 13, maxWidth: 220 }}>
-              <option value="">📍 All Jaipur</option>
-              {JAIPUR_ZONES.map((z) => <optgroup key={z.zone} label={z.zone}>{z.areas.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>)}
+              <option value="">All locations</option>
+              {locationOptions.map((locationOption) => <option key={locationOption} value={locationOption}>{locationOption}</option>)}
             </select>
             <button className="secondary" onClick={() => navigate("/signup")}>Create account</button>
           </div>
@@ -658,7 +648,20 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
 
 {visible('nearby') && (
 <section className="section">
-        <div className="section-heading"><span className="eyebrow">Nearby</span><h2>Salons near you</h2><p>{locationHeadline(location)}</p></div>
+        <div className="section-heading">
+          <span className="eyebrow">Nearby</span>
+          <h2>Salons near you</h2>
+          {formattedCurrentLocation.formattedAddress ? (
+            <div style={{ display: "grid", gap: 4 }}>
+              <p style={{ margin: 0, fontWeight: 800, color: "var(--ink)" }}>📍 {formattedCurrentLocation.primary}</p>
+              {formattedCurrentLocation.secondary && (
+                <p style={{ margin: 0 }}>{formattedCurrentLocation.secondary}</p>
+              )}
+            </div>
+          ) : (
+            <p>{locationHeadline(location)}</p>
+          )}
+        </div>
         <LocationNotice location={location} />
         {location.isImproving && !location.fix && (
           <div className="state-card" style={{ padding: 20, marginBottom: 18 }} role="status" aria-live="polite">
@@ -1079,11 +1082,21 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
 
   // Deep links + initial params
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const q = params.get("q"); if (q) { setQuery(q); setDebouncedQuery(q); }
-    const cat = params.get("category"); if (cat) setCategoryFilter(cat);
-    const area = params.get("area"); if (area) setLocationFilter(area);
-    const city = params.get("city"); if (city && !area) setLocationFilter(city);
+    const t = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const q = params.get("q");
+      if (q) {
+        setQuery(q);
+        setDebouncedQuery(q);
+      }
+      const cat = params.get("category");
+      if (cat) setCategoryFilter(cat);
+      const area = params.get("area");
+      if (area) setLocationFilter(area);
+      const city = params.get("city");
+      if (city && !area) setLocationFilter(city);
+    }, 0);
+    return () => window.clearTimeout(t);
   }, []);
 
   // Debounced search + suggestions
@@ -1092,22 +1105,45 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
     return () => window.clearTimeout(t);
   }, [query]);
   useEffect(() => {
-    if (!online) { setLoading(false); setError("You are offline. Reconnect to search salons."); return; }
     let active = true;
-    setLoading(true); setError("");
     const t = window.setTimeout(async () => {
+      if (!online) {
+        if (active) {
+          setLoading(false);
+          setError("You are offline. Reconnect to search salons.");
+        }
+        return;
+      }
+
+      setLoading(true);
+      setError("");
       try {
-        const client = getClient(); if (!client) { setLoading(false); return; }
+        const client = getClient();
+        if (!client) {
+          if (active) setLoading(false);
+          return;
+        }
         const { rows } = await runSearch(0);
         if (!active) return;
-        setResults(rows); setLoading(false);
+        setResults(rows);
+        setLoading(false);
         if (debouncedQuery) {
           const { data } = await client.rpc("marketplace_search_suggestions", { p_query: debouncedQuery, p_limit: 6 });
           if (active) setSuggestions((data ?? []) as Suggestion[]);
-        } else setSuggestions([]);
-      } catch (cause) { if (active) { setError(friendlyError(cause)); setLoading(false); } }
+        } else {
+          setSuggestions([]);
+        }
+      } catch (cause) {
+        if (active) {
+          setError(friendlyError(cause));
+          setLoading(false);
+        }
+      }
     }, 0);
-    return () => { active = false; window.clearTimeout(t); };
+    return () => {
+      active = false;
+      window.clearTimeout(t);
+    };
   }, [runSearch, debouncedQuery, online]);
 
   const loadMore = async () => {
@@ -1134,6 +1170,10 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
     const dynamic = Array.from(new Set(results.map(i=>i.business_category).filter(Boolean))) as string[];
     return Array.from(new Set([...CANONICAL_CATEGORIES, ...dynamic]));
   }, [results]);
+  const locationOptions = useMemo(() => {
+    const options = collectLocationOptions(results);
+    return locationFilter && !options.includes(locationFilter) ? [locationFilter, ...options] : options;
+  }, [locationFilter, results]);
 
   const priceOptions = [
     { value: "", label: "Any price" },
@@ -1178,7 +1218,7 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
       {/* Filters + sort */}
       <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", marginBottom: 14 }}>
         <label>Category<select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}><option value="">All categories</option>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</select></label>
-        <label>Location<select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}><option value="">All Jaipur</option>{JAIPUR_ZONES.map((z) => <optgroup key={z.zone} label={z.zone}>{z.areas.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>)}</select></label>
+        <label>Location<select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}><option value="">All locations</option>{locationOptions.map((locationOption) => <option key={locationOption} value={locationOption}>{locationOption}</option>)}</select></label>
         <label>Price<select value={priceFilter} onChange={(e) => setPriceFilter(e.target.value)}>{priceOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
         <label>Min rating<select value={ratingFilter} onChange={(e) => setRatingFilter(Number(e.target.value))}><option value={0}>Any rating</option><option value={4}>4+ ★</option><option value={4.5}>4.5+ ★</option></select></label>
         <label>Audience<select value={genderFilter} onChange={(e) => setGenderFilter(e.target.value)}><option value="">Any</option><option value="female">Women</option><option value="male">Men</option><option value="unisex">Unisex</option></select></label>
@@ -1359,8 +1399,13 @@ function useRecentlyViewed(online: boolean, session: Session | null) {
   }, []);
 
   useEffect(() => {
-    if (!online || !session?.user || !consent) { setRows([]); return; }
-    const t = window.setTimeout(() => void load(), 0);
+    const t = window.setTimeout(() => {
+      if (!online || !session?.user || !consent) {
+        setRows([]);
+        return;
+      }
+      void load();
+    }, 0);
     return () => window.clearTimeout(t);
   }, [online, session, consent, load]);
 
@@ -1529,9 +1574,9 @@ type NearbyRow = {
 /**
  * Nearby salons — the salon rows themselves come from Supabase (each already
  * carries latitude/longitude); the position comes from the device's own GPS via
- * `navigator.geolocation.watchPosition()`, and every distance is computed
- * locally with the Haversine formula. No Google Geolocation API, no Maps
- * Geocoding, no Distance Matrix, no Mapbox, no Nominatim, no API keys.
+ * `navigator.geolocation.watchPosition()`, every distance is computed locally
+ * with the Haversine formula, and the readable area/city name is resolved from
+ * the accepted fix through Google Reverse Geocoding.
  *
  * The list re-ranks automatically whenever the customer moves more than 100 m —
  * no page refresh required.
@@ -1561,27 +1606,16 @@ function useNearby(online: boolean, radiusKm?: number) {
 /** Short status line describing what the GPS pipeline is currently doing. */
 function locationHeadline(location: UseLocationResult): string {
   if (location.fix?.source === "manual") return `Showing salons around ${location.fix.label} — sorted on your device.`;
-  switch (location.status) {
-    case "ready":
-      return `Sorted by live GPS distance (${formatAccuracy(location.fix?.accuracy)} accuracy) — calculated on your device, nothing is stored.`;
-    case "improving":
-      return "Improving your location…";
-    case "acquiring":
-    case "prompting":
-      return "Locating you… allow location to see the closest salons first.";
-    case "denied":
-      return "Please enable location to discover nearby salons.";
-    case "offline":
-      return "You are offline — reconnect to refresh salons near you.";
-    case "timeout":
-      return "GPS is taking longer than usual. Keep this screen open or retry.";
-    case "unsupported":
-      return "This browser cannot access GPS — choose your area manually.";
-    case "unavailable":
-      return "No GPS signal yet. Move to an open area and retry.";
-    default:
-      return "Allow location to sort salons by real distance.";
+  if (location.reverseGeocodeStatus === "loading" || location.status === "acquiring" || location.status === "improving" || location.status === "prompting") {
+    return "Detecting location...";
   }
+  if (location.reverseGeocodeError || location.error || location.status === "denied" || location.status === "offline" || location.status === "timeout" || location.status === "unsupported" || location.status === "unavailable") {
+    return "Location unavailable";
+  }
+  if (location.status === "ready") {
+    return `Sorted by live GPS distance (${formatAccuracy(location.fix?.accuracy)} accuracy) — calculated on your device, nothing is stored.`;
+  }
+  return "Detecting location...";
 }
 
 /** Permission / error / manual-selection panel. Never crashes the page. */
@@ -1590,25 +1624,35 @@ function LocationNotice({ location }: { location: UseLocationResult }) {
     location.status === "denied" || location.status === "unsupported" ||
     location.status === "unavailable" || location.status === "timeout" ||
     location.status === "manual" || location.status === "offline";
-  if (!showManual && !location.error) return null;
+  const showReverseGeocodeError = Boolean(location.reverseGeocodeError);
+  if (!showManual && !location.error && !showReverseGeocodeError) return null;
+  const statusMessage = location.reverseGeocodeStatus === "loading"
+    || location.status === "acquiring"
+    || location.status === "improving"
+    || location.status === "prompting"
+    ? "Detecting location..."
+    : "Location unavailable";
+
   return (
     <div className="state-card" style={{ textAlign: "left", padding: 20, marginBottom: 18 }} role="status" aria-live="polite">
       <p style={{ margin: 0, fontWeight: 600, color: "var(--primary)" }}>
-        {location.error?.message ?? location.message}
+        {statusMessage}
       </p>
       <div className="button-row" style={{ marginTop: 12, flexWrap: "wrap", alignItems: "center", gap: 10 }}>
-        <button className="secondary" onClick={location.retry}>Retry location</button>
-        <label style={{ fontSize: 13, color: "var(--muted)", display: "flex", gap: 8, alignItems: "center" }}>
-          Or pick your area
-          <select
-            value={location.fix?.source === "manual" ? (location.manualAreas.find((a) => a.label === location.fix?.label)?.id ?? "") : ""}
-            onChange={(e) => { if (e.target.value) location.setManualArea(e.target.value); else location.clearManualArea(); }}
-            style={{ padding: "8px 12px", borderRadius: 12, border: "1px solid #e8e8e8", fontSize: 13 }}
-          >
-            <option value="">Select area…</option>
-            {location.manualAreas.map((area) => <option key={area.id} value={area.id}>{area.label}</option>)}
-          </select>
-        </label>
+        <button className="secondary" onClick={showReverseGeocodeError ? location.retryPlaceName : location.retry}>{showReverseGeocodeError ? "Retry" : "Retry location"}</button>
+        {showManual && location.manualAreas.length > 0 && (
+          <label style={{ fontSize: 13, color: "var(--muted)", display: "flex", gap: 8, alignItems: "center" }}>
+            Or pick your area
+            <select
+              value={location.fix?.source === "manual" ? (location.manualAreas.find((a) => a.label === location.fix?.label)?.id ?? "") : ""}
+              onChange={(e) => { if (e.target.value) location.setManualArea(e.target.value); else location.clearManualArea(); }}
+              style={{ padding: "8px 12px", borderRadius: 12, border: "1px solid #e8e8e8", fontSize: 13 }}
+            >
+              <option value="">Select area…</option>
+              {location.manualAreas.map((area) => <option key={area.id} value={area.id}>{area.label}</option>)}
+            </select>
+          </label>
+        )}
         {location.fix?.source === "manual" && (
           <button className="text-button" onClick={location.clearManualArea}>Use my GPS instead</button>
         )}
@@ -1852,26 +1896,7 @@ function SalonPage({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [load, online]);
-  if (loading) return <main className="section page-top"><SalonSkeletons count={1} /></main>;
-  if (error || !item) return <main className="center-page"><StateCard title="Salon unavailable" text={error || "This website is not public."} action="Back to salons" onAction={() => navigate("/salons")} /></main>;
-  const config = item.website.config as { profile?: Record<string, unknown>; services?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; photos?: unknown; amenities?: unknown };
-  const configServices = Array.isArray(config.services) ? config.services : [];
-  const configStaff = Array.isArray(config.staff) ? config.staff : [];
-  const configProfile = (config.profile ?? {}) as { opening_hours?: { opens?: string; closes?: string } };
-  // DB is the source of truth; website config is the fallback (owner may
-  // still be publishing via the proposal payload before using the PWA CRUD).
-  const services = marketplace.services.length
-    ? marketplace.services.map((s) => ({ id: s.id, name: s.name, description: s.description ?? "Professional salon service", duration_minutes: s.duration_minutes ?? 0, price_paise: s.price_paise ?? 0 }))
-    : configServices;
-  const staffRows = marketplace.staff.length
-    ? marketplace.staff.map((s) => ({ id: s.id, name: s.name, role: s.role ?? "Stylist", specialty: s.specialty ?? null }))
-    : configStaff.map((s) => ({ id: String(s.id ?? ""), name: String(s.name ?? "Professional"), role: String(s.role ?? "Stylist"), specialty: s.specialty != null ? String(s.specialty) : null }));
-  const configOpening = configProfile.opening_hours;
-  const openingSummary = marketplace.hours.length
-    ? marketplace.hours
-    : configOpening?.opens
-      ? [{ day_of_week: -1, opens_at: configOpening.opens, closes_at: configOpening.closes ?? null, is_closed: false }]
-      : [];
+
   const loadSlots = useCallback(async (dateStr: string, serviceId?: string) => {
     const client = getClient();
     const firstService = serviceId ?? marketplace.services[0]?.id;
@@ -1893,6 +1918,27 @@ function SalonPage({
     const t = window.setTimeout(() => void loadSlots(slotsDate), 0);
     return () => window.clearTimeout(t);
   }, [item, slotsDate, loadSlots]);
+
+  if (loading) return <main className="section page-top"><SalonSkeletons count={1} /></main>;
+  if (error || !item) return <main className="center-page"><StateCard title="Salon unavailable" text={error || "This website is not public."} action="Back to salons" onAction={() => navigate("/salons")} /></main>;
+  const config = item.website.config as { profile?: Record<string, unknown>; services?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; photos?: unknown; amenities?: unknown };
+  const configServices = Array.isArray(config.services) ? config.services : [];
+  const configStaff = Array.isArray(config.staff) ? config.staff : [];
+  const configProfile = (config.profile ?? {}) as { opening_hours?: { opens?: string; closes?: string } };
+  // DB is the source of truth; website config is the fallback (owner may
+  // still be publishing via the proposal payload before using the PWA CRUD).
+  const services = marketplace.services.length
+    ? marketplace.services.map((s) => ({ id: s.id, name: s.name, description: s.description ?? "Professional salon service", duration_minutes: s.duration_minutes ?? 0, price_paise: s.price_paise ?? 0 }))
+    : configServices;
+  const staffRows = marketplace.staff.length
+    ? marketplace.staff.map((s) => ({ id: s.id, name: s.name, role: s.role ?? "Stylist", specialty: s.specialty ?? null }))
+    : configStaff.map((s) => ({ id: String(s.id ?? ""), name: String(s.name ?? "Professional"), role: String(s.role ?? "Stylist"), specialty: s.specialty != null ? String(s.specialty) : null }));
+  const configOpening = configProfile.opening_hours;
+  const openingSummary = marketplace.hours.length
+    ? marketplace.hours
+    : configOpening?.opens
+      ? [{ day_of_week: -1, opens_at: configOpening.opens, closes_at: configOpening.closes ?? null, is_closed: false }]
+      : [];
 
   const customerPortalBookingPath = (serviceName?: string) => {
     const params = new URLSearchParams();

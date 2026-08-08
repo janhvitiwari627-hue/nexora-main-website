@@ -1,9 +1,10 @@
 /**
  * Nexora GPS Location System — shared types.
  *
- * The whole module depends on the browser's native Geolocation API only.
- * No Google Geolocation / Maps Geocoding, no Mapbox, no Nominatim, no
- * reverse-geocoding service, no API key of any kind is used anywhere.
+ * GPS still comes only from the browser's native Geolocation API. Reverse
+ * geocoding, when requested, resolves an accepted latitude/longitude into a
+ * readable place name through Google Maps Geocoding using
+ * `VITE_GOOGLE_MAPS_API_KEY`.
  */
 
 /** A validated, accepted GPS fix stored by the LocationService. */
@@ -77,6 +78,19 @@ export type LocationError = {
 
 export type PermissionStatusValue = "granted" | "denied" | "prompt" | "unknown";
 
+export type StandardLocation = {
+  latitude: number;
+  longitude: number;
+  accuracy: number;
+  area: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  formattedAddress: string | null;
+};
+
+export type ReverseGeocodeStatus = "idle" | "loading" | "ready" | "error";
+
 /** Complete snapshot handed to every subscriber on each change. */
 export type LocationState = {
   status: LocationStatus;
@@ -91,6 +105,12 @@ export type LocationState = {
   acceptedCount: number;
   /** Metres moved since the previously accepted fix. */
   lastMovementMeters: number | null;
+  /** Standardized location object shared across Nexora apps. */
+  location: StandardLocation | null;
+  /** Reverse geocoding state for the latest accepted fix. */
+  reverseGeocodeStatus: ReverseGeocodeStatus;
+  /** Human-friendly reverse geocoding failure. */
+  reverseGeocodeError: string | null;
   /** True while the watcher is running. */
   watching: boolean;
   /** User-facing progress line, e.g. "Improving your location...". */

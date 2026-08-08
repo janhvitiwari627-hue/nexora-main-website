@@ -1,5 +1,5 @@
 // Phase 14 Integration Tests - Attribution
-import { test, describe } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
 import { getEnv, isLiveTestConfigured } from '../helpers/env.mjs';
@@ -8,7 +8,6 @@ test.describe('Attribution - Live Integration Tests', () => {
   let clientA;
   let clientB;
   let env;
-  let commissionId;
   
   test.before(async () => {
     env = getEnv();
@@ -58,10 +57,9 @@ test.describe('Attribution - Live Integration Tests', () => {
     }
     
     if (commissions && commissions.length > 0) {
-      const commission = commissions[0];
       // Verify amount is 1% of booking (1000 bps of platform fee)
       // This requires actual booking data to verify
-      assert.ok(true, 'Commission exists');
+      assert.ok(commissions[0], 'Commission exists');
     } else {
       t.skip('BLOCKED: No commissions to verify');
     }
