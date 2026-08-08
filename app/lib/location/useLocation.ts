@@ -28,6 +28,7 @@ export type UseLocationResult = LocationState & {
   /** True while the app is still converging on an acceptable accuracy. */
   isImproving: boolean;
   retry: () => void;
+  retryPlaceName: () => void;
   start: () => void;
   setManualArea: (areaId: string) => void;
   clearManualArea: () => void;
@@ -47,6 +48,7 @@ export function useLocation(options: UseLocationOptions = {}): UseLocationResult
   }, [auto]);
 
   const retry = useCallback(() => locationService.retry(), []);
+  const retryPlaceName = useCallback(() => locationService.retryPlaceName(), []);
   const start = useCallback(() => locationService.start(), []);
   const setManualArea = useCallback((areaId: string) => {
     const area = findManualArea(areaId);
@@ -60,6 +62,7 @@ export function useLocation(options: UseLocationOptions = {}): UseLocationResult
     hasLocation: state.fix != null,
     isImproving: state.status === "acquiring" || state.status === "improving" || state.status === "prompting",
     retry,
+    retryPlaceName,
     start,
     setManualArea,
     clearManualArea,

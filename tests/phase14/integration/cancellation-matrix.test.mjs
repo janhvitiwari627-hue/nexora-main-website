@@ -1,5 +1,5 @@
 // Phase 14 Integration Tests - Cancellation Matrix
-import { test, describe } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
 import { getEnv, isLiveTestConfigured } from '../helpers/env.mjs';
@@ -26,7 +26,7 @@ test.describe('Cancellation Matrix - Live Integration Tests', () => {
       password: env.ACCEPTANCE_CUSTOMER_A_PASSWORD
     });
     
-    const { data, error } = await client.rpc('create_booking', {
+    const { data } = await client.rpc('create_booking', {
       customer_id: 'test-user',
       salon_id: 'test-salon',
       service_id: 'test-service',
@@ -42,12 +42,6 @@ test.describe('Cancellation Matrix - Live Integration Tests', () => {
       t.skip('BLOCKED: Not configured');
       return;
     }
-    
-    const beforeRefund = await client
-      .from('wallet_transactions')
-      .select('amount_paise')
-      .eq('user_id', 'test-user')
-      .maybeSingle();
     
     const { error } = await client.rpc('cancel_booking', {
       booking_id: bookingId,

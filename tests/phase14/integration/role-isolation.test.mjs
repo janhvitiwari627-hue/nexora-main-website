@@ -1,21 +1,9 @@
 // Phase 14 Integration Tests - Role Isolation
 // Live tests requiring Supabase credentials and test accounts
-import { test, describe } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
-import { getEnv, isLiveTestConfigured, assertLiveTestConfigured, createBlockedReport } from '../helpers/env.mjs';
-
-const blockReport = createBlockedReport([
-  'Anonymous cannot access profiles',
-  'Anonymous cannot access bookings',
-  'Customer cannot access owner portal',
-  'Customer cannot access other customer data',
-  'Owner cannot access other owner salon',
-  'Partner cannot access other partner data',
-  'Role change invalidates old portal access',
-  'Direct Supabase requests respect RLS',
-  'Storage access respects ownership'
-]);
+import { getEnv, isLiveTestConfigured } from '../helpers/env.mjs';
 
 test.describe('Role Isolation - Live Integration Tests', () => {
   let client;
@@ -81,7 +69,7 @@ test.describe('Role Isolation - Live Integration Tests', () => {
     }
     
     // Sign in as customer A
-    const { data: signInData, error: signInError } = await client.auth.signInWithPassword({
+    const { error: signInError } = await client.auth.signInWithPassword({
       email: env.ACCEPTANCE_CUSTOMER_A_EMAIL,
       password: env.ACCEPTANCE_CUSTOMER_A_PASSWORD
     });

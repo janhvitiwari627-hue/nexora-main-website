@@ -22,13 +22,12 @@ Scripts that need writable project-scoped home, npm, XDG, and temporary paths us
 ## Included Shape
 
 - edit site code under `app/`
-- `app/chatgpt-auth.ts` provides optional dispatch-owned ChatGPT sign-in helpers
 - `.openai/hosting.json` declares optional Sites D1 and R2 bindings
 - `vite.config.ts` simulates declared bindings for local development
 - `db/index.ts` reads the D1 binding from the Cloudflare Worker environment
 - `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
 - `drizzle.config.ts` supports local migration generation when needed
+- `src/` contains the prepared architecture folders for future shared modules
 
 ## Workspace Auth Headers
 

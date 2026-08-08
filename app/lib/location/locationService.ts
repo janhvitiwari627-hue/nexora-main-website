@@ -2,19 +2,19 @@
  * LocationService — the single source of truth for the customer's position.
  *
  * Pipeline
- *   watchPosition() ──► LocationValidator ──► accepted GeoFix ──► subscribers
+ *   watchPosition() ──► LocationValidator ──► accepted GeoFix ──► reverse geocoding ──► subscribers
  *                          │                        │
  *                          └── hold / wait ─────────┴── movement > 100 m ⇒ refresh
  *
  * Guarantees
- *  - Browser-native geolocation only. No Google Geolocation API, no Maps
- *    Geocoding, no reverse geocoding, no Mapbox, no Nominatim, no API keys,
- *    no network request whatsoever.
+ *  - Browser-native geolocation remains the only source of coordinates.
  *  - Exactly one watcher process-wide (module singleton + reference counting),
  *    so no duplicate listeners and no memory leaks.
  *  - Never uses a cached coordinate (`maximumAge: 0`).
  *  - Never accepts the first reading blindly — multi-step validation runs
  *    until an acceptable accuracy is reached.
+ *  - Reverse geocoding resolves an accepted latitude/longitude into a readable
+ *    area/city/state through Google Geocoding using `VITE_GOOGLE_MAPS_API_KEY`.
  */
 
 import { GPSWatcher } from "./gpsWatcher";
@@ -27,6 +27,7 @@ import {
 } from "./locationValidator";
 import { PermissionManager } from "./permissionManager";
 import { formatAccuracy } from "./distanceCalculator";
+import { reverseGeocodeLocation, ReverseGeocodeError } from "./reverseGeocoder";
 import type {
   GeoFix,
   LocationError,
@@ -34,6 +35,7 @@ import type {
   LocationState,
   LocationStatus,
   PermissionStatusValue,
+  StandardLocation,
 } from "./types";
 
 const MESSAGES = {
@@ -82,6 +84,9 @@ export class LocationService {
     updateCount: 0,
     acceptedCount: 0,
     lastMovementMeters: null,
+    location: null,
+    reverseGeocodeStatus: "idle",
+    reverseGeocodeError: null,
     watching: false,
     message: MESSAGES.idle,
   };
@@ -90,6 +95,9 @@ export class LocationService {
   private candidate: GeoFix | null = null;
   private holdTimer: number | null = null;
   private retryTimer: number | null = null;
+  private reverseGeocodeAbort: AbortController | null = null;
+  private reverseGeocodeRequest = 0;
+  private readonly reverseGeocodeCache = new Map<string, Pick<StandardLocation, "area" | "city" | "state" | "country" | "formattedAddress">>();
   private retryAttempt = 0;
   private onlineHandler: (() => void) | null = null;
   private offlineHandler: (() => void) | null = null;
@@ -104,6 +112,10 @@ export class LocationService {
 
   getFix(): GeoFix | null {
     return this.state.fix;
+  }
+
+  getLocation(): StandardLocation | null {
+    return this.state.location;
   }
 
   /**
@@ -182,6 +194,7 @@ export class LocationService {
     this.watcher.stop();
     this.clearHold();
     this.clearRetry();
+    this.cancelReverseGeocode();
     this.detachNetworkListeners();
     this.permissionUnsub?.();
     this.permissionUnsub = null;
@@ -195,10 +208,32 @@ export class LocationService {
     this.retryAttempt = 0;
     this.clearRetry();
     this.clearHold();
+    this.cancelReverseGeocode();
     this.candidate = null;
-    this.patch({ status: "acquiring", message: MESSAGES.acquiring, error: null, candidateAccuracy: null });
+    this.patch({
+      status: "acquiring",
+      message: MESSAGES.acquiring,
+      error: null,
+      candidateAccuracy: null,
+      location: null,
+      reverseGeocodeStatus: "idle",
+      reverseGeocodeError: null,
+    });
     if (this.watcher.active) this.watcher.restart();
     else this.start();
+  }
+
+  retryPlaceName() {
+    if (!this.state.fix) {
+      this.retry();
+      return;
+    }
+    if (this.state.fix.source === "manual") {
+      this.patch({ reverseGeocodeError: null, reverseGeocodeStatus: "ready" });
+      return;
+    }
+    this.log.info("Manual reverse geocoding retry requested.");
+    void this.resolvePlaceName(this.state.fix, true);
   }
 
   /**
@@ -208,6 +243,7 @@ export class LocationService {
   setManualLocation(latitude: number, longitude: number, label: string) {
     this.clearHold();
     this.clearRetry();
+    this.cancelReverseGeocode();
     const fix: GeoFix = {
       latitude, longitude,
       accuracy: 2000,
@@ -216,6 +252,7 @@ export class LocationService {
       source: "manual",
       label,
     };
+    const area = label.split("/")[0]?.trim() || label;
     this.log.info(`Manual location selected: ${label}.`, { latitude, longitude });
     this.patch({
       status: "manual",
@@ -223,6 +260,9 @@ export class LocationService {
       error: null,
       candidateAccuracy: null,
       lastMovementMeters: null,
+      location: this.createLocationRecord(fix, { area, city: null, state: null, country: null, formattedAddress: label }),
+      reverseGeocodeStatus: "ready",
+      reverseGeocodeError: null,
       message: `${MESSAGES.manual} (${label})`,
     });
   }
@@ -230,7 +270,14 @@ export class LocationService {
   /** Drop a manual selection and go back to live GPS. */
   clearManualLocation() {
     if (this.state.fix?.source !== "manual") return;
-    this.patch({ fix: null, status: "acquiring", message: MESSAGES.acquiring });
+    this.patch({
+      fix: null,
+      status: "acquiring",
+      message: MESSAGES.acquiring,
+      location: null,
+      reverseGeocodeStatus: "idle",
+      reverseGeocodeError: null,
+    });
     this.retry();
   }
 
@@ -355,8 +402,15 @@ export class LocationService {
       acceptedCount: this.state.acceptedCount + 1,
       lastMovementMeters: movementMeters,
       candidateAccuracy: fix.accuracy,
+      location: fix.source === "manual" ? this.state.location ?? this.createLocationRecord(fix) : this.createLocationRecord(fix),
+      reverseGeocodeStatus: fix.source === "manual" ? "ready" : "loading",
+      reverseGeocodeError: null,
       message: MESSAGES.ready,
     });
+
+    if (fix.source === "gps") {
+      void this.resolvePlaceName(fix);
+    }
 
     this.log.info(
       first
@@ -371,6 +425,110 @@ export class LocationService {
         heading: fix.heading,
       },
     );
+  }
+
+  private async resolvePlaceName(fix: GeoFix, force = false) {
+    if (fix.source !== "gps") return;
+    const cacheKey = this.placeCacheKey(fix.latitude, fix.longitude);
+    if (!force && this.reverseGeocodeCache.has(cacheKey)) {
+      const cached = this.reverseGeocodeCache.get(cacheKey) ?? null;
+      this.patch({ location: cached ? this.createLocationRecord(fix, cached) : this.createLocationRecord(fix), reverseGeocodeStatus: "ready", reverseGeocodeError: null });
+      this.log.info("Using cached reverse geocoding result.", { cacheKey, place: cached?.formattedAddress ?? cached?.area ?? cached?.city });
+      return;
+    }
+
+    this.cancelReverseGeocode();
+    const controller = new AbortController();
+    this.reverseGeocodeAbort = controller;
+    const requestId = ++this.reverseGeocodeRequest;
+    this.patch({ reverseGeocodeStatus: "loading", reverseGeocodeError: null });
+
+    try {
+      const resolvedLocation = await reverseGeocodeLocation(fix.latitude, fix.longitude, controller.signal);
+      if (controller.signal.aborted || requestId !== this.reverseGeocodeRequest) return;
+      this.reverseGeocodeCache.set(cacheKey, resolvedLocation);
+      this.patch({ location: this.createLocationRecord(fix, resolvedLocation), reverseGeocodeStatus: "ready", reverseGeocodeError: null });
+      this.log.info("Reverse geocoding resolved the live GPS fix.", {
+        latitude: fix.latitude,
+        longitude: fix.longitude,
+        area: resolvedLocation.area,
+        city: resolvedLocation.city,
+        state: resolvedLocation.state,
+        country: resolvedLocation.country,
+        formattedAddress: resolvedLocation.formattedAddress,
+      });
+    } catch (error) {
+      if (controller.signal.aborted || requestId !== this.reverseGeocodeRequest) return;
+      if (error instanceof ReverseGeocodeError) {
+        this.logReverseGeocodeError(error, fix);
+      } else if (error instanceof Error) {
+        this.log.error("Google Reverse Geocoding failed unexpectedly.", {
+          latitude: fix.latitude,
+          longitude: fix.longitude,
+          message: error.message,
+        });
+      }
+      this.patch({
+        location: this.createLocationRecord(fix),
+        reverseGeocodeStatus: "error",
+        reverseGeocodeError: "Unable to detect location",
+      });
+    } finally {
+      if (this.reverseGeocodeAbort === controller) this.reverseGeocodeAbort = null;
+    }
+  }
+
+  private logReverseGeocodeError(error: ReverseGeocodeError, fix: GeoFix) {
+    const payload = {
+      latitude: fix.latitude,
+      longitude: fix.longitude,
+      reason: error.reason,
+      message: error.message,
+    };
+    switch (error.reason) {
+      case "missing-api-key":
+        this.log.error("Google Reverse Geocoding unavailable: VITE_GOOGLE_MAPS_API_KEY is missing.", payload);
+        return;
+      case "geocoding-disabled":
+        this.log.error("Google Reverse Geocoding unavailable: Geocoding API is disabled for this project.", payload);
+        return;
+      case "billing-disabled":
+        this.log.error("Google Reverse Geocoding unavailable: billing is disabled or quota is exhausted.", payload);
+        return;
+      case "invalid-api-key":
+        this.log.error("Google Reverse Geocoding unavailable: invalid API key.", payload);
+        return;
+      case "network-error":
+        this.log.error("Google Reverse Geocoding failed due to a network error.", payload);
+        return;
+      default:
+        this.log.warn("Google Reverse Geocoding could not resolve a readable place name.", payload);
+    }
+  }
+
+  private cancelReverseGeocode() {
+    if (this.reverseGeocodeAbort) this.reverseGeocodeAbort.abort();
+    this.reverseGeocodeAbort = null;
+  }
+
+  private placeCacheKey(latitude: number, longitude: number): string {
+    return `${latitude.toFixed(5)}:${longitude.toFixed(5)}`;
+  }
+
+  private createLocationRecord(
+    fix: GeoFix,
+    details?: Pick<StandardLocation, "area" | "city" | "state" | "country" | "formattedAddress"> | null,
+  ): StandardLocation {
+    return {
+      latitude: fix.latitude,
+      longitude: fix.longitude,
+      accuracy: fix.accuracy,
+      area: details?.area ?? null,
+      city: details?.city ?? null,
+      state: details?.state ?? null,
+      country: details?.country ?? null,
+      formattedAddress: details?.formattedAddress ?? null,
+    };
   }
 
   private handleError(error: GeolocationPositionError) {

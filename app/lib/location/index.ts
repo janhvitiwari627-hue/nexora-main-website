@@ -1,9 +1,10 @@
 /**
  * Nexora GPS Location System — public entry point.
  *
- * Browser-native `navigator.geolocation.watchPosition()` only. No Google
- * Geolocation API, no Google Maps Geocoding, no reverse geocoding, no Mapbox,
- * no OpenStreetMap/Nominatim, no paid location provider and no API keys.
+ * Browser-native `navigator.geolocation.watchPosition()` is still the only
+ * source of coordinates. Accepted GPS fixes may then be reverse-geocoded into
+ * a readable area/city/state through Google Geocoding using
+ * `VITE_GOOGLE_MAPS_API_KEY`.
  *
  * Modules
  *   LocationService     orchestrates the pipeline and owns the global fix
@@ -49,4 +50,5 @@ export {
   type RankableSalon,
 } from "./nearbySalonService";
 export { DEFAULT_ORIGIN, MANUAL_AREAS, findManualArea, type ManualArea } from "./manualAreas";
+export { formatLocation, type FormattedLocation } from "./formatLocation";
 export { useLocation, useNearbySalons, type UseLocationResult } from "./useLocation";

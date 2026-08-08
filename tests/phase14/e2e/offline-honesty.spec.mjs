@@ -26,7 +26,7 @@ test.describe('Offline Honesty - E2E Tests', () => {
     const messages = page.locator('.form-message');
     await expect(messages.first()).toBeVisible();
     const text = await messages.first().textContent();
-    expect(text).toContain('required') || expect(text).toContain('Email');
+    expect(text ?? '').toMatch(/required|email/i);
   });
   
   test('service worker scope check', async ({ page }) => {

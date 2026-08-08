@@ -1,20 +1,8 @@
 // Phase 14 Integration Tests - Booking Flow
-import { test, describe } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient } from '@supabase/supabase-js';
-import { getEnv, isLiveTestConfigured, createBlockedReport } from '../helpers/env.mjs';
-
-const blockReport = createBlockedReport([
-  'Published salon loads',
-  'Customer can select service',
-  'Valid slot selection',
-  'Idempotent booking creation',
-  'Booking appears in owner queue',
-  'Customer sees own history',
-  'Unauthorized owner cannot update',
-  'Price calculated server-side',
-  'No false success'
-]);
+import { getEnv, isLiveTestConfigured } from '../helpers/env.mjs';
 
 test.describe('Booking Flow - Live Integration Tests', () => {
   let client;
@@ -47,7 +35,7 @@ test.describe('Booking Flow - Live Integration Tests', () => {
       return;
     }
     
-    const { data, error } = await client
+    const { error } = await client
       .from('salon_public_websites')
       .select('*')
       .eq('is_published', true)
