@@ -35,12 +35,14 @@ test('base path, assets, auth redirects and PWA are scoped to /job-portal', () =
 });
 
 test('direct Job Portal routes map to the SPA without taking root Nexora routes', () => {
-  for (const route of ['jobs','login','signup','profile','applications','interviews','offers','messages','employer','admin']) {
+  for (const route of ['dashboard/seeker','dashboard/employer','jobs','login','signup','profile','applications','interviews','offers','messages','employer','admin']) {
     assert.match(portalRouting, new RegExp(`/${route.replace('-', '\\-')}`));
   }
   assert.match(nextConfig, /JOB_PORTAL_BASE\s*=\s*"\/job-portal"/);
   assert.match(nextConfig, /destination:\s*`\$\{JOB_PORTAL_BASE\}\/index\.html`/);
   assert.match(nextConfig, /Service-Worker-Allowed.*JOB_PORTAL_BASE/s);
+  assert.match(nextConfig, /source: "\/dashboard\/seeker".*destination: "\/job-portal\/dashboard\/seeker"/s);
+  assert.match(nextConfig, /source: "\/dashboard\/employer".*destination: "\/job-portal\/dashboard\/employer"/s);
   assert.doesNotMatch(nextConfig, /job-portal-nexora\.vercel\.app/);
 });
 

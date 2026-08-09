@@ -4,7 +4,7 @@ const EXPECTED_SUPABASE_URL = "https://qwaehqsmodekbgvnaavz.supabase.co";
 const JOB_PORTAL_BASE = "/job-portal";
 const JOB_PORTAL_ROUTE_ROOTS = [
   "jobs", "login", "signup", "verify", "forgot-password", "reset-password",
-  "profile", "applications", "interviews", "offers", "messages", "saved",
+  "dashboard", "profile", "applications", "interviews", "offers", "messages", "saved",
   "portfolio", "employer", "admin", "support", "settings",
 ];
 
@@ -45,6 +45,12 @@ const nextConfig: NextConfig = {
       ]),
     ];
     return { beforeFiles: jobPortalRoutes, afterFiles: portalMounts, fallback: [] };
+  },
+  async redirects() {
+    return [
+      { source: "/dashboard/seeker", destination: "/job-portal/dashboard/seeker", permanent: false },
+      { source: "/dashboard/employer", destination: "/job-portal/dashboard/employer", permanent: false },
+    ];
   },
   async headers() {
     return [
