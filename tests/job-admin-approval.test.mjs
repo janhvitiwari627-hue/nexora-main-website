@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+const migration=await readFile(new URL('../job-portal/supabase/migrations/20260808170900_jobs_admin_approval.sql',import.meta.url),'utf8');
+const employer=await readFile(new URL('../job-portal/src/components/employer/EmployerWorkspace.tsx',import.meta.url),'utf8');
+const admin=await readFile(new URL('../job-portal/src/components/admin/AdminJobsScreen.tsx',import.meta.url),'utf8');
+const service=await readFile(new URL('../job-portal/src/services/backend.ts',import.meta.url),'utf8');
+test('new jobs default to pending approval and public feed is approved-only',()=>{assert.match(migration,/set default 'pending_approval'/);assert.match(migration,/where j\.status='approved'/);assert.match(migration,/status='approved'.*expires_at/s)});
+test('admin-only approval and rejection RPCs publish and notify',()=>{assert.match(migration,/function public\.approve_job/);assert.match(migration,/not public\.job_is_admin/);assert.match(migration,/status='approved',published_at=now\(\)/);assert.match(migration,/function public\.reject_job/);assert.match(migration,/job_rejected/)});
+test('employer receives confirmation and pending status lock',()=>{assert.match(employer,/currently under Admin Approval/);assert.match(employer,/Pending Admin Approval/);assert.match(employer,/Editing is locked during admin review/);assert.doesNotMatch(service,/rpc\('publish_job'/)});
+test('admin jobs UI lists and performs approve reject actions',()=>{assert.match(admin,/Pending Job Posts/);assert.match(admin,/approvePendingJob/);assert.match(admin,/rejectPendingJob/)});
