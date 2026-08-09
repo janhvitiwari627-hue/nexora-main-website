@@ -846,15 +846,18 @@ async function fetchCatalog(): Promise<CatalogItem[]> {
   if (!websites?.length) return [];
   const { data: salons, error: salonError } = await client
     .from("salons")
-    .select("id,slug,name,description,address,area,city,rating_average,review_count,starting_price_paise,cover_image_path,business_category,latitude,longitude,phone")
+    .select("id,slug,name,description,address,area,city,location_address,location_city,location_area,rating_average,review_count,starting_price_paise,cover_image_path,business_category,latitude,longitude,phone")
     .in("id", websites.map((item) => item.salon_id))
     .eq("verified", true)
     .eq("is_active", true)
     .is("deleted_at", null);
   if (salonError) throw salonError;
   const bySalon = new Map(websites.map((website) => [website.salon_id, website as Website]));
-  return (salons ?? []).filter((salon) => bySalon.has(salon.id)).map((salon) => ({
+  return (salons ?? []).filter((salon) => bySalon.has(salon.id)).map((salon: any) => ({
     ...(salon as Salon),
+    address: salon.location_address || salon.address || null,
+    city: salon.location_city || salon.city || null,
+    area: salon.location_area || salon.area || null,
     website: bySalon.get(salon.id)!,
   }));
 }
@@ -1068,20 +1071,73 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
   const runSearch = useCallback(async (offset: number) => {
     const client = getClient();
     if (!client) return { rows: [] as SearchRow[] };
-    const { data, error: rpcError } = await client.rpc("marketplace_search", {
-      p_query: searchParams.q,
-      p_category: searchParams.category || null,
-      p_area: searchParams.location || null,
-      p_min_rating: searchParams.rating,
-      p_max_price_paise: searchParams.price ? Number(searchParams.price) : null,
-      p_has_offer: searchParams.offer,
-      p_gender: searchParams.gender || null,
-      p_sort: searchParams.sort,
-      p_limit: 12,
-      p_offset: offset,
+    try {
+      const { data, error: rpcError } = await client.rpc("marketplace_search", {
+        p_query: searchParams.q,
+        p_category: searchParams.category || null,
+        p_area: searchParams.location || null,
+        p_min_rating: searchParams.rating,
+        p_max_price_paise: searchParams.price ? Number(searchParams.price) : null,
+        p_has_offer: searchParams.offer,
+        p_gender: searchParams.gender || null,
+        p_sort: searchParams.sort,
+        p_limit: 12,
+        p_offset: offset,
+      });
+      if (!rpcError && Array.isArray(data)) {
+        return { rows: data as SearchRow[] };
+      }
+    } catch {
+      // fallback to direct catalog query
+    }
+
+    // Direct catalog query fallback respecting safety gates (verified=true, is_active=true, is_published=true)
+    const all = await fetchCatalog();
+    const q = (searchParams.q || '').toLowerCase();
+    const cat = (searchParams.category || '').toLowerCase();
+    const loc = (searchParams.location || '').toLowerCase();
+
+    let filtered = all.filter((item) => {
+      if (cat && (item.business_category || '').toLowerCase() !== cat) return false;
+      if (loc) {
+        const matchLoc = (item.city || '').toLowerCase().includes(loc) ||
+                         (item.area || '').toLowerCase().includes(loc) ||
+                         (item.address || '').toLowerCase().includes(loc);
+        if (!matchLoc) return false;
+      }
+      if (q) {
+        const matchQ = (item.name || '').toLowerCase().includes(q) ||
+                       (item.business_category || '').toLowerCase().includes(q) ||
+                       (item.city || '').toLowerCase().includes(q) ||
+                       (item.area || '').toLowerCase().includes(q) ||
+                       (item.address || '').toLowerCase().includes(q) ||
+                       (item.description || '').toLowerCase().includes(q) ||
+                       (item.website.slug || '').toLowerCase().includes(q);
+        if (!matchQ) return false;
+      }
+      if (searchParams.rating > 0 && (item.rating_average || 0) < searchParams.rating) return false;
+      if (searchParams.price && Number(searchParams.price) > 0 && (item.starting_price_paise || 0) > Number(searchParams.price)) return false;
+      return true;
     });
-    if (rpcError) throw rpcError;
-    return { rows: (data ?? []) as SearchRow[] };
+
+    const rows: SearchRow[] = filtered.slice(offset, offset + 12).map((item) => ({
+      id: item.id,
+      slug: item.website.slug || item.slug || item.id,
+      name: item.name,
+      business_category: item.business_category || 'hair',
+      area: item.area,
+      city: item.city,
+      landmark: null,
+      gender_category: null,
+      rating_avg: Number(item.rating_average || 0),
+      review_count: Number(item.review_count || 0),
+      booking_count: 0,
+      starting_price_paise: item.starting_price_paise ?? null,
+      cover_image_path: item.cover_image_path ?? null,
+      has_offer: false,
+      score: 1,
+    }));
+    return { rows };
   }, [searchParams]);
 
   // URL sync (q, category, area) — reflect search in the URL.

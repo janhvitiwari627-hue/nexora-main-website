@@ -31,5 +31,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "docs", "examples", "supabase", "scripts", "build", "job-portal"]
+  "exclude": ["node_modules", "docs", "examples", "supabase", "scripts", "build", "job-portal", "vite.config.ts"]
 }
