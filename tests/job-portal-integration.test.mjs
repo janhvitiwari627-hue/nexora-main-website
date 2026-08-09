@@ -30,7 +30,7 @@ test('base path, assets, auth redirects and PWA are scoped to /job-portal', () =
   assert.match(portalVite, /scope:\s*appBase/);
   assert.match(portalVite, /navigateFallback:\s*asset\('index\.html'\)/);
   assert.match(portalBackend, /import\.meta\.env\.BASE_URL/);
-  assert.match(portalBackend, /appCallbackUrl\('\?verified=1'\)/);
+  assert.doesNotMatch(portalBackend, /resendSignupVerification|\?verified=1/);
   assert.match(portalBackend, /appCallbackUrl\('\?recovery=1'\)/);
 });
 

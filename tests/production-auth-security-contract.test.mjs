@@ -24,7 +24,7 @@ test("10.1 every auth flow uses real Supabase APIs (PKCE), never mocks", () => {
   assert.match(app, /exchangeCodeForSession\(code\)/);
   assert.match(app, /resetPasswordForEmail\(/);
   assert.match(app, /updateUser\(\{ password \}\)/);
-  assert.match(app, /auth\.resend\(\{\s*type: "signup"/);
+  assert.match(app, /auth\.signUp\(\{/);
   assert.match(app, /auth\.signOut\(\)/);
   assert.match(app, /flowType: "pkce"/);
   // No mock/fake auth anywhere in the main website.
@@ -32,8 +32,9 @@ test("10.1 every auth flow uses real Supabase APIs (PKCE), never mocks", () => {
   assert.doesNotMatch(app, /fakeSession|mockSession|mockAuth|demoUser/i);
 });
 
-test("10.1 signup confirmation redirects to the PKCE callback route", () => {
-  assert.match(app, /emailRedirectTo: typeof window !== "undefined" \? `\$\{window\.location\.origin\}\/auth\/callback`/);
+test("10.1 signup uses immediate activation without verification-email resends", () => {
+  assert.match(app, /if \(!data\.session\) throw new Error\("Account activation did not complete/);
+  assert.doesNotMatch(app, /auth\.resend\(\{\s*type:\s*"signup"/);
 });
 
 test("10.1 callback never trusts URL roles; profile decides the portal", () => {

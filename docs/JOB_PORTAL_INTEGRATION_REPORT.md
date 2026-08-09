@@ -71,7 +71,7 @@ The integration continues to use project `qwaehqsmodekbgvnaavz` and reuses canon
 
 ## 6. Authentication
 
-Job Portal auth redirect construction now uses `import.meta.env.BASE_URL`, so integrated signup verification, OAuth, and password recovery return to `/job-portal/` while the rollback deployment continues to return to its root.
+Job Portal auth redirect construction uses `import.meta.env.BASE_URL` for OAuth and password recovery. Signup verification emails were later disabled by explicit product decision (`mailer_autoconfirm=true`), so new accounts activate immediately without a verification/resend screen.
 
 Supabase Auth is configured with:
 

@@ -2082,7 +2082,6 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"error" | "success" | "info">("error");
   const [showPassword, setShowPassword] = useState(false);
-  const [confirmationPending, setConfirmationPending] = useState(false);
   // Section 10.2 — Google OAuth is fail-safe OFF unless the deployment opts in.
   const googleOauthConfigured = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED === "true";
   const [googleOauthFailed, setGoogleOauthFailed] = useState(false);
@@ -2152,26 +2151,12 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
           password,
           options: {
             data: { full_name: trimmedName || trimmedEmail.split("@")[0], signup_role: role, ...(refCode ? { ref_code: refCode } : {}) },
-            emailRedirectTo: typeof window !== "undefined" ? `${window.location.origin}/auth/callback` : undefined,
           },
         });
         if (error) throw error;
 
-        // Supabase may return user without session if email confirmation required
-        if (!data.session) {
-          if (data.user) {
-            setConfirmationPending(true);
-            setMessage(`Account created for ${role.replace("_", " ")}! Please confirm your email (${trimmedEmail}) using the link we just sent. Check spam if it does not arrive, then log in.`);
-            setMessageType("success");
-            return;
-          } else {
-            setConfirmationPending(true);
-            setMessage("Check your email to confirm the account, then log in.");
-            setMessageType("success");
-            return;
-          }
-        }
-        // If session exists, continue to profile check below
+        if (!data.session) throw new Error("Account activation did not complete. Please try logging in or contact support.");
+        // Auto-confirmed signup continues directly to the server profile check.
       } else {
         // login mode
         // Preserve contract pattern for auth-config test while using sanitized email
@@ -2214,34 +2199,6 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
       const parsed = parseSupabaseAuthError(cause);
       setMessage(parsed);
       setMessageType(parsed.startsWith("Account created") || parsed.includes("check your email") ? "success" : "error");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  // Section 10.1 — real Supabase resend of the confirmation email.
-  const resendConfirmation = async () => {
-    const trimmedEmail = email.trim().toLowerCase();
-    if (!trimmedEmail) {
-      setMessage("Enter your email address above, then resend the confirmation.");
-      setMessageType("error");
-      return;
-    }
-    setBusy(true);
-    try {
-      const client = getClient();
-      if (!client) throw new Error(missingSupabaseConfigMessage);
-      const { error } = await client.auth.resend({
-        type: "signup",
-        email: trimmedEmail,
-        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
-      });
-      if (error) throw error;
-      setMessage(`Confirmation email resent to ${trimmedEmail}. If it already arrived once, only the newest link works.`);
-      setMessageType("success");
-    } catch (cause) {
-      setMessage(friendlyError(cause));
-      setMessageType("error");
     } finally {
       setBusy(false);
     }
@@ -2359,13 +2316,6 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
             </button>
           )}
         </div>
-        {confirmationPending && mode === "signup" && (
-          <div className="button-row" style={{ justifyContent: "flex-start", marginTop: 6 }}>
-            <button type="button" className="secondary compact" disabled={busy} onClick={() => void resendConfirmation()}>
-              Resend confirmation email
-            </button>
-          </div>
-        )}
         <div className="trust-row" style={{ marginTop: 18 }}>
           <span>✓ Shared Supabase {SUPABASE_PROJECT_REF}</span><span>✓ RLS protected</span><span>✓ Role locked</span>
         </div>
