@@ -83,6 +83,11 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_NEXORA_OWNER_PORTAL_MOUNTED: process.env.NEXORA_OWNER_PWA_ORIGIN ?? "https://shop-onwer-pink-nexora-aap.vercel.app" ? "true" : "false",
     NEXT_PUBLIC_NEXORA_PARTNER_PORTAL_MOUNTED: process.env.NEXORA_PARTNER_PWA_ORIGIN ?? "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app" ? "true" : "false",
     NEXT_PUBLIC_EXPECTED_SUPABASE_URL: EXPECTED_SUPABASE_URL,
+    // Phase 1 — origins allowed to receive an authenticated PKCE redirect.
+    // Must mirror the Supabase Redirect URL allowlist. Empty falls back to the
+    // built-in production list in packages/auth/src/redirects.ts.
+    NEXT_PUBLIC_NEXORA_ALLOWED_AUTH_ORIGINS:
+      process.env.NEXT_PUBLIC_NEXORA_ALLOWED_AUTH_ORIGINS ?? "",
     // Section 10.2 — Google OAuth button stays hidden unless the deployment
     // explicitly opts in after Google + Supabase provider verification.
     NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED: process.env.NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED === "true" ? "true" : "false",

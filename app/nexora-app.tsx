@@ -1,7 +1,14 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createClient, Session, SupabaseClient } from "@supabase/supabase-js";
+import { Session, SupabaseClient } from "@supabase/supabase-js";
+import {
+  EXPECTED_SUPABASE_HOSTNAME,
+  SUPABASE_PROJECT_REF,
+  getSupabaseClient,
+  safeRedirectUrl,
+  supabaseConfigErrorMessage,
+} from "./lib/auth";
 import {
   PORTAL_PATHS,
   isPortalPath,
@@ -256,10 +263,13 @@ type AuthState = {
 };
 
 // Main Website is Next/vinext. Do not mix Vite prefixes into this app.
-const SUPABASE_PROJECT_REF = "qwaehqsmodekbgvnaavz";
-const EXPECTED_SUPABASE_HOST = `${SUPABASE_PROJECT_REF}.supabase.co`;
+// PHASE 1: the client itself is created by the shared Nexora auth package so
+// that this app, the Customer/Owner/Partner/Delivery PWAs and the Job Portal
+// all use ONE project, ONE storage key and ONE set of PKCE options. These two
+// reads stay literal because Next inlines them textually at build time.
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+const EXPECTED_SUPABASE_HOST = EXPECTED_SUPABASE_HOSTNAME;
 
 const missingSupabaseConfigMessage =
   `Nexora login service is not configured for this deployment. Set NEXT_PUBLIC_SUPABASE_URL=https://${EXPECTED_SUPABASE_HOST} and NEXT_PUBLIC_SUPABASE_ANON_KEY from the shared Supabase project ${SUPABASE_PROJECT_REF}.`;
@@ -268,27 +278,13 @@ function isKnownPlatformRole(value: unknown): value is Role {
   return value === "customer" || value === "business_user" || value === "growth_partner";
 }
 
-let singleton: SupabaseClient | null = null;
-let singletonCacheKey = "";
-
+/**
+ * The one Supabase client for this origin. Delegating to the shared package
+ * guarantees flowType: "pkce", persistSession and the Nexora storage key —
+ * creating a second client here would fork the session state.
+ */
 function getClient() {
-  if (!supabaseUrl || !supabaseKey) return null;
-  // validate URL
-  try {
-    const u = new URL(supabaseUrl);
-    if (u.hostname !== EXPECTED_SUPABASE_HOST) {
-      console.warn(`[Nexora] Using Supabase host ${u.hostname}, expected ${SUPABASE_PROJECT_REF}.supabase.co – auth sharing requires shared project.`);
-    }
-  } catch {
-    return null;
-  }
-  const cacheKey = `${supabaseUrl}::${supabaseKey}`;
-  if (singleton && singletonCacheKey === cacheKey) return singleton;
-  singleton = createClient(supabaseUrl, supabaseKey, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" },
-  });
-  singletonCacheKey = cacheKey;
-  return singleton;
+  return getSupabaseClient({ url: supabaseUrl, anonKey: supabaseKey });
 }
 
 function money(paise: number | null | undefined) {
@@ -2441,10 +2437,24 @@ function AuthCallbackPage({ navigate }: { navigate: (path: string) => void }) {
           await client.auth.signOut();
           throw new Error("This account is inactive or has no valid Nexora role. Contact support.");
         }
-        const returnTo = safeSameOriginPath(url.searchParams.get("returnTo"), portalPathForRole(profile.platform_role));
+        // Cross-origin handoff: a PWA on another origin may have started this
+        // login. `safeRedirectUrl` accepts ONLY allowlisted Nexora origins, so
+        // an attacker-supplied returnTo cannot capture the authenticated user.
+        // No tokens travel in the URL — the destination origin runs its own
+        // PKCE exchange against the shared project.
+        const rawReturnTo = url.searchParams.get("returnTo");
+        const homePath = portalPathForRole(profile.platform_role);
+        const crossOrigin = rawReturnTo && /^https?:\/\//i.test(rawReturnTo.trim())
+          ? safeRedirectUrl(rawReturnTo)
+          : null;
         // Strip the one-time code from the URL before continuing.
         window.history.replaceState({}, "", "/auth/callback");
-        navigate(profile.platform_role === "customer" ? returnTo : portalPathForRole(profile.platform_role));
+        if (crossOrigin) {
+          window.location.assign(crossOrigin);
+          return;
+        }
+        const returnTo = safeSameOriginPath(rawReturnTo, homePath);
+        navigate(profile.platform_role === "customer" ? returnTo : homePath);
       } catch (cause) {
         setState({ status: "error", message: friendlyError(cause) });
       }
@@ -2668,12 +2678,13 @@ function SessionExpiredPage({ navigate }: { navigate: (path: string) => void }) 
   );
 }
 
+/**
+ * Precise, actionable configuration error. The shared validator distinguishes
+ * a missing URL, a missing key, a malformed URL, a foreign Supabase project
+ * and a service-role key that must never be in a browser bundle.
+ */
 function getDetailedConfigError(): string {
-  if (supabaseKey && supabaseUrl) return missingSupabaseConfigMessage;
-  if (!supabaseUrl && !supabaseKey) return `Missing Supabase config: set NEXT_PUBLIC_SUPABASE_URL=https://${EXPECTED_SUPABASE_HOST} and NEXT_PUBLIC_SUPABASE_ANON_KEY from project ${SUPABASE_PROJECT_REF}.`;
-  if (!supabaseUrl) return "Missing NEXT_PUBLIC_SUPABASE_URL.";
-  if (!supabaseKey) return "Missing NEXT_PUBLIC_SUPABASE_ANON_KEY. Use the anon/publishable key, never the privileged key.";
-  return missingSupabaseConfigMessage;
+  return supabaseConfigErrorMessage({ url: supabaseUrl, anonKey: supabaseKey });
 }
 
 function isPortalMounted(role: Role): boolean {
