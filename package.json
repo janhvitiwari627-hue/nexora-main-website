@@ -19,14 +19,16 @@
     "deploy": "npm run build && wrangler deploy",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
-    "test:contracts": "node --test tests/auth-config-contract.test.mjs tests/booking-role-guard.test.mjs tests/business-rules-contract.test.mjs tests/proposal-flow-contract.test.mjs tests/phase1-customer-contract.test.mjs tests/path-routing-contract.test.mjs tests/phase2-owner-package-contract.test.mjs tests/phase3-growth-partner-package-contract.test.mjs tests/phase7-contract.test.mjs tests/phase8-contract.test.mjs tests/full-website-test.mjs tests/job-portal-integration.test.mjs tests/job-admin-approval.test.mjs tests/production-auth-security-contract.test.mjs",
+    "test:contracts": "node --test tests/auth-config-contract.test.mjs tests/booking-role-guard.test.mjs tests/business-rules-contract.test.mjs tests/proposal-flow-contract.test.mjs tests/phase1-customer-contract.test.mjs tests/path-routing-contract.test.mjs tests/phase2-owner-package-contract.test.mjs tests/phase3-growth-partner-package-contract.test.mjs tests/phase7-contract.test.mjs tests/phase8-contract.test.mjs tests/full-website-test.mjs tests/job-portal-integration.test.mjs tests/job-admin-approval.test.mjs tests/production-auth-security-contract.test.mjs tests/phase1-centralized-auth.test.mjs",
     "validate:artifact": "bash scripts/validate-artifact.sh",
     "lint": "bash scripts/sites-env.sh -- eslint app db worker next.config.ts vite.config.ts && npm run lint --workspace=@nexora/job-portal",
     "db:generate": "bash scripts/sites-env.sh -- drizzle-kit generate",
     "test:phase14": "npm run test:phase14:contracts && npm run test:phase14:integration && npm run test:phase14:e2e",
     "test:phase14:contracts": "node --test tests/phase14/contracts/*.test.mjs",
     "test:phase14:integration": "node --test tests/phase14/integration/*.test.mjs",
-    "test:phase14:e2e": "playwright test tests/phase14/e2e"
+    "test:phase14:e2e": "playwright test tests/phase14/e2e",
+    "test:phase1": "node --test tests/phase1-centralized-auth.test.mjs && node scripts/verify-phase1-sql.mjs",
+    "verify:phase1:sql": "node scripts/verify-phase1-sql.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.95.0",
@@ -38,6 +40,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
     "@cloudflare/workers-types": "4.20260515.1",
+    "@electric-sql/pglite": "^0.3.14",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
