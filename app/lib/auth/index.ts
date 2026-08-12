@@ -46,6 +46,7 @@ export {
   readAuthParams,
   safeRedirectUrl,
   safeReturnPath,
+  destinationForVerifiedRole,
   supabaseRedirectAllowlist,
   // Operations
   resolveProfile,

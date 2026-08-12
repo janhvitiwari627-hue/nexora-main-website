@@ -28,6 +28,8 @@
  * Supabase → Authentication → URL Configuration → Redirect URLs.
  */
 
+import { homePathForRole, type PlatformRole } from "./roles";
+
 /** Paths that make up the central auth surface on the Main Website. */
 export const AUTH_ROUTES = {
   login: "/auth/login",
@@ -136,6 +138,21 @@ export function safeReturnPath(candidate: string | null | undefined, fallback = 
   if (value.startsWith("//") || value.includes("\\")) return fallback;
   if (/^\/+\s*javascript:/i.test(value)) return fallback;
   return value.split("#")[0] || fallback;
+}
+
+/**
+ * After a verified login, honor any safe same-origin `returnTo`.
+ *
+ * Every authenticated role may resume any shell (`/app/customer`,
+ * `/app/owner`, `/app/partner`, `/app/template`, public pages). Role-home
+ * is only the fallback when `returnTo` is missing or unsafe. Data access
+ * stays on RLS — this function never grants a role.
+ */
+export function destinationForVerifiedRole(
+  role: PlatformRole,
+  requestedReturnTo: string | null | undefined,
+): string {
+  return safeReturnPath(requestedReturnTo, homePathForRole(role));
 }
 
 /**

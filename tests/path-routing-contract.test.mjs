@@ -26,8 +26,8 @@ test("main app routes every canonical portal through the gateway", () => {
   assert.match(app, /PortalGateway/);
   assert.match(app, /else if \(isPortalPath\(path\)\)/);
   assert.match(app, /profile\.is_active !== true/);
-  assert.match(app, /requestedRole && requestedRole !== profileRole/);
-  assert.match(app, /navigate\(portalPathForRole\(profileRole\)\)/);
+  assert.match(app, /no role-home redirects/);
+  assert.doesNotMatch(app, /requestedRole && requestedRole !== profileRole/);
   assert.doesNotMatch(app, /RoleWorkspace|DashboardPage|PwaInstallPrompt/);
 });
 
@@ -44,7 +44,7 @@ test("role links and reverse proxy mounts use canonical portal paths", () => {
   for (const variable of ["NEXORA_CUSTOMER_PWA_ORIGIN", "NEXORA_OWNER_PWA_ORIGIN", "NEXORA_PARTNER_PWA_ORIGIN"]) {
     assert.match(nextConfig, new RegExp(variable));
   }
-  assert.match(nextConfig, /source: `\$\{path\}\/\:path\*`, destination: `\$\{origin\}\/\:path\*`/);
+  assert.match(nextConfig, /source: `\$\{path\}\/\:path\*`, destination: `\$\{origin\}\$\{path\}\/\:path\*`/);
 });
 
 test("each PWA package declares its own path base and scoped worker", () => {

@@ -107,7 +107,7 @@ test("security: session is not authorization and roles never come from the clien
   assert.match(service, /role_mismatch/);
   assert.match(session, /normalizeSignupRole/);
   assert.match(app, /destinationForVerifiedRole/);
-  assert.match(app, /role !== "customer"/);
+  assert.match(app, /no role-home redirects/);
   assert.doesNotMatch(app, /localStorage\.getItem\(["']role/);
   assert.doesNotMatch(service, /localStorage\.(getItem|setItem)/);
 });

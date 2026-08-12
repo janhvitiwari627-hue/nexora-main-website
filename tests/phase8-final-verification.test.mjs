@@ -94,7 +94,7 @@ test("role security remains server-backed and rejects localStorage authorization
   assert.match(access, /requireRole\("growth_partner"\)/);
   assert.match(access, /requireRole\("customer"\)/);
   assert.match(access, /owner_salon_ids/);
-  assert.match(app, /requestedRole && requestedRole !== profileRole/);
+  assert.match(app, /no role-home redirects/);
   assert.match(session, /normalizeSignupRole/);
   assert.doesNotMatch(app, /localStorage\.setItem\([^)]*(?:role|admin|owner|partner)/i);
   assert.doesNotMatch(provider, /fakeSession|mockAuth|demoUser/);
