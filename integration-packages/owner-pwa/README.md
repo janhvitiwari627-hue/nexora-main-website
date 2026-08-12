@@ -1,41 +1,31 @@
-# Shop Owner PWA — Phase 2 Supabase integration
+# Owner PWA — Phase 2 centralized auth integration
 
-**Target repo:** `promptaivideo4-coder/PINK-NEXORA-AAP-` (branch `main`)  
-**Patch:** `supabase-integration.patch`  
-**Base:** locked `main` `49ffe780`
-**Coverage:** live owner workspace, permanent role gate, env-only auth, honest empty states, proposal review, and v3 same-origin mount
-**Verified:** patch applies to the locked head; `npx tsc --noEmit` and `npm run build` pass after applying.
+**Target repo:** `promptaivideo4-coder/PINK-NEXORA-AAP-` (branch `main`)
+**Base verified:** `47fb48e7767e`
+**Patch:** `auth-integration.patch`
+**Build verified:** `npm run build` passes on the locked base after applying the patch.
 
-## Delivered
+> This patch targets the current owner-repository `main` listed below and is
+> self-contained. The older `supabase-integration.patch` is retained as the
+> historical owner/data-layer artifact but no longer applies to current
+> upstream `main`; apply this auth patch directly on the verified base unless
+> working from that older locked commit.
 
-- `ownerRepository.ts` is the single owner data layer. It resolves salons
-  only through active `organization_members`; it never falls back to the
-  public verified-salon catalog.
-- Dashboard, bookings, customers, customer profile, services, staff, reviews,
-  profile/hours, website status, marketing offers, analytics, and wallet views
-  use shared Supabase rows or show an honest loading/error/empty/unavailable
-  state. Seeded customers, revenue charts, payout transactions, stylist lists,
-  marketing campaigns, and website gallery demos are not rendered.
-- Owner wallet is read-only. The server payout engine settles eligible rows
-  daily at 22:00 IST under the locked 90% owner / 10% platform rule.
-- `ProposalReview` calls the role-checked `review_salon_setup` RPC for approve,
-  request changes, reject, and publish. Publish preserves partner attribution
-  and only then makes the salon visible in the customer catalog.
-- App startup verifies `profiles.platform_role === 'business_user'` and
-  `is_active === true`. A valid Supabase session alone cannot enter the Owner
-  PWA; other roles are signed out and shown the role-conflict screen.
-- Browser and API auth use `VITE_SUPABASE_URL` and
-  `VITE_SUPABASE_ANON_KEY` from deployment environment only. The previous
-  hardcoded anon JWT fallback is removed.
-- `vite.config.ts` reads `VITE_APP_BASE_PATH`; use `/app/owner/` behind the
-  main website. VitePWA receives the same path as manifest `start_url` and
-  `scope`, so the generated worker cannot intercept another portal or the
-  public site.
+## What changes
 
-Device-only preferences such as theme/language/install flags may remain local.
-They are not business-data sources of truth. Unsupported storage/media or
-manual-appointment operations explicitly say they are unavailable instead of
-claiming success.
+| Area | Change |
+|---|---|
+| Shared auth package | Vendors `@nexora/auth` under `src/vendor/nexora-auth/` and aliases `@nexora/auth` to it in Vite/TypeScript. |
+| Supabase client | `src/lib/supabase.ts` now re-exports the shared validated client: shared project only, browser-safe key validation, PKCE, and shared storage key. The hardcoded anon fallback/proxy token handling is removed from the browser path. |
+| React auth state | Mounts `<AuthProvider>` in `src/main.tsx`; `App.tsx` consumes `useAuth()` rather than manually calling `getSession()`/`onAuthStateChange()`. |
+| Permanent role gate | Owner access requires an active `profiles.platform_role = 'business_user'`. Any other active role is sent to `role-conflict` and signed out. |
+| Login / registration | `Login.tsx` and `RegistrationStepper.tsx` call `signIn()`/`signUp()` from shared auth instead of the old proxy/token helper. Sign-up requests `role: 'business_user'` through package metadata. |
+| Recovery | Password reset uses `sendPasswordReset()` and the shared recovery URL policy; `App.tsx` routes the reset surface on `PASSWORD_RECOVERY`. |
+| Demo bypass | The local demo-mode login bypass is removed. |
+
+No salon, booking, staff, wallet, or website-builder data contract is changed by
+this patch. It is deliberately limited to auth/session/role plumbing so the
+larger production screens remain reviewable independently.
 
 ## Apply
 
@@ -43,20 +33,29 @@ claiming success.
 git clone https://github.com/promptaivideo4-coder/PINK-NEXORA-AAP-.git
 cd PINK-NEXORA-AAP-
 git checkout main
-git am /path/to/integration-packages/owner-pwa/supabase-integration.patch
+git am /path/to/integration-packages/owner-pwa/auth-integration.patch
 cp .env.example .env
-# VITE_APP_BASE_PATH=/app/owner/ when mounted through the main website
-npm install && npx tsc --noEmit && npm run build
+npm install
+npm run build
 ```
 
-## Backend and host checklist
+The old `supabase-integration.patch` is historical only on the current target
+base; `auth-integration.patch` is sufficient.
 
-1. Set `VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co` and the
-   publishable/anon `VITE_SUPABASE_ANON_KEY`. Never add `service_role` to the
-   browser build.
-2. Confirm the shared migrations are applied, including
-   `20260804_shop_owner_phase2_full.sql` and
-   `20260805_permanent_profile_role_guard.sql`.
-3. Set `VITE_APP_BASE_PATH=/app/owner/` for the unified path-based deployment.
-4. Configure the main website's `NEXORA_OWNER_PWA_ORIGIN` to the owner PWA
-   deployment origin. The browser continues to see the main website origin.
+## Deployment checklist
+
+1. Set `VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co`.
+2. Set `VITE_SUPABASE_ANON_KEY` to the shared project's anon/publishable key.
+   The previous hardcoded key fallback must not be relied on in production.
+3. Keep `VITE_APP_BASE_PATH=/app/owner/` when deployed behind the main website.
+4. Add this PWA and the central website to Supabase Authentication → URL
+   Configuration → Redirect URLs. For non-default previews, set
+   `VITE_NEXORA_ALLOWED_AUTH_ORIGINS` as a comma-separated allowlist.
+5. Apply and verify PR #48's database migration before rollout:
+   `select * from public.verify_phase1_auth();` must return all passed.
+
+## Notes
+
+`npx tsc --noEmit` still reports unrelated pre-existing target-repo errors in
+Razorpay API route typings and `Settings.tsx`; no changed auth file contributes
+to those errors. The production Vite + esbuild build passes.

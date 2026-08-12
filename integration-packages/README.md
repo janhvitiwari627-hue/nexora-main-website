@@ -4,15 +4,23 @@
 (all 6 locked business rules verified — see `supabase/BUSINESS_RULES.md`)
 
 Ready-to-apply Supabase integration packages for the three Nexora PWAs.
-Each folder contains a single `git format-patch` file that applies cleanly on
-the target repo's `main` branch with one command, plus a README explaining
-exactly what changes and how to deploy.
+Each folder contains mail patches (`git format-patch`) that apply cleanly on
+the target repo's `main` branch with one command per patch, plus a README
+explaining exactly what changes and how to deploy.
+
+`supabase-integration.patch` is the original production/data-layer
+integration. `auth-integration.patch` is Phase 2: it rolls the merged
+`packages/auth` module from PR #48 out to each PWA as a self-contained patch.
+Apply `auth-integration.patch` directly to the current target-repository
+`main` bases documented in each README. The older `supabase-integration.patch`
+files are retained as historical artifacts but no longer apply after those
+upstream branches moved.
 
 | Package | Target repo | Task | Status |
 |---|---|---|---|
-| `customer-pwa/` | `freewebsite859-sudo/custmer-Fresh-app-` | Production-only Customer PWA; remove demo/role-dashboard branches; mount at `/app/customer/` | ✅ Ready (verified: applies to locked repo main) |
-| `owner-pwa/` | `promptaivideo4-coder/PINK-NEXORA-AAP-` | Phase 2: live owner workspace, role gate, env-only auth, proposal review, honest server states | ✅ Ready (verified: applies to locked main, tsc + build clean) |
-| `growth-partner-pwa/` | `diamondpeomotion-cyber/pink-growth-partner-aap-` | Phase 3: live Auth, server referral identity, attribution, proposal submission, commissions, scoped PWA | ✅ Ready (verified: applies to current locked main, tsc + build clean) |
+| `customer-pwa/` | `freewebsite859-sudo/custmer-Fresh-app-` | Production-only Customer PWA; remove demo/role-dashboard branches; mount at `/app/customer/`; Phase 2 shared `@nexora/auth` wiring | ✅ Ready (`auth-integration.patch`; build verified on `ff93504467b0`) |
+| `owner-pwa/` | `promptaivideo4-coder/PINK-NEXORA-AAP-` | Live owner workspace, role gate, env-only auth, proposal review, honest server states; Phase 2 shared `@nexora/auth` wiring | ✅ Ready (`auth-integration.patch`; build verified on `47fb48e7767e`) |
+| `growth-partner-pwa/` | `diamondpeomotion-cyber/pink-growth-partner-aap-` | Live Auth, server referral identity, attribution, proposal submission, commissions, scoped PWA; Phase 2 shared `@nexora/auth` wiring | ✅ Ready (`auth-integration.patch`; tsc + build verified on `e00f0ed1acea`) |
 
 ## Why patches instead of direct PRs?
 
@@ -26,11 +34,15 @@ Until then, a maintainer applies each patch (one command below).
 
 ```bash
 git clone https://github.com/<org>/<pwa-repo>.git && cd <pwa-repo>
-git checkout -b supabase-integration-phase1
-git am /path/to/integration-packages/<package>/*.patch   # keeps commit message
-# (or: git apply <package>/*.patch  for a worktree-only change)
+git checkout -b nexora-auth-integration
+git am /path/to/integration-packages/<package>/auth-integration.patch
+# (or: git apply ... for a worktree-only change)
 npm install && npx tsc --noEmit && npm run build
 ```
+
+For Growth Partner, `npx tsc --noEmit && npm run build` is clean. Customer and
+Owner builds pass; their target repos retain unrelated pre-existing `tsc`
+errors outside the changed auth files.
 
 Every package is self-contained: it updates only the target app's allowed
 production screens/data layer, documents required env vars in `.env.example`,
