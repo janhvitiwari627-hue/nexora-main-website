@@ -4,9 +4,10 @@ const GROWTH_PARTNER_ORIGIN = 'https://pink-growth-partner-diamondpeomotion-cybe
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { path?: string[] } }
+  { params }: { params: Promise<{ path?: string[] }> }
 ) {
-  const path = params.path?.join('/') || '';
+  const resolvedParams = await params;
+  const path = resolvedParams.path?.join('/') || '';
   const url = new URL(`/${path}`, GROWTH_PARTNER_ORIGIN);
   
   // Preserve query parameters
