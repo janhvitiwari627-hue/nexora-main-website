@@ -52,9 +52,18 @@ async function setupDatabase() {
       updated_at timestamptz
     );
     create table public.salon_public_websites(
+      id uuid,
       salon_id uuid references public.salons(id),
-      is_published boolean not null default false
+      slug text,
+      template_key text,
+      config jsonb not null default '{}'::jsonb,
+      is_published boolean not null default false,
+      published_at timestamptz
     );
+    alter table public.salon_public_websites enable row level security;
+    create policy spw_public_read_published on public.salon_public_websites
+      for select to anon, authenticated using (is_published = true);
+
     create table public.organization_members(
       organization_id uuid not null,
       user_id uuid not null,
@@ -115,6 +124,15 @@ test("Phase 7 migration enforces private GPS and approved business RLS at runtim
   try {
     const verification = await db.query("select * from public.verify_phase7_location_security()");
     assert.ok(verification.rows.every((row) => row.passed === true));
+
+    const publishedWebsites = await asRole(db, "anon", null, () =>
+      db.query("select salon_id,slug,template_key,config,is_published,published_at from public.salon_public_websites"),
+    );
+    assert.equal(publishedWebsites.rows.length, 2, "public catalog can resolve published website rows");
+    await assert.rejects(
+      () => asRole(db, "anon", null, () => db.query("select id from public.salon_public_websites")),
+      /permission denied/i,
+    );
 
     await asRole(db, "authenticated", CUSTOMER, () =>
       db.query(

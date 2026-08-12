@@ -76,6 +76,7 @@ test("business location is a separate approval-gated table", () => {
   assert.match(migration, /business_location_public_approved/);
   assert.match(migration, /approval_status = 'approved'/);
   assert.match(migration, /s\.verified = true[\s\S]*s\.is_active = true[\s\S]*w\.is_published = true/);
+  assert.match(migration, /grant select \(salon_id, slug, template_key, config, is_published, published_at\)[\s\S]*salon_public_websites to anon, authenticated/);
 });
 
 test("Owner can submit only for an owned salon and submission resets approval", () => {

@@ -195,6 +195,13 @@ $fn$;
 revoke all on function public.is_public_business_location_salon(uuid) from public;
 grant execute on function public.is_public_business_location_salon(uuid) to anon, authenticated, service_role;
 
+-- The public catalog must be able to resolve only published website rows before
+-- joining approved business coordinates. Restore the narrow browser grant used
+-- by fetchCatalog; the existing is_published RLS policy still controls rows.
+revoke select on table public.salon_public_websites from anon, authenticated;
+grant select (salon_id, slug, template_key, config, is_published, published_at)
+  on public.salon_public_websites to anon, authenticated;
+
 drop policy if exists business_location_public_approved on public.business_locations;
 create policy business_location_public_approved
   on public.business_locations

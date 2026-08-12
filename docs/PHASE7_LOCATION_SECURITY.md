@@ -39,7 +39,7 @@ Roles do not participate in these policies. Consequently:
 
 `public.business_locations` is separate from private GPS. Owners submit coordinates through `submit_my_business_location`, which verifies `private.can_manage_salon_settings(salon_id)` and always sets the row to `pending`.
 
-Only the backend-only `service_role` approval RPC can change a row to `approved`. The public RLS policy additionally requires a verified, active, non-deleted salon with a published website.
+Only the backend-only `service_role` approval RPC can change a row to `approved`. The public RLS policy additionally requires a verified, active, non-deleted salon with a published website. The migration restores only the published website columns needed by the public catalog; website RLS continues to suppress unpublished rows.
 
 Broad browser grants on legacy `salons.latitude` / `salons.longitude` columns are removed. Marketplace and nearby code reads only `business_locations` rows with `approval_status = 'approved'`. Private user coordinates are used only as the local Haversine origin and are never sent to a nearby-search RPC.
 

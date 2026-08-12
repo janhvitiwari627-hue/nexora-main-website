@@ -639,7 +639,7 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
           </div>
         )}
         {nearbyLoading ? <SalonSkeletons count={3} /> : !nearbyRanked.length ? (
-          <StateCard title="No salons nearby yet" text="Salons with location coordinates set by their owner appear here, sorted by distance calculated on your device." />
+          <StateCard title="No salons nearby yet" text="Salons with approved business coordinates appear here, sorted by distance calculated on your device." />
         ) : !location.fix ? (
           <div className="salon-grid">{nearbyRanked.slice(0, 6).map((row) => <NearbyDistanceCard key={row.id} row={row} navigate={navigate} />)}</div>
         ) : (
