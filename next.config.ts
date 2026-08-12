@@ -78,19 +78,14 @@ const nextConfig: NextConfig = {
       { path: "/app/partner", origin: PARTNER_APP_ORIGIN },
       { path: "/app/template", origin: TEMPLATE_APP_ORIGIN },
     ];
-    const portalMounts = portals
+    // Document the 12 path-preserving mounts (3 portals × 3 + growth-partner × 3).
+    // They are NOT installed as Vercel edge rewrites: those return HTTP 500
+    // against a foreign Vercel deployment. The Route Handler proxy in
+    // app/app/[portal]/[[...path]]/route.ts serves /app/{role} instead.
+    const documentedMounts = portals
       .filter((portal): portal is { path: string; origin: string } => Boolean(portal.origin))
       .flatMap(({ path, origin }) => pathPreservingMounts(path, origin));
-    // Growth Partner raw-origin mount: /growth-partner proxies to the PWA
-    // root (no /app/partner prefix). Nested paths, assets, and query
-    // parameters are preserved.
-    const growthPartnerRewrites: PortalRewrite[] = PARTNER_APP_ORIGIN
-      ? [
-          { source: "/growth-partner", destination: `${PARTNER_APP_ORIGIN}/` },
-          { source: "/growth-partner/", destination: `${PARTNER_APP_ORIGIN}/` },
-          { source: "/growth-partner/:path*", destination: `${PARTNER_APP_ORIGIN}/:path*` },
-        ]
-      : [];
+    void documentedMounts;
     const jobPortalRoutes = [
       { source: JOB_PORTAL_BASE, destination: `${JOB_PORTAL_BASE}/index.html` },
       ...JOB_PORTAL_ROUTE_ROOTS.flatMap((route) => [
@@ -98,15 +93,9 @@ const nextConfig: NextConfig = {
         { source: `${JOB_PORTAL_BASE}/${route}/:path*`, destination: `${JOB_PORTAL_BASE}/index.html` },
       ]),
     ];
-    // Nested `/app/*/` assets and all /growth-partner/* routes load before the
-    // catch-all page. Exact `/app/customer`, `/app/owner`, `/app/partner`,
-    // `/app/template` stay on the Next.js app (portalExactMounts run as
-    // afterFiles) so PortalGateway can authenticate before the iframe loads.
-    const portalAssetMounts = portalMounts.filter((rule) => rule.source.endsWith("/") || rule.source.includes(":path*"));
-    const portalExactMounts = portalMounts.filter((rule) => !rule.source.endsWith("/") && !rule.source.includes(":path*"));
     return {
-      beforeFiles: [...jobPortalRoutes, ...growthPartnerRewrites, ...portalAssetMounts],
-      afterFiles: portalExactMounts,
+      beforeFiles: jobPortalRoutes,
+      afterFiles: [],
       fallback: [],
     };
   },
