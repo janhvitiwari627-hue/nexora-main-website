@@ -8,7 +8,7 @@ export function middleware(request: NextRequest) {
 
   // Proxy /growth-partner and all sub-paths to the Growth Partner PWA
   if (pathname === '/growth-partner' || pathname.startsWith('/growth-partner/')) {
-    // Remove /growth-partner prefix and proxy to the external origin
+    // Remove /growth-partner prefix and redirect to the external origin
     const targetPath = pathname.replace(/^\/growth-partner/, '') || '/';
     const url = new URL(targetPath, GROWTH_PARTNER_ORIGIN);
     
@@ -17,7 +17,8 @@ export function middleware(request: NextRequest) {
       url.searchParams.set(key, value);
     });
 
-    return NextResponse.rewrite(url);
+    // Use redirect instead of rewrite - external rewrites are unreliable
+    return NextResponse.redirect(url, 308);
   }
 
   return NextResponse.next();
