@@ -93,7 +93,7 @@ test("Portal Gateway shows role mismatch and offers sign-out", () => {
 
   // Sign-out available
   assert.match(mainApp, /signOut/);
-  assert.match(mainApp, /signOut\(\`\/login/);
+  assert.match(mainApp, /signOut\(\`\/auth\/login/);
 });
 
 test("Admin routes are isolated from public access", () => {
