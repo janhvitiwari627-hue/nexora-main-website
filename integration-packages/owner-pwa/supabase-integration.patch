@@ -70,8 +70,8 @@ index 4d783d1..48ae6b6 100644
 @@ -1,13 +1,16 @@
  import type { IncomingMessage, ServerResponse } from 'node:http';
  
--const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://qwaehqsmodekbgvnaavz.supabase.co';
--const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3YWVocXNtb2Rla2Jndm5hYXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNjQ5MjksImV4cCI6MjEwMDc0MDkyOX0.K92b2vkEb77dyu8fYYZpMTIbTyP98Vo80TaMo_Hmq_E';
+-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'REMOVED_HARDCODED_SUPABASE_URL';
+-const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'REMOVED_HARDCODED_ANON_KEY';
 +const SUPABASE_URL = process.env.VITE_SUPABASE_URL?.trim();
 +const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY?.trim();
  
@@ -93,8 +93,8 @@ index d112714..85f3657 100644
 @@ -1,13 +1,16 @@
  import type { IncomingMessage, ServerResponse } from 'node:http';
  
--const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://qwaehqsmodekbgvnaavz.supabase.co';
--const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3YWVocXNtb2Rla2Jndm5hYXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNjQ5MjksImV4cCI6MjEwMDc0MDkyOX0.K92b2vkEb77dyu8fYYZpMTIbTyP98Vo80TaMo_Hmq_E';
+-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'REMOVED_HARDCODED_SUPABASE_URL';
+-const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'REMOVED_HARDCODED_ANON_KEY';
 +const SUPABASE_URL = process.env.VITE_SUPABASE_URL?.trim();
 +const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY?.trim();
  
@@ -3512,7 +3512,7 @@ index 63dc78d..9e55211 100644
   * Vercel environment variables override these defaults for another project.
   */
  const DEFAULT_SUPABASE_URL = 'https://qwaehqsmodekbgvnaavz.supabase.co';
--const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3YWVocXNtb2Rla2Jndm5hYXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNjQ5MjksImV4cCI6MjEwMDc0MDkyOX0.K92b2vkEb77dyu8fYYZpMTIbTyP98Vo80TaMo_Hmq_E';
+-const DEFAULT_SUPABASE_ANON_KEY = 'REMOVED_HARDCODED_ANON_KEY';
 +const SUPABASE_PROJECT_REF = 'qwaehqsmodekbgvnaavz';
 +const MISSING_ANON_KEY_SENTINEL = 'missing-supabase-anon-key';
  

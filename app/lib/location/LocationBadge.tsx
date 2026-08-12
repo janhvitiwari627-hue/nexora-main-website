@@ -1,40 +1,49 @@
 "use client";
 
 /**
- * LocationBadge — the header location control.
- *
- * Always renders, whether or not permission was granted, so the customer can
- * see what the GPS is doing and fix it without leaving the page:
- *  - granted  → live accuracy + last update time
- *  - waiting  → "Locating…" / "Improving…" with the best accuracy so far
- *  - denied / unsupported / no signal → the reason, a Retry button and a
- *    manual area picker
- *
- * It never throws and never blocks the header: an unavailable GPS simply
- * renders as an "off" state.
+ * App-shell control for the canonical @nexora/location service. It always tells
+ * the user whether coordinates are fresh GPS or an older private saved fix.
+ * With neither source available, it renders no coordinate.
  */
 
 import { useEffect, useRef, useState } from "react";
 
-import { formatAccuracy } from "./distanceCalculator";
-import type { UseLocationResult } from "./useLocation";
+import {
+  formatAccuracy,
+  locationFreshness,
+  type UseLocationResult,
+} from "../../../packages/location/src";
 
-type Tone = "live" | "waiting" | "manual" | "off";
+type Tone = "live" | "waiting" | "saved" | "off";
 
-function toneFor(location: UseLocationResult): Tone {
-  if (location.fix?.source === "manual") return "manual";
+function toneFor(location: UseLocationResult, now: number): Tone {
+  const freshness = locationFreshness(location.fix, now);
+  if (freshness === "live") return "live";
+  if (freshness === "saved" || freshness === "stale") return "saved";
   switch (location.status) {
-    case "ready": return "live";
     case "prompting":
     case "acquiring":
-    case "improving": return "waiting";
-    default: return location.fix ? "live" : "off";
+    case "improving":
+      return "waiting";
+    default:
+      return "off";
   }
 }
 
-function labelFor(location: UseLocationResult, tone: Tone): string {
-  if (tone === "manual") return location.fix?.label?.split(" / ")[0] ?? "Chosen area";
-  if (tone === "live") return formatAccuracy(location.fix?.accuracy) || "Located";
+function relativeTime(timestamp: number | undefined, now: number): string {
+  if (!timestamp) return "unknown age";
+  const seconds = Math.max(0, Math.round((now - timestamp) / 1000));
+  if (seconds < 10) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  return hours < 48 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`;
+}
+
+function labelFor(location: UseLocationResult, tone: Tone, now: number): string {
+  if (tone === "saved") return `Saved · ${relativeTime(location.fix?.timestamp, now)}`;
+  if (tone === "live") return formatAccuracy(location.fix?.accuracy) || "Live GPS";
   if (tone === "waiting") return location.status === "improving" ? "Improving…" : "Locating…";
   if (location.status === "denied") return "Location off";
   if (location.status === "offline") return "Offline";
@@ -42,35 +51,27 @@ function labelFor(location: UseLocationResult, tone: Tone): string {
   return "Set location";
 }
 
-function relativeTime(timestamp: number | undefined): string {
-  if (!timestamp) return "";
-  const seconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
-  if (seconds < 10) return "just now";
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.round(seconds / 60);
-  return minutes < 60 ? `${minutes}m ago` : `${Math.round(minutes / 60)}h ago`;
-}
-
 export function LocationBadge({ location }: { location: UseLocationResult }) {
   const [open, setOpen] = useState(false);
-  const [, forceTick] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const tone = toneFor(location);
+  const tone = toneFor(location, now);
+  const freshness = locationFreshness(location.fix, now);
 
-  // Keep the "updated Xs ago" line honest while the panel is open.
+  // A live fix must visibly become stale if the watcher is paused.
   useEffect(() => {
-    if (!open) return;
-    const id = window.setInterval(() => forceTick((n) => n + 1), 10_000);
+    const id = window.setInterval(() => setNow(Date.now()), 15_000);
     return () => window.clearInterval(id);
-  }, [open]);
+  }, []);
 
-  // Close on outside click / Escape.
   useEffect(() => {
     if (!open) return;
     const onPointer = (event: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) setOpen(false);
     };
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
     document.addEventListener("mousedown", onPointer);
     document.addEventListener("keydown", onKey);
     return () => {
@@ -78,10 +79,6 @@ export function LocationBadge({ location }: { location: UseLocationResult }) {
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
-
-  const selectedAreaId = location.fix?.source === "manual"
-    ? (location.manualAreas.find((area) => area.label === location.fix?.label)?.id ?? "")
-    : "";
 
   return (
     <div className="loc-badge" ref={wrapRef}>
@@ -91,7 +88,7 @@ export function LocationBadge({ location }: { location: UseLocationResult }) {
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-haspopup="dialog"
-        aria-label={`Location: ${labelFor(location, tone)}`}
+        aria-label={`Location: ${labelFor(location, tone, now)}`}
         title={location.message}
       >
         <span className="loc-pin" aria-hidden="true">
@@ -100,7 +97,7 @@ export function LocationBadge({ location }: { location: UseLocationResult }) {
             <circle cx="12" cy="10" r="3" />
           </svg>
         </span>
-        <span className="loc-text">{labelFor(location, tone)}</span>
+        <span className="loc-text">{labelFor(location, tone, now)}</span>
         <span className={`loc-dot loc-dot-${tone}`} aria-hidden="true" />
       </button>
 
@@ -108,47 +105,36 @@ export function LocationBadge({ location }: { location: UseLocationResult }) {
         <div className="loc-panel" role="dialog" aria-label="Location settings">
           <p className="loc-panel-status">{location.error?.message ?? location.message}</p>
 
-          {location.fix && (
+          {location.fix ? (
             <dl className="loc-facts">
               <div><dt>Coordinates</dt><dd>{location.fix.latitude.toFixed(5)}, {location.fix.longitude.toFixed(5)}</dd></div>
-              <div><dt>Accuracy</dt><dd>{location.fix.source === "manual" ? "Approximate (area centre)" : formatAccuracy(location.fix.accuracy)}</dd></div>
-              <div><dt>Updated</dt><dd>{relativeTime(location.fix.timestamp)}</dd></div>
-              <div><dt>Source</dt><dd>{location.fix.source === "manual" ? "Chosen manually" : "Device GPS"}</dd></div>
+              <div><dt>Accuracy</dt><dd>{formatAccuracy(location.fix.accuracy)}</dd></div>
+              <div><dt>Captured</dt><dd>{relativeTime(location.fix.timestamp, now)}</dd></div>
+              <div><dt>Source</dt><dd>{freshness === "live" ? "Fresh device GPS" : "Saved device GPS — not live"}</dd></div>
+              <div><dt>Private sync</dt><dd>{location.syncStatus}</dd></div>
             </dl>
+          ) : (
+            <p className="loc-panel-hint">No coordinates are available. Nexora does not substitute an IP guess or a made-up location.</p>
           )}
 
           {!location.fix && location.candidateAccuracy != null && (
             <p className="loc-panel-hint">Best reading so far: {formatAccuracy(location.candidateAccuracy)} — waiting for a sharper fix.</p>
           )}
 
-          <label className="loc-manual">
-            <span>Choose your area</span>
-            <select
-              value={selectedAreaId}
-              onChange={(event) => {
-                if (event.target.value) { location.setManualArea(event.target.value); setOpen(false); }
-                else location.clearManualArea();
-              }}
-            >
-              <option value="">Use my GPS</option>
-              {location.manualAreas.map((area) => <option key={area.id} value={area.id}>{area.label}</option>)}
-            </select>
-          </label>
+          {freshness !== "live" && location.fix && (
+            <p className="loc-panel-hint">Distances use this older saved reading until fresh GPS is allowed and available.</p>
+          )}
 
           <div className="loc-panel-actions">
             <button type="button" className="secondary" onClick={() => location.retry()}>
-              {location.status === "denied" ? "Try again" : "Refresh location"}
+              {location.status === "denied" ? "Try again" : "Refresh GPS"}
             </button>
-            {location.fix?.source === "manual" && (
-              <button type="button" className="text-button" onClick={() => location.clearManualArea()}>Back to GPS</button>
-            )}
           </div>
 
           {location.status === "denied" && (
-            <p className="loc-panel-hint">
-              Location is blocked for this site. Open your browser’s site settings (the icon next to the address bar) and allow location, then tap Try again.
-            </p>
+            <p className="loc-panel-hint">Open this site’s browser permissions, allow location, then tap Try again. Without a saved real GPS reading, distance sorting remains off.</p>
           )}
+          <p className="loc-panel-hint">Private GPS is saved only for the signed-in auth.users.id. Salon coordinates are separate and public only after approval.</p>
         </div>
       )}
     </div>

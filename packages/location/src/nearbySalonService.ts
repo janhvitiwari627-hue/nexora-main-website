@@ -124,7 +124,11 @@ export class NearbySalonService {
     origin: { latitude: number; longitude: number } | null,
   ): Array<RankedItem<T>> {
     return salons.map((salon) => {
-      const distanceKm = origin ? distanceToPointKm(origin, salon) : null;
+      // Coordinates are distance-eligible only after the separate business
+      // location row has been approved. Legacy salons.latitude/longitude and
+      // owner-pending submissions are intentionally ignored.
+      const approved = salon.approval_status === "approved";
+      const distanceKm = origin && approved ? distanceToPointKm(origin, salon) : null;
       return { ...salon, distanceKm, bucket: bucketFor(distanceKm) } as RankedItem<T>;
     });
   }
@@ -142,7 +146,11 @@ export class NearbySalonService {
     let rows = this.withDistance(salons, origin);
 
     if (origin && !includeUnlocated) {
-      rows = rows.filter((row) => isValidCoordinate(row.latitude, row.longitude));
+      rows = rows.filter((row) =>
+        row.approval_status === "approved" &&
+        row.distanceKm != null &&
+        isValidCoordinate(row.latitude, row.longitude),
+      );
     }
     if (origin && typeof maxDistanceKm === "number") {
       rows = rows.filter((row) => row.distanceKm != null && row.distanceKm <= maxDistanceKm);

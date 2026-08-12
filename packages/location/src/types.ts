@@ -1,18 +1,20 @@
 /**
- * Nexora GPS Location System — shared types.
+ * Canonical Nexora location types shared by the Owner, Partner, Customer and
+ * Template apps.
  *
- * The whole module depends on the browser's native Geolocation API only.
- * No Google Geolocation / Maps Geocoding, no Mapbox, no Nominatim, no
- * reverse-geocoding service, no API key of any kind is used anywhere.
+ * Private device GPS and public business coordinates are deliberately different
+ * domains. A GeoFix is always a real device reading: either live from
+ * navigator.geolocation or a previously saved reading for the same auth user.
+ * Area centroids, IP guesses and fabricated fallback coordinates are forbidden.
  */
 
-/** A validated, accepted GPS fix stored by the LocationService. */
+/** A validated device GPS fix held by the shared LocationService. */
 export type GeoFix = {
   latitude: number;
   longitude: number;
   /** Radius of 68% confidence in metres, straight from the device. */
   accuracy: number;
-  /** Epoch milliseconds of the reading (position.timestamp). */
+  /** Epoch milliseconds of the original device reading. */
   timestamp: number;
   /** Metres above the WGS-84 ellipsoid, when the device reports it. */
   altitude: number | null;
@@ -21,28 +23,27 @@ export type GeoFix = {
   speed: number | null;
   /** Degrees clockwise from true north, when the device reports it. */
   heading: number | null;
-  /** How the fix was obtained. */
-  source: "gps" | "manual";
-  /** Human label — only set for manual selections (never reverse-geocoded). */
-  label?: string;
+  /** `saved` is a previous real GPS reading, never a generated coordinate. */
+  source: "gps" | "saved";
+  /** When this fix was written to the central private-location row. */
+  savedAt?: number;
 };
+
+export type LocationFreshness = "live" | "saved" | "stale";
 
 /** Quality tiers derived from `position.coords.accuracy`. */
 export type AccuracyGrade = "excellent" | "good" | "fair" | "poor" | "unusable";
 
 export type ValidationDecision = {
   grade: AccuracyGrade;
-  /** Accept right now. */
   accept: boolean;
-  /** Hold as a candidate; accept it if nothing better arrives in `holdMs`. */
   hold: boolean;
-  /** Discard entirely — never used for distance maths. */
   reject: boolean;
   holdMs: number;
   reason: string;
 };
 
-/** Lifecycle of the location subsystem, surfaced to the UI. */
+/** Lifecycle surfaced to every Nexora route. */
 export type LocationStatus =
   | "idle"
   | "unsupported"
@@ -50,11 +51,11 @@ export type LocationStatus =
   | "acquiring"
   | "improving"
   | "ready"
+  | "saved"
   | "denied"
   | "unavailable"
   | "timeout"
   | "offline"
-  | "manual"
   | "error";
 
 export type LocationErrorCode =
@@ -69,43 +70,42 @@ export type LocationErrorCode =
 
 export type LocationError = {
   code: LocationErrorCode;
-  /** Message safe to render directly to a customer. */
   message: string;
-  /** Whether calling `retry()` can plausibly fix it. */
   recoverable: boolean;
 };
 
 export type PermissionStatusValue = "granted" | "denied" | "prompt" | "unknown";
+export type LocationSyncStatus = "disconnected" | "loading" | "synced" | "saving" | "error";
 
-/** Complete snapshot handed to every subscriber on each change. */
+/** Complete state handed to subscribers. */
 export type LocationState = {
   status: LocationStatus;
   fix: GeoFix | null;
-  /** Best reading seen so far, even if not yet accepted. */
   candidateAccuracy: number | null;
   permission: PermissionStatusValue;
   error: LocationError | null;
-  /** Number of raw positions delivered by the browser this session. */
   updateCount: number;
-  /** Number of readings accepted by the validator. */
   acceptedCount: number;
-  /** Metres moved since the previously accepted fix. */
   lastMovementMeters: number | null;
-  /** True while the watcher is running. */
   watching: boolean;
-  /** User-facing progress line, e.g. "Improving your location...". */
   message: string;
+  /** State of private, auth.uid()-scoped Supabase persistence. */
+  syncStatus: LocationSyncStatus;
 };
 
 export type LocationListener = (state: LocationState) => void;
 
-/** Any record that can be ranked by distance. */
-export type GeoPoint = { latitude: number | null | undefined; longitude: number | null | undefined };
+/** A public business record that may be ranked only after approval. */
+export type GeoPoint = {
+  latitude: number | null | undefined;
+  longitude: number | null | undefined;
+  /** Business-coordinate approval marker returned by the public table/RPC. */
+  approval_status?: "approved" | string | null;
+};
 
 export type DistanceBucketKey = "nearby" | "close" | "around" | "elsewhere";
 
 export type RankedItem<T> = T & {
-  /** Straight-line distance in kilometres (Haversine, computed on-device). */
   distanceKm: number | null;
   bucket: DistanceBucketKey;
 };

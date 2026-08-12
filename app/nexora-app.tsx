@@ -41,6 +41,7 @@ import {
   formatAccuracy,
   formatDistance,
   haversineKm,
+  locationFreshness,
   locationService,
   useLocation,
   useNearbySalons,
@@ -67,8 +68,10 @@ type Salon = {
   is_active?: boolean;
   accepts_online_bookings?: boolean;
   organization_id?: string | null;
+  /** Joined only from public.business_locations after approval. */
   latitude?: number | null;
   longitude?: number | null;
+  approval_status?: "approved" | null;
   phone?: string | null;
 };
 type Website = {
@@ -374,23 +377,34 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   // Auth state has one owner: the shared @nexora/auth provider mounted at
   // the website root. Do not add a second getSession/auth-event listener
   // here; it races the provider and forks profile authorization state.
-  const { session, role: providerRole, loading: authLoading, signOut: providerSignOut } = useAuth();
+  const {
+    session,
+    role: providerRole,
+    loading: authLoading,
+    signOut: providerSignOut,
+    client: authClient,
+  } = useAuth();
   const authState: AuthState = {
     loading: authLoading,
     session,
     role: providerRole ?? undefined,
   };
 
-  // Auto GPS for the whole app. The watcher starts on mount and is shared by
-  // every screen (reference-counted singleton), so the header badge, the
-  // homepage and salon pages all read one fix from one watchPosition listener.
-  const location = useLocation();
+  // One location system for Owner, Partner, Customer and Template routes.
+  // The shell owns the only GPS watcher and binds it to the current global
+  // auth.users.id. Nested screens only observe this same singleton.
+  const location = useLocation({
+    client: authClient,
+    userId: session?.user?.id ?? null,
+    syncPrivateLocation: true,
+  });
 
   // Re-arm GPS the moment a user signs up or logs in. A fresh account often
   // has never been asked for location, and a returning user may have granted
   // it in OS settings since the last visit — this re-triggers acquisition
   // exactly once per sign-in. If permission is refused nothing breaks: the
-  // service simply reports "denied" and the manual picker stays available.
+  // service reports "denied" and uses only this user's saved real GPS fix,
+  // if one exists; otherwise distance sorting stays off with no fake point.
   const armedForUser = useRef<string | null>(null);
   useEffect(() => {
     const userId = authState.session?.user?.id ?? null;
@@ -789,22 +803,45 @@ async function fetchCatalog(): Promise<CatalogItem[]> {
     .order("published_at", { ascending: false });
   if (websiteError) throw websiteError;
   if (!websites?.length) return [];
+  const salonIds = websites.map((item) => item.salon_id);
   const { data: salons, error: salonError } = await client
     .from("salons")
-    .select("id,slug,name,description,address,area,city,location_address,location_city,location_area,rating_average,review_count,starting_price_paise,cover_image_path,business_category,latitude,longitude,phone")
-    .in("id", websites.map((item) => item.salon_id))
+    // Legacy salons.latitude/longitude are intentionally not readable. Public
+    // coordinates come only from the separate approval-gated table below.
+    .select("id,slug,name,description,address,area,city,location_address,location_city,location_area,rating_average,review_count,starting_price_paise,cover_image_path,business_category,phone")
+    .in("id", salonIds)
     .eq("verified", true)
     .eq("is_active", true)
     .is("deleted_at", null);
   if (salonError) throw salonError;
+
+  const { data: businessLocations, error: businessLocationError } = await client
+    .from("business_locations")
+    .select("salon_id,latitude,longitude,approval_status")
+    .in("salon_id", salonIds)
+    .eq("approval_status", "approved");
+  // A missing/unavailable location table must never cause fallback to legacy or
+  // invented coordinates. The catalog remains usable without distances.
+  if (businessLocationError) {
+    console.warn("Approved business locations are unavailable; distance sorting is disabled.");
+  }
+  const approvedLocationBySalon = new Map(
+    (businessLocations ?? []).map((location) => [location.salon_id, location]),
+  );
   const bySalon = new Map(websites.map((website) => [website.salon_id, website as Website]));
-  return (salons ?? []).filter((salon) => bySalon.has(salon.id)).map((salon) => ({
-    ...(salon as Salon),
-    address: salon.location_address || salon.address || null,
-    city: salon.location_city || salon.city || null,
-    area: salon.location_area || salon.area || null,
-    website: bySalon.get(salon.id)!,
-  }));
+  return (salons ?? []).filter((salon) => bySalon.has(salon.id)).map((salon) => {
+    const approvedLocation = approvedLocationBySalon.get(salon.id);
+    return {
+      ...(salon as Salon),
+      address: salon.location_address || salon.address || null,
+      city: salon.location_city || salon.city || null,
+      area: salon.location_area || salon.area || null,
+      latitude: approvedLocation ? Number(approvedLocation.latitude) : null,
+      longitude: approvedLocation ? Number(approvedLocation.longitude) : null,
+      approval_status: approvedLocation?.approval_status === "approved" ? "approved" as const : null,
+      website: bySalon.get(salon.id)!,
+    };
+  });
 }
 
 function useCatalog(online: boolean) {
@@ -1547,35 +1584,52 @@ function recordMarketplaceEvent(salonId: string, eventType: "view" | "search_cli
 type NearbyRow = {
   id: string; slug: string; name: string; business_category: string | null;
   area: string | null; city: string | null; latitude: number; longitude: number;
-  distance_km: number; rating_avg: number; review_count: number;
+  approval_status: "approved";
+  rating_avg: number; review_count: number;
   starting_price_paise: number | null; cover_image_path: string | null;
 };
 
 /**
- * Nearby salons — the salon rows themselves come from Supabase (each already
- * carries latitude/longitude); the position comes from the device's own GPS via
- * `navigator.geolocation.watchPosition()`, and every distance is computed
- * locally with the Haversine formula. No Google Geolocation API, no Maps
- * Geocoding, no Distance Matrix, no Mapbox, no Nominatim, no API keys.
+ * Nearby salons use only `business_locations.approval_status = 'approved'`.
+ * Private device coordinates come from navigator.geolocation.watchPosition()
+ * (or the same user's labelled saved GPS fallback), and every distance is
+ * computed locally. Pending and legacy salon coordinates are never ranked.
  *
  * The list re-ranks automatically whenever the customer moves more than 100 m —
  * no page refresh required.
  */
-function useNearby(online: boolean, radiusKm?: number) {
+function useNearby(online: boolean) {
   const [rows, setRows] = useState<NearbyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const client = getClient(); if (!client) { setLoading(false); return; }
-      // Pull the catalogue only — the RPC is never asked to rank by distance.
-      const { data, error } = await client.rpc("marketplace_nearby", {
-        p_lat: null, p_lng: null, p_radius_km: radiusKm ?? null, p_limit: 60,
-      });
-      if (error) throw error;
-      setRows((data ?? []) as NearbyRow[]);
+      const catalog = await fetchCatalog();
+      const approvedRows = catalog
+        .filter((item) =>
+          item.approval_status === "approved" &&
+          typeof item.latitude === "number" &&
+          typeof item.longitude === "number",
+        )
+        .slice(0, 60)
+        .map((item): NearbyRow => ({
+          id: item.id,
+          slug: item.website.slug,
+          name: item.name,
+          business_category: item.business_category ?? null,
+          area: item.area ?? null,
+          city: item.city ?? null,
+          latitude: item.latitude as number,
+          longitude: item.longitude as number,
+          approval_status: "approved",
+          rating_avg: Number(item.rating_average),
+          review_count: Number(item.review_count),
+          starting_price_paise: item.starting_price_paise ?? null,
+          cover_image_path: item.cover_image_path ?? null,
+        }));
+      setRows(approvedRows);
     } catch { setRows([]); } finally { setLoading(false); }
-  }, [radiusKm]);
+  }, []);
   useEffect(() => {
     const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
     return () => window.clearTimeout(t);
@@ -1583,60 +1637,59 @@ function useNearby(online: boolean, radiusKm?: number) {
   return { rows, loading, load };
 }
 
-/** Short status line describing what the GPS pipeline is currently doing. */
+/** Short status line that never calls a saved reading "live". */
 function locationHeadline(location: UseLocationResult): string {
-  if (location.fix?.source === "manual") return `Showing salons around ${location.fix.label} — sorted on your device.`;
+  const freshness = locationFreshness(location.fix);
+  if (freshness === "saved" || freshness === "stale") {
+    return `Sorted from your clearly labelled saved GPS reading (${formatAccuracy(location.fix?.accuracy)} accuracy) while Nexora refreshes it.`;
+  }
   switch (location.status) {
     case "ready":
-      return `Sorted by live GPS distance (${formatAccuracy(location.fix?.accuracy)} accuracy) — calculated on your device, nothing is stored.`;
+      return `Sorted by fresh device GPS (${formatAccuracy(location.fix?.accuracy)} accuracy). Your signed-in location is privately reused across Nexora apps.`;
     case "improving":
       return "Improving your location…";
     case "acquiring":
     case "prompting":
-      return "Locating you… allow location to see the closest salons first.";
+      return "Locating you… allow location to see the closest approved salons first.";
     case "denied":
-      return "Please enable location to discover nearby salons.";
+      return "GPS permission is denied. A saved real reading is used only if your account has one; otherwise distance sorting is off.";
     case "offline":
       return "You are offline — reconnect to refresh salons near you.";
     case "timeout":
       return "GPS is taking longer than usual. Keep this screen open or retry.";
     case "unsupported":
-      return "This browser cannot access GPS — choose your area manually.";
+      return "This browser cannot access GPS. Nexora does not guess coordinates.";
     case "unavailable":
-      return "No GPS signal yet. Move to an open area and retry.";
+      return "No GPS signal is available. Nexora does not substitute fake coordinates.";
     default:
       return "Allow location to sort salons by real distance.";
   }
 }
 
-/** Permission / error / manual-selection panel. Never crashes the page. */
+/** Permission/error fallback panel. It never manufactures a location. */
 function LocationNotice({ location }: { location: UseLocationResult }) {
-  const showManual =
+  const showNotice =
     location.status === "denied" || location.status === "unsupported" ||
     location.status === "unavailable" || location.status === "timeout" ||
-    location.status === "manual" || location.status === "offline";
-  if (!showManual && !location.error) return null;
+    location.status === "saved" || location.status === "offline";
+  if (!showNotice && !location.error) return null;
   return (
     <div className="state-card" style={{ textAlign: "left", padding: 20, marginBottom: 18 }} role="status" aria-live="polite">
       <p style={{ margin: 0, fontWeight: 600, color: "var(--primary)" }}>
         {location.error?.message ?? location.message}
       </p>
-      <div className="button-row" style={{ marginTop: 12, flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+      {location.fix?.source === "saved" && (
+        <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 13 }}>
+          Saved GPS from {new Date(location.fix.timestamp).toLocaleString()} is not a live reading.
+        </p>
+      )}
+      {!location.fix && (
+        <p style={{ margin: "8px 0 0", color: "var(--muted)", fontSize: 13 }}>
+          No saved GPS is available for this account, so no distance is shown.
+        </p>
+      )}
+      <div className="button-row" style={{ marginTop: 12 }}>
         <button className="secondary" onClick={location.retry}>Retry location</button>
-        <label style={{ fontSize: 13, color: "var(--muted)", display: "flex", gap: 8, alignItems: "center" }}>
-          Or pick your area
-          <select
-            value={location.fix?.source === "manual" ? (location.manualAreas.find((a) => a.label === location.fix?.label)?.id ?? "") : ""}
-            onChange={(e) => { if (e.target.value) location.setManualArea(e.target.value); else location.clearManualArea(); }}
-            style={{ padding: "8px 12px", borderRadius: 12, border: "1px solid #e8e8e8", fontSize: 13 }}
-          >
-            <option value="">Select area…</option>
-            {location.manualAreas.map((area) => <option key={area.id} value={area.id}>{area.label}</option>)}
-          </select>
-        </label>
-        {location.fix?.source === "manual" && (
-          <button className="text-button" onClick={location.clearManualArea}>Use my GPS instead</button>
-        )}
       </div>
     </div>
   );
@@ -1832,19 +1885,24 @@ function SalonPage({
   const [isFavourite, setIsFavourite] = useState(false);
   // Haversine, computed on-device — no Distance Matrix, no external call.
   const distanceKm = useMemo(() => {
-    if (!location.fix || item?.latitude == null || item?.longitude == null) return null;
+    if (
+      !location.fix || item?.approval_status !== "approved" ||
+      item.latitude == null || item.longitude == null
+    ) return null;
     return haversineKm(location.fix.latitude, location.fix.longitude, Number(item.latitude), Number(item.longitude));
-  }, [location.fix, item?.latitude, item?.longitude]);
+  }, [location.fix, item?.approval_status, item?.latitude, item?.longitude]);
   const [nextSlot, setNextSlot] = useState<string | null>(null);
   const [similar, setSimilar] = useState<NearbyRow[]>([]);
   const [shareToast, setShareToast] = useState(false);
   const { session: mySession } = useAuth();
+  const myUserId = mySession?.user?.id ?? null;
   const { plans: membershipPlans } = useMembershipPlans(online);
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
       const client = getClient();
-      const match = (await fetchCatalog()).find((entry) => entry.website.slug === slug);
+      const catalog = await fetchCatalog();
+      const match = catalog.find((entry) => entry.website.slug === slug);
       if (!match) throw new Error("This salon website is not published or is unavailable.");
       setItem(match);
       if (client) {
@@ -1858,16 +1916,37 @@ function SalonPage({
         // Next available slot + similar shops (public RPCs).
         const { data: ns } = await client.rpc("marketplace_next_slots", { p_salon_ids: [match.id], p_tz: "Asia/Kolkata" });
         if ((ns ?? [])[0]?.next_slot_iso) setNextSlot(String((ns ?? [])[0].next_slot_iso));
-        const { data: sim } = await client.rpc("marketplace_nearby", { p_area: match.area ?? null, p_city: match.city ?? null, p_limit: 3 });
-        setSimilar(((sim ?? []) as NearbyRow[]).filter((r) => r.id !== match.id));
+        const sim = catalog
+          .filter((candidate) =>
+            candidate.id !== match.id &&
+            candidate.approval_status === "approved" &&
+            (candidate.area === match.area || candidate.city === match.city),
+          )
+          .slice(0, 3)
+          .map((candidate): NearbyRow => ({
+            id: candidate.id,
+            slug: candidate.website.slug,
+            name: candidate.name,
+            business_category: candidate.business_category ?? null,
+            area: candidate.area ?? null,
+            city: candidate.city ?? null,
+            latitude: candidate.latitude as number,
+            longitude: candidate.longitude as number,
+            approval_status: "approved",
+            rating_avg: Number(candidate.rating_average),
+            review_count: Number(candidate.review_count),
+            starting_price_paise: candidate.starting_price_paise ?? null,
+            cover_image_path: candidate.cover_image_path ?? null,
+          }));
+        setSimilar(sim);
         // Favourite state (own rows only). Session comes from the shared provider.
-        if (mySession?.user) {
-          const { data: fav } = await client.from("favorite_salons").select("salon_id").eq("user_id", mySession.user.id).eq("salon_id", match.id).maybeSingle();
+        if (myUserId) {
+          const { data: fav } = await client.from("favorite_salons").select("salon_id").eq("user_id", myUserId).eq("salon_id", match.id).maybeSingle();
           setIsFavourite(Boolean(fav));
         }
       }
     } catch (cause) { setError(friendlyError(cause)); } finally { setLoading(false); }
-  }, [mySession?.user?.id, slug]);
+  }, [myUserId, slug]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       if (online) void load();
@@ -1949,7 +2028,7 @@ function SalonPage({
   })();
   const amenities = Array.isArray(config.amenities) ? (config.amenities as string[]).filter((a) => typeof a === "string") : [];
   const maxMemberDiscount = membershipPlans.length ? Math.max(...membershipPlans.map((p) => Number(p.discount_percent))) : 0;
-  const mapsUrl = item.latitude != null && item.longitude != null
+  const mapsUrl = item.approval_status === "approved" && item.latitude != null && item.longitude != null
     ? `https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}`
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${item.address} ${item.city}`)}`;
   const toggleFavourite = async () => {
@@ -2031,7 +2110,7 @@ function SalonPage({
       {similar.length > 0 && (
         <section className="section">
           <div className="section-heading"><span className="eyebrow">You may also like</span><h2>Similar salons nearby</h2><p>Other published salons in the same area or city.</p></div>
-          <div className="salon-grid">{similar.map((row) => <article key={row.id} className="salon-card"><div className="salon-visual" style={row.cover_image_path?.startsWith("http") ? { backgroundImage: `url("${row.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>{!row.cover_image_path?.startsWith("http") && <span>✦</span>}<em>Verified</em></div><div className="salon-body"><div className="salon-meta"><span>{row.business_category ?? "Salon"}</span><span>📍 {Number(row.distance_km).toFixed(1)} km</span></div><h3>{row.name}</h3><p>{row.area ?? row.city}, {row.city}</p><div className="salon-bottom"><b>From {money(row.starting_price_paise)}</b><button onClick={() => { window.scrollTo({ top: 0 }); navigate(`/salons/${row.slug}`); }}>View salon</button></div></div></article>)}</div>
+          <div className="salon-grid">{similar.map((row) => <article key={row.id} className="salon-card"><div className="salon-visual" style={row.cover_image_path?.startsWith("http") ? { backgroundImage: `url("${row.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>{!row.cover_image_path?.startsWith("http") && <span>✦</span>}<em>Verified</em></div><div className="salon-body"><div className="salon-meta"><span>{row.business_category ?? "Salon"}</span><span>📍 Approved location</span></div><h3>{row.name}</h3><p>{row.area ?? row.city}, {row.city}</p><div className="salon-bottom"><b>From {money(row.starting_price_paise)}</b><button onClick={() => { window.scrollTo({ top: 0 }); navigate(`/salons/${row.slug}`); }}>View salon</button></div></div></article>)}</div>
         </section>
       )}
       <section className="section salon-info"><div><span className="eyebrow">Visit</span><h2>{item.name}</h2><p>{item.address}, {item.city}{item.area ? ` · ${item.area}` : ""}</p>{item.phone && <p>📞 {item.phone}</p>}</div><div className="button-row"><button className="secondary" onClick={() => window.open(mapsUrl, "_blank", "noopener")}>Get directions ↗</button><button className="secondary" onClick={() => navigate("/cancellation-refund")}>Cancellation policy</button></div></section>

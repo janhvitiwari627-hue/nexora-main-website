@@ -43,11 +43,11 @@ const MESSAGES = {
   improving: "Improving your location…",
   ready: "Location ready.",
   denied: "Please enable location to discover nearby salons.",
-  unsupported: "This browser does not support location. Choose your area manually.",
+  unsupported: "This browser does not support location. No coordinates will be guessed.",
   unavailable: "Your device could not get a GPS signal. Move to an open area and retry.",
   timeout: "Getting a GPS fix is taking longer than usual. Keep the app open or retry.",
   offline: "You are offline. Reconnect to refresh salons near you.",
-  manual: "Using your selected area.",
+  saved: "Using your last private saved GPS location while refreshing.",
   error: "Something went wrong while locating you.",
 } as const;
 
@@ -58,8 +58,8 @@ const ERROR_TEXT: Record<LocationError["code"], string> = {
   OFFLINE: "You are offline. Nearby salons will refresh when you reconnect.",
   WEAK_SIGNAL: "Weak GPS signal — still improving your location.",
   GPS_DISABLED: "Device location appears to be turned off. Enable it in your phone settings and retry.",
-  UNSUPPORTED: "This browser cannot access location. Pick your area manually instead.",
-  UNKNOWN: "We could not determine your location. Please retry or choose your area manually.",
+  UNSUPPORTED: "This browser cannot access location. Nexora will not guess your coordinates.",
+  UNKNOWN: "We could not determine your location. Retry, or continue without distance sorting.",
 };
 
 /** Retry backoff after a recoverable failure (ms). */
@@ -84,6 +84,7 @@ export class LocationService {
     lastMovementMeters: null,
     watching: false,
     message: MESSAGES.idle,
+    syncStatus: "disconnected",
   };
 
   /** Best not-yet-accepted reading and the timer that will promote it. */
@@ -202,36 +203,50 @@ export class LocationService {
   }
 
   /**
-   * Manual fallback when permission is denied or GPS is unusable. Coordinates
-   * come from the app's own bundled area list — never from a geocoding API.
+   * Restore a real GPS reading loaded from this auth user's private Supabase
+   * row. A fresh in-memory GPS reading always wins a load race.
    */
-  setManualLocation(latitude: number, longitude: number, label: string) {
-    this.clearHold();
-    this.clearRetry();
-    const fix: GeoFix = {
-      latitude, longitude,
-      accuracy: 2000,
-      timestamp: Date.now(),
-      altitude: null, altitudeAccuracy: null, speed: null, heading: null,
-      source: "manual",
-      label,
-    };
-    this.log.info(`Manual location selected: ${label}.`, { latitude, longitude });
+  restoreSavedLocation(fix: GeoFix) {
+    if (fix.source !== "saved") return;
+    if (this.state.fix?.source === "gps" && this.state.fix.timestamp >= fix.timestamp) return;
     this.patch({
-      status: "manual",
+      status: "saved",
       fix,
-      error: null,
       candidateAccuracy: null,
       lastMovementMeters: null,
-      message: `${MESSAGES.manual} (${label})`,
+      message: MESSAGES.saved,
+    });
+    this.log.info("Restored the authenticated user's private saved GPS fallback.", {
+      capturedAt: new Date(fix.timestamp).toISOString(),
+      accuracy: formatAccuracy(fix.accuracy),
     });
   }
 
-  /** Drop a manual selection and go back to live GPS. */
-  clearManualLocation() {
-    if (this.state.fix?.source !== "manual") return;
-    this.patch({ fix: null, status: "acquiring", message: MESSAGES.acquiring });
-    this.retry();
+  /** Remove a loaded saved fallback when no authenticated identity owns it. */
+  dropSavedFallback() {
+    if (this.state.fix?.source !== "saved") return;
+    this.clearIdentityLocation();
+  }
+
+  /**
+   * Clear all in-memory coordinates on sign-out/account switch. This prevents a
+   * fresh fix acquired for one signed-in identity appearing in another user's
+   * route while the watcher reacquires for the current device holder.
+   */
+  clearIdentityLocation() {
+    this.clearHold();
+    this.candidate = null;
+    this.patch({
+      fix: null,
+      candidateAccuracy: null,
+      lastMovementMeters: null,
+      status: this.watcher.active ? "acquiring" : "idle",
+      message: this.watcher.active ? MESSAGES.acquiring : MESSAGES.idle,
+    });
+  }
+
+  setSyncStatus(syncStatus: LocationState["syncStatus"]) {
+    if (this.state.syncStatus !== syncStatus) this.patch({ syncStatus });
   }
 
   // --------------------------------------------------------------- private
@@ -338,7 +353,8 @@ export class LocationService {
   /** Store an accepted fix and notify subscribers. */
   private commit(fix: GeoFix, movementMeters: number | null, reason: string) {
     const previous = this.state.fix;
-    const first = !previous;
+    // A live reading always replaces a saved fallback, even at the same point.
+    const first = !previous || previous.source === "saved";
     const significant = movementMeters == null || movementMeters >= MOVEMENT_THRESHOLD_M;
     // Also refresh when the fix simply got much more accurate.
     const sharper = previous ? fix.accuracy < previous.accuracy * 0.6 : true;
@@ -398,31 +414,30 @@ export class LocationService {
       online: typeof navigator === "undefined" ? null : navigator.onLine,
     });
 
-    // A previously accepted fix is kept — a transient error must not blank
-    // out the nearby list the customer is already looking at.
-    if (this.state.fix && code !== "PERMISSION_DENIED") {
-      this.patch({ error: { code, message: ERROR_TEXT[code], recoverable: true } });
-      this.scheduleRetry();
-      return;
-    }
-
+    // A previous real GPS reading is retained as an explicitly non-live saved
+    // fallback. With no previous reading, `fix` stays null — never a guess.
+    const fallbackFix = this.asSavedFallback(this.state.fix);
     if (code === "PERMISSION_DENIED") {
       this.clearHold();
       this.clearRetry();
       this.watcher.stop();
       this.patch({
         status,
+        fix: fallbackFix,
         watching: false,
         error: { code, message: ERROR_TEXT[code], recoverable: true },
-        message: MESSAGES.denied,
+        message: fallbackFix ? `${MESSAGES.denied} ${MESSAGES.saved}` : MESSAGES.denied,
       });
       return;
     }
 
     this.patch({
       status,
+      fix: fallbackFix,
       error: { code, message: ERROR_TEXT[code], recoverable: true },
-      message: status === "offline" ? MESSAGES.offline : status === "timeout" ? MESSAGES.timeout : MESSAGES.unavailable,
+      message: fallbackFix
+        ? `${ERROR_TEXT[code]} ${MESSAGES.saved}`
+        : status === "offline" ? MESSAGES.offline : status === "timeout" ? MESSAGES.timeout : MESSAGES.unavailable,
     });
     this.scheduleRetry();
   }
@@ -441,11 +456,15 @@ export class LocationService {
   }
 
   private fail(code: LocationError["code"], status: LocationStatus) {
+    const fallbackFix = this.asSavedFallback(this.state.fix);
     this.patch({
       status,
+      fix: fallbackFix,
       watching: false,
       error: { code, message: ERROR_TEXT[code], recoverable: code !== "UNSUPPORTED" },
-      message: status === "unsupported" ? MESSAGES.unsupported : MESSAGES.error,
+      message: fallbackFix
+        ? `${ERROR_TEXT[code]} ${MESSAGES.saved}`
+        : status === "unsupported" ? MESSAGES.unsupported : MESSAGES.error,
     });
   }
 
@@ -483,6 +502,11 @@ export class LocationService {
     if (this.offlineHandler) window.removeEventListener("offline", this.offlineHandler);
     this.onlineHandler = null;
     this.offlineHandler = null;
+  }
+
+  private asSavedFallback(fix: GeoFix | null): GeoFix | null {
+    if (!fix || fix.source === "saved") return fix;
+    return { ...fix, source: "saved", savedAt: Date.now() };
   }
 
   private clearHold() {

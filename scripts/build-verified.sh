@@ -7,34 +7,15 @@ if [[ "${SITES_ENV_READY:-}" != "1" ]]; then
   exec "${script_dir}/sites-env.sh" -- "$0" "$@"
 fi
 
-# Main Website is Next/vinext: use the Next public names only.
-supabase_url="${NEXT_PUBLIC_SUPABASE_URL:-}"
-supabase_anon_key="${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}"
+# Production and verification builds use explicit environment configuration.
+# There is deliberately no hardcoded URL/key fallback: an unconfigured bundle
+# must fail closed instead of producing an artifact pointed at a fake project.
+: "${NEXT_PUBLIC_SUPABASE_URL:?NEXT_PUBLIC_SUPABASE_URL is required for project qwaehqsmodekbgvnaavz}"
+: "${NEXT_PUBLIC_SUPABASE_ANON_KEY:?NEXT_PUBLIC_SUPABASE_ANON_KEY is required (anon/publishable only)}"
 
-# Use fallback placeholders for local/CI verification builds when credentials are missing.
-# Production deployments MUST provide real credentials via Vercel environment variables.
-if [[ -z "${supabase_url}" ]]; then
-  echo "⚠️  NEXT_PUBLIC_SUPABASE_URL not set. Using fallback placeholder for verification build." >&2
-  echo "   For production: set NEXT_PUBLIC_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co" >&2
-  supabase_url="https://placeholder.supabase.co"
-fi
-
-if [[ -z "${supabase_anon_key}" ]]; then
-  echo "⚠️  NEXT_PUBLIC_SUPABASE_ANON_KEY not set. Using fallback placeholder for verification build." >&2
-  echo "   For production: set NEXT_PUBLIC_SUPABASE_ANON_KEY from project qwaehqsmodekbgvnaavz" >&2
-  supabase_anon_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder-anon-key-for-build-verification"
-fi
-
-export NEXT_PUBLIC_SUPABASE_URL="${supabase_url}"
-export NEXT_PUBLIC_SUPABASE_ANON_KEY="${supabase_anon_key}"
-
-# Warn if using fallback values (not real credentials)
-if [[ "${supabase_url}" == "https://placeholder.supabase.co" ]] || [[ "${supabase_anon_key}" == *"placeholder"* ]]; then
-  echo "" >&2
-  echo "⚠️  BUILD USING FALLBACK CREDENTIALS" >&2
-  echo "   This build is for verification only. The artifact cannot connect to Supabase." >&2
-  echo "   For production deployment, configure real credentials in your hosting environment." >&2
-  echo "" >&2
+if [[ "${NEXT_PUBLIC_SUPABASE_URL%/}" != "https://qwaehqsmodekbgvnaavz.supabase.co" ]]; then
+  echo "NEXT_PUBLIC_SUPABASE_URL must use shared project qwaehqsmodekbgvnaavz." >&2
+  exit 78
 fi
 
 command -v timeout >/dev/null || {
@@ -48,7 +29,7 @@ if [[ ! -x "${vinext}" ]]; then
   exit 69
 fi
 
-echo "Running bounded vinext build..."
+echo "Running bounded vinext production build..."
 timeout \
   --signal=TERM \
   --kill-after="${SITES_BUILD_KILL_AFTER:-10s}" \
