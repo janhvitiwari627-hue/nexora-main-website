@@ -140,6 +140,7 @@ test("Phase 8 restores PostgREST table-level catalog SELECT without exposing pri
   assert.match(phase8Grants, /verify_phase8_catalog_grants/);
   assert.match(app, /fetchCatalogFromMarketplaceRpc/);
   assert.match(app, /isCatalogPrivilegeError/);
+  assert.match(app, /\"message\" in cause/);
 });
 
 test("location system still covers allow, deny, saved, stale and nearby search", () => {
