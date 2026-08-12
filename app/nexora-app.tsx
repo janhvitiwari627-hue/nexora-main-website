@@ -793,8 +793,16 @@ function RoleEntry({ path, navigate }: { path: string; navigate: (path: string) 
 }
 
 function isCatalogPrivilegeError(cause: unknown): boolean {
-  const message = cause instanceof Error ? cause.message : String(cause ?? "");
-  return /permission denied|42501|schema cache|not find the table/i.test(message);
+  const message =
+    cause instanceof Error
+      ? cause.message
+      : cause && typeof cause === "object" && "message" in cause
+        ? String((cause as { message: unknown }).message ?? "")
+        : String(cause ?? "");
+  const code = cause && typeof cause === "object" && "code" in cause
+    ? String((cause as { code: unknown }).code ?? "")
+    : "";
+  return /permission denied|42501|schema cache|not find the table/i.test(`${code} ${message}`);
 }
 
 async function attachApprovedBusinessLocations(
