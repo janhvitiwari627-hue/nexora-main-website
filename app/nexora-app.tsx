@@ -6,6 +6,7 @@ import {
   EXPECTED_SUPABASE_HOSTNAME,
   SUPABASE_PROJECT_REF,
   getSupabaseClient,
+  useAuth,
   safeRedirectUrl,
   supabaseConfigErrorMessage,
 } from "./lib/auth";
@@ -353,81 +354,17 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   const [path, setPath] = useState(initialPath);
   const [online, setOnline] = useState(true);
   const refCode = useReferralCode(online);
-  const [authState, setAuthState] = useState<AuthState>({
-    loading: Boolean(supabaseUrl && supabaseKey),
-    session: null,
-  });
-
-  useEffect(() => {
-    const sync = () => setOnline(navigator.onLine);
-    const pop = () => setPath(window.location.pathname);
-    sync();
-    window.addEventListener("online", sync);
-    window.addEventListener("offline", sync);
-    window.addEventListener("popstate", pop);
-    return () => {
-      window.removeEventListener("online", sync);
-      window.removeEventListener("offline", sync);
-      window.removeEventListener("popstate", pop);
-    };
-  }, []);
-
-  useEffect(() => {
-    const client = getClient();
-    if (!client) {
-      const timer = window.setTimeout(() => setAuthState({ loading: false, session: null }), 0);
-      return () => window.clearTimeout(timer);
-    }
-
-    let active = true;
-    let sessionRevision = 0;
-
-    const syncSession = async (session: Session | null) => {
-      const revision = ++sessionRevision;
-      if (!active) return;
-
-      if (!session) {
-        setAuthState({ loading: false, session: null });
-        return;
-      }
-
-      setAuthState({ loading: true, session });
-      try {
-        const { data: profile, error: profileError } = await client
-          .from("profiles")
-          .select("platform_role,is_active")
-          .eq("id", session.user.id)
-          .maybeSingle();
-        if (profileError || !profile || profile.is_active !== true || !isKnownPlatformRole(profile.platform_role)) {
-          // Fail closed. A Supabase session without an active canonical
-          // profile is not allowed to remain a protected website session.
-          console.warn("[Nexora] profile authorization failed", profileError?.message || "missing/inactive/invalid profile");
-          await client.auth.signOut();
-          if (!active || revision !== sessionRevision) return;
-          setAuthState({ loading: false, session: null });
-          return;
-        }
-        if (!active || revision !== sessionRevision) return;
-        setAuthState({ loading: false, session, role: profile.platform_role });
-      } catch {
-        if (!active || revision !== sessionRevision) return;
-        setAuthState({ loading: false, session, role: undefined });
-      }
-    };
-
-    void client.auth.getSession().then(({ data }) => syncSession(data.session));
-    const {
-      data: { subscription },
-    } = client.auth.onAuthStateChange((_event, session) => {
-      window.setTimeout(() => void syncSession(session), 0);
-    });
-
-    return () => {
-      active = false;
-      sessionRevision += 1;
-      subscription.unsubscribe();
-    };
-  }, []);
+  // Auth state has one owner: the shared @nexora/auth provider mounted at
+  // the website root. Do not add a second getSession/auth-event listener
+  // here; it races the provider and forks profile authorization state.
+  const { session, role: providerRole, loading: authLoading, signOut: providerSignOut } = useAuth();
+  const authState: AuthState = {
+    loading: authLoading,
+    session,
+    role: providerRole === "customer" || providerRole === "business_user" || providerRole === "growth_partner"
+      ? providerRole
+      : undefined,
+  };
 
   // Auto GPS for the whole app. The watcher starts on mount and is shared by
   // every screen (reference-counted singleton), so the header badge, the
@@ -461,10 +398,9 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   }, []);
 
   const signOut = useCallback(async (destination = "/") => {
-    setAuthState({ loading: false, session: null });
-    await getClient()?.auth.signOut();
+    await providerSignOut();
     navigate(destination);
-  }, [navigate]);
+  }, [navigate, providerSignOut]);
 
   let content: React.ReactNode;
   if (path === "/salons") content = <CatalogPage navigate={navigate} online={online} />;
@@ -481,8 +417,8 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   else if (path === "/reset-password") content = <ResetPasswordPage navigate={navigate} />;
   else if (path === "/auth/callback") content = <AuthCallbackPage navigate={navigate} />;
   else if (path === "/auth/expired") content = <SessionExpiredPage navigate={navigate} />;
-  else if (path === "/admin" || path.startsWith("/admin/"))
-    content = <AdminUnavailable />;
+  else if (path === "/admin" || path.startsWith("/admin/") || path === "/app/admin" || path.startsWith("/app/admin/") || path === "/app/delivery" || path.startsWith("/app/delivery/"))
+    content = <UnavailableAuthenticatedPortal path={path} navigate={navigate} />;
   else if (isPortalPath(path))
     content = <PortalGateway expectedRole={portalRoleFromPath(path) ?? undefined} navigate={navigate} signOut={signOut} />;
   else if (path.startsWith("/dashboard"))
@@ -2748,6 +2684,28 @@ function PortalGateway({
   const role = state.role ?? expectedRole ?? "customer";
   if (!isPortalMounted(role)) return <main className="center-page"><section className="entry-card"><span className="eyebrow">Nexora portal gateway</span><h1>{role === "business_user" ? "Shop Owner" : role === "growth_partner" ? "Growth Partner" : "Customer"} app is not mounted</h1><p>This path is reserved for the separately deployed PWA. Configure its reverse-proxy origin before enabling production traffic. The Main Website does not render a duplicate dashboard here.</p></section></main>;
   return <main className="center-page"><section className="entry-card"><span className="eyebrow">Nexora portal gateway</span><h1>Opening your app…</h1><p>This portal is owned by its dedicated PWA deployment. If it does not open, check the reverse-proxy and path-base configuration.</p></section></main>;
+}
+
+function UnavailableAuthenticatedPortal({ path, navigate }: { path: string; navigate: (path: string) => void }) {
+  const { loading, isAuthenticated, role, configError } = useAuth();
+  const isAdmin = path === "/admin" || path.startsWith("/admin/") || path === "/app/admin" || path.startsWith("/app/admin/");
+  const expectedRole = isAdmin ? "admin" : "delivery_partner";
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      navigate(`/login?role=${isAdmin ? "admin" : "delivery"}&returnTo=${encodeURIComponent(path)}`);
+    }
+  }, [isAdmin, isAuthenticated, loading, navigate, path]);
+
+  if (loading) return <main className="center-page"><div className="loader" aria-label="Checking portal access" /></main>;
+  if (configError) return <main className="center-page"><StateCard title="Portal unavailable" text={configError} /></main>;
+  if (!isAuthenticated) return null;
+  if (role !== expectedRole) {
+    return <main className="center-page"><StateCard title="Portal access denied" text="Your Nexora account is authenticated, but it does not have access to this portal." action="Open my portal" onAction={() => navigate(
+      role === "customer" || role === "business_user" || role === "growth_partner" ? portalPathForRole(role) : "/"
+    )} /></main>;
+  }
+  return <main className="center-page"><section className="entry-card"><span className="eyebrow">Nexora portal gateway</span><h1>{isAdmin ? "Administrator" : "Delivery Partner"} portal is not mounted</h1><p>Your account is authenticated and role-verified. This portal mount has not been deployed yet, so Nexora cannot render a duplicate dashboard here.</p></section></main>;
 }
 
 function AdminUnavailable() {

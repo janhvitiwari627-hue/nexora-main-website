@@ -8,7 +8,7 @@ const readme = await readFile(new URL("../integration-packages/growth-partner-pw
 const added = patch.split("\n").filter((line) => line.startsWith("+") && !line.startsWith("+++" )).join("\n");
 
 test("Phase 3 patch targets the current locked Growth Partner main", () => {
-  assert.match(readme, /2832af2/);
+  assert.match(readme, /e00f0ed1acea/);
   assert.match(patch, /src\/lib\/gpRepository\.ts/);
   assert.match(patch, /src\/components\/AddShop\.tsx/);
   assert.match(patch, /VITE_APP_BASE_PATH/);
