@@ -1,0 +1,159 @@
+diff --git a/src/App.tsx b/src/App.tsx
+index e4f8475..5bc6af8 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,5 +1,5 @@
+ import React, { useState, useEffect } from 'react';
+-import { useAuth } from '@nexora/auth';
++import { requireCustomerAccount, useAuth } from '@nexora/auth';
+ import { supabase, supabaseConfigError } from './lib/supabaseClient';
+ import { Screen, Salon, Service, Staff, Booking, UserLocation, AppNotification, ServiceReview, ReferralFriend, SavedProfessional, SavedService } from './types';
+ import { INITIAL_LOCATION } from './data/mockData';
+@@ -65,18 +65,17 @@ export default function App() {
+     setScreenStack(prev => (prev.length > 1 ? prev.slice(0, -1) : ['home']));
+   };
+ 
+-  const { user: authUser, profile: authProfile, loading: authLoading, error: authError, signOut } = useAuth();
++  const { user: authUser, profile: authProfile, loading: authLoading, error: authError, signOut, client } = useAuth();
+   const [user, setUser] = useState<any>(null);
+   const [profile, setProfile] = useState<CustomerProfile | null>(null);
+   const [authScreen, setAuthScreen] = useState<'login' | 'signup' | 'role-conflict' | 'reset-password'>('login');
+   const [conflictRole, setConflictRole] = useState<string | null>(null);
+ 
+-  // Phase 2: shared @nexora/auth owns session restoration, PKCE and profile
+-  // existence. The Customer PWA adds its own permanent customer-only gate and
+-  // loads the app-specific customer profile fields after authentication.
++  // Phase 6: the canonical gate re-verifies auth.getUser() and the active
++  // profiles row. The PWA never grants access from local role state alone.
+   useEffect(() => {
+     if (authLoading) return;
+-    if (!authUser || !authProfile) {
++    if (!authUser || !authProfile || !client) {
+       setUser(null);
+       setProfile(null);
+       setConflictRole(null);
+@@ -84,27 +83,27 @@ export default function App() {
+       setAuthScreen('login');
+       return;
+     }
+-    if (authProfile.role !== 'customer') {
+-      setUser(null);
+-      setProfile(null);
+-      setConflictRole(authProfile.role);
+-      setAuthScreen('role-conflict');
+-      void signOut();
+-      return;
+-    }
+-    setConflictRole(null);
+-    setUser({ ...authUser, role: authProfile.role, email: authUser.email });
+-  }, [authUser, authProfile, authLoading]);
+ 
+-  useEffect(() => {
+-    if (!supabase) return;
+-    const { data } = supabase.auth.onAuthStateChange((event) => {
+-      if (event === 'PASSWORD_RECOVERY') {
+-        setAuthScreen('reset-password');
+-      }
+-    });
+-    return () => data.subscription.unsubscribe();
+-  }, []);
++    let active = true;
++    void requireCustomerAccount(client)
++      .then(({ user: verifiedUser, profile: verifiedProfile }) => {
++        if (!active) return;
++        setConflictRole(null);
++        setUser({ ...verifiedUser, role: verifiedProfile.role, email: verifiedUser.email });
++      })
++      .catch(() => {
++        if (!active) return;
++        setUser(null);
++        setProfile(null);
++        setConflictRole(authProfile.role);
++        setAuthScreen('role-conflict');
++        void signOut();
++      });
++
++    return () => {
++      active = false;
++    };
++  }, [authUser, authProfile, authLoading, client, signOut]);
+ 
+   const [isAppointmentDismissed, setIsAppointmentDismissed] = useState(false);
+   const [paymentWatch, setPaymentWatch] = useState<{
+@@ -1090,7 +1089,7 @@ export default function App() {
+               customerId={user.id}
+               onLogout={async () => {
+                 setUser(null);
+-                await supabase?.auth.signOut();
++                await signOut();
+               }}
+             />
+           )}
+@@ -1101,7 +1100,7 @@ export default function App() {
+               onNavigate={setCurrentScreen}
+               onLogout={async () => {
+                 setUser(null);
+-                await supabase?.auth.signOut();
++                await signOut();
+               }}
+             />
+           )}
+@@ -1112,7 +1111,7 @@ export default function App() {
+               onNavigate={setCurrentScreen}
+               onLogout={async () => {
+                 setUser(null);
+-                await supabase?.auth.signOut();
++                await signOut();
+               }}
+             />
+           )}
+diff --git a/src/components/auth/ResetPasswordScreen.tsx b/src/components/auth/ResetPasswordScreen.tsx
+index 3fae04d..a94dd87 100644
+--- a/src/components/auth/ResetPasswordScreen.tsx
++++ b/src/components/auth/ResetPasswordScreen.tsx
+@@ -22,8 +22,8 @@ export const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({ onDone
+     e.preventDefault();
+     setErrorMsg(null);
+ 
+-    if (password.length < 6) {
+-      setErrorMsg('Password must be at least 6 characters.');
++    if (password.length < 8) {
++      setErrorMsg('Password must be at least 8 characters.');
+       return;
+     }
+     if (password !== confirmPassword) {
+diff --git a/src/components/auth/SignUpScreen.tsx b/src/components/auth/SignUpScreen.tsx
+index e081451..74c3a1b 100644
+--- a/src/components/auth/SignUpScreen.tsx
++++ b/src/components/auth/SignUpScreen.tsx
+@@ -25,7 +25,7 @@ export const SignUpScreen: React.FC<{onToggleAuth: () => void}> = ({onToggleAuth
+   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+ 
+   const validatePassword = (password: string) => {
+-    return password.length >= 6;
++    return password.length >= 8;
+   };
+ 
+   const handleSubmit = async (e: React.FormEvent) => {
+@@ -40,7 +40,7 @@ export const SignUpScreen: React.FC<{onToggleAuth: () => void}> = ({onToggleAuth
+     }
+     
+     if (!validatePassword(formData.password)) {
+-      setErrorMsg('Password must be at least 6 characters.');
++      setErrorMsg('Password must be at least 8 characters.');
+       setIsLoading(false);
+       return;
+     }
+diff --git a/src/lib/authErrors.ts b/src/lib/authErrors.ts
+index f278ab7..7a885dd 100644
+--- a/src/lib/authErrors.ts
++++ b/src/lib/authErrors.ts
+@@ -48,7 +48,7 @@ export function friendlyAuthErrorMessage(
+   }
+ 
+   if (/password should be at least/i.test(message)) {
+-    return 'Password must be at least 6 characters.';
++    return 'Password must be at least 8 characters.';
+   }
+ 
+   if (

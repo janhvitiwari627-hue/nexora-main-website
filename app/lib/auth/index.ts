@@ -60,6 +60,10 @@ export {
   AUTH_SERVICE_CONTRACT_VERSION,
   AUTH_SERVICE_METHODS,
   createAuthService,
+  // App-specific access gates (server-backed memberships)
+  requireOwnerWorkspace,
+  requirePartnerMembership,
+  requireCustomerAccount,
   // Errors
   NexoraAuthError,
   toAuthError,
@@ -72,6 +76,9 @@ export {
   type AuthStatus,
   type AuthenticatedAccess,
   type AuthService,
+  type OwnerWorkspaceAccess,
+  type PartnerMembershipAccess,
+  type CustomerAccountAccess,
   type NexoraProfile,
   type PlatformRole,
   type SignupRole,

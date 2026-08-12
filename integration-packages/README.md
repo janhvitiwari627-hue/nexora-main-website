@@ -3,10 +3,10 @@
 **Date:** 2026-08-04 · **Shared Supabase project:** `qwaehqsmodekbgvnaavz`
 (all 6 locked business rules verified — see `supabase/BUSINESS_RULES.md`)
 
-Ready-to-apply Supabase integration packages for the three Nexora PWAs.
-Each folder contains mail patches (`git format-patch`) that apply cleanly on
-the target repo's `main` branch with one command per patch, plus a README
-explaining exactly what changes and how to deploy.
+Ready-to-apply Supabase integration packages for the Nexora PWAs and Template
+App. Phase 2 app patches are mail patches where documented; Phase 5 and Phase 6
+are ordered `git apply` patches. Each app README identifies its locked
+current-`main` base, exact stack, deployment configuration, and verification.
 
 `supabase-integration.patch` is the original production/data-layer
 integration. `auth-integration.patch` is Phase 2: it rolls the merged
@@ -21,6 +21,7 @@ upstream branches moved.
 | `customer-pwa/` | `freewebsite859-sudo/custmer-Fresh-app-` | Production-only Customer PWA; remove demo/role-dashboard branches; mount at `/app/customer/`; Phase 2 shared `@nexora/auth` wiring | ✅ Ready (`auth-integration.patch`; build verified on `ff93504467b0`) |
 | `owner-pwa/` | `promptaivideo4-coder/PINK-NEXORA-AAP-` | Live owner workspace, role gate, env-only auth, proposal review, honest server states; Phase 2 shared `@nexora/auth` wiring | ✅ Ready (`auth-integration.patch`; build verified on `47fb48e7767e`) |
 | `growth-partner-pwa/` | `diamondpeomotion-cyber/pink-growth-partner-aap-` | Live Auth, server referral identity, attribution, proposal submission, commissions, scoped PWA; Phase 2 shared `@nexora/auth` wiring | ✅ Ready (`auth-integration.patch`; tsc + build verified on `e00f0ed1acea`) |
+| `template-app/` | `templateapp67-oss/NEW-TAMPLETE-APP` | Canonical provider/client adapters and server-backed Owner workspace resolution | ✅ Phase 6 stack ready on `cfaedcad`; copy the documented replacement files |
 
 ## Why patches instead of direct PRs?
 
@@ -84,3 +85,21 @@ The shared project already contains every table these packages use
 
 Re-run both anytime — they are idempotent. Then verify:
 `select * from public.verify_customer_phase1_backend();` → all `COMPLETE`.
+
+## Phase 6 — app-specific authorization
+
+Apply each app's Phase 2 patch, then `phase5-canonical-auth-service.patch`, then
+`phase6-unified-app-auth.patch`, and finally that app's
+`phase6-unified-auth.patch`. Template has one extra step: copy its two files
+under `template-app/files/src/lib/` immediately after Phase 2; those replacement
+files are intentionally not patch hunks.
+
+Phase 6 requires active server profiles plus the destination relationship:
+Owner through `public.owner_salon_ids()`, Partner through
+`growth_partners.user_id = auth.uid()`, and Customer through the active
+`customer` profile. See `PHASE6_UNIFIED_APP_AUTH.md` for exact commands.
+
+These packages are rollout artifacts, not deployed downstream commits. A
+maintainer must apply them where downstream write access is unavailable. Live
+same-UUID auth remains blocked until the real shared-project anon key and all
+connected deployments are available.

@@ -13,6 +13,9 @@ import {
   isSignupRole,
   neutralRecoveryMessage,
   normalizeSignupRole,
+  requireCustomerAccount,
+  requireOwnerWorkspace,
+  requirePartnerMembership,
   safeRedirectUrl,
   safeReturnPath,
   supabaseConfigErrorMessage,
@@ -788,7 +791,7 @@ async function fetchCatalog(): Promise<CatalogItem[]> {
     .is("deleted_at", null);
   if (salonError) throw salonError;
   const bySalon = new Map(websites.map((website) => [website.salon_id, website as Website]));
-  return (salons ?? []).filter((salon) => bySalon.has(salon.id)).map((salon: any) => ({
+  return (salons ?? []).filter((salon) => bySalon.has(salon.id)).map((salon) => ({
     ...(salon as Salon),
     address: salon.location_address || salon.address || null,
     city: salon.location_city || salon.city || null,
@@ -1032,7 +1035,7 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
     const cat = (searchParams.category || '').toLowerCase();
     const loc = (searchParams.location || '').toLowerCase();
 
-    let filtered = all.filter((item) => {
+    const filtered = all.filter((item) => {
       if (cat && (item.business_category || '').toLowerCase() !== cat) return false;
       if (loc) {
         const matchLoc = (item.city || '').toLowerCase().includes(loc) ||
@@ -2516,21 +2519,23 @@ function ResetPasswordPage({ navigate }: { navigate: (path: string) => void }) {
   // already owns the single root session listener; this page only consumes
   // provider state and, if a PKCE code is present, the canonical callback.
   useEffect(() => {
-    if (configError) {
-      setReady("failed");
-      setMessage(configError);
-      return;
-    }
-    if (loading) {
-      setReady("waiting");
-      return;
-    }
-    if (session) {
-      setReady("ready");
-      return;
-    }
     let active = true;
     const timer = window.setTimeout(async () => {
+      if (configError) {
+        if (active) {
+          setReady("failed");
+          setMessage(configError);
+        }
+        return;
+      }
+      if (loading) {
+        if (active) setReady("waiting");
+        return;
+      }
+      if (session) {
+        if (active) setReady("ready");
+        return;
+      }
       try {
         const href = typeof window !== "undefined" ? window.location.href : "";
         if (href && new URL(href).searchParams.get("code")) {
@@ -2664,7 +2669,7 @@ function PortalGateway({
   navigate: (path: string) => void;
   signOut: (destination?: string) => Promise<void>;
 }) {
-  const { requireAuth, requireRole } = useAuth();
+  const { requireAuth, client } = useAuth();
   const [state, setState] = useState<{ loading: boolean; error?: string; role?: Role }>({ loading: true });
   const load = useCallback(async () => {
     const currentPath = window.location.pathname;
@@ -2685,20 +2690,19 @@ function PortalGateway({
         navigate(homePathForRole(profileRole));
         return;
       }
-      if (requestedRole) {
-        try {
-          await requireRole(requestedRole);
-        } catch {
-          if (requestedRole && requestedRole !== profileRole) {
-            navigate(isMountedPortalRole(profileRole) ? portalPathForRole(profileRole) : homePathForRole(profileRole));
-            return;
-          }
-        }
-      }
       if (requestedRole && requestedRole !== profileRole) {
         navigate(portalPathForRole(profileRole));
         return;
       }
+
+      // Role alone does not grant an app workspace. Verify the app-specific
+      // server membership before handing the browser to the mounted PWA.
+      // These gates re-verify auth.getUser() and never accept client-side ids.
+      if (!client) throw new Error(missingSupabaseConfigMessage);
+      if (profileRole === "business_user") await requireOwnerWorkspace(client);
+      else if (profileRole === "growth_partner") await requirePartnerMembership(client);
+      else await requireCustomerAccount(client);
+
       if (!isPortalPath(currentPath)) {
         navigate(portalPathForRole(profileRole));
         return;
@@ -2716,7 +2720,7 @@ function PortalGateway({
       }
       setState({ loading: false, error: authErrorMessage(cause) });
     }
-  }, [expectedRole, navigate, requireAuth, requireRole, signOut]);
+  }, [client, expectedRole, navigate, requireAuth, signOut]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   if (state.loading) return <main className="center-page"><div className="loader" aria-label="Loading portal gateway" /></main>;
   if (state.error) return <main className="center-page"><StateCard title="Portal unavailable" text={state.error} action="Retry" onAction={load} /></main>;

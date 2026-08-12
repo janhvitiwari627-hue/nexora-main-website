@@ -2,7 +2,7 @@
  * @nexora/auth — Canonical Auth Service.
  *
  * Contract version: 1.0.0
- * Package version:  1.1.0
+ * Package version:  1.2.0
  *
  * Every Nexora surface (Main Website and every PWA) must perform auth,
  * session and guard work through this inventory. Screens must not call
