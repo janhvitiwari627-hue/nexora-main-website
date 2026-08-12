@@ -1,5 +1,5 @@
-import { NexoraApp } from "./nexora-app";
+import { NexoraRoot } from "./NexoraRoot";
 
 export default function Home() {
-  return <NexoraApp initialPath="/" />;
+  return <NexoraRoot initialPath="/" />;
 }

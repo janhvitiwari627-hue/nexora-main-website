@@ -1,4 +1,4 @@
-import { NexoraApp } from "../nexora-app";
+import { NexoraRoot } from "../NexoraRoot";
 
 export default async function RoutedPage({
   params,
@@ -6,5 +6,5 @@ export default async function RoutedPage({
   params: Promise<{ path: string[] }>;
 }) {
   const resolved = await params;
-  return <NexoraApp initialPath={`/${resolved.path.join("/")}`} />;
+  return <NexoraRoot initialPath={`/${resolved.path.join("/")}`} />;
 }

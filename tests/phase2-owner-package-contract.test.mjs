@@ -10,7 +10,7 @@ const addedSource = patch
   .join("\n");
 
 test("Owner Phase 2 patch is based on the locked owner repository contract", () => {
-  assert.match(readme, /49ffe780/);
+  assert.match(readme, /47fb48e7767e/);
   assert.match(patch, /src\/lib\/ownerRepository\.ts/);
   assert.match(patch, /src\/screens\/ProposalReview\.tsx/);
   assert.match(patch, /VITE_APP_BASE_PATH/);
@@ -46,6 +46,6 @@ test("Owner production screens use honest server/empty-state boundaries", () => 
     assert.match(patch, new RegExp(`src/screens/${screen.replace('.', '\\.')}`));
   }
   assert.match(addedSource, /No demo data is shown|No demo data|not connected|not a client-side fake/);
-  assert.match(readme, /hardcoded anon JWT fallback is removed/);
+  assert.match(readme, /hardcoded anon fallback\/proxy token handling is removed/);
   assert.match(readme, /VITE_APP_BASE_PATH=\/app\/owner\//);
 });
