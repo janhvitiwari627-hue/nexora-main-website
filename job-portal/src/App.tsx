@@ -5,7 +5,6 @@ import { processNewJobForAlerts } from './utils/jobAlertMatcher';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { pathForScreen, resolveJobPortalRoute, type JobPortalRoute } from './routing';
 import {
-  applyPendingOAuthRole,
   authBackend,
   completeEmployerOnboarding,
   completeSeekerOnboarding,
@@ -151,8 +150,9 @@ export default function App() {
             setPasswordRecoveryState('invalid');
           }
         } else if (data.session?.user) {
-          await applyPendingOAuthRole(data.session.user.id);
-          await enterAuthenticatedPortal(data.session.user.id, data.session.user.user_metadata?.role as UserRole | undefined);
+          // OAuth callback authorization comes only from the server-owned
+          // job_user_roles row; browser metadata/role flags are ignored.
+          await enterAuthenticatedPortal(data.session.user.id);
           if (new URLSearchParams(window.location.search).has('verified')) {
             window.history.replaceState({}, document.title, window.location.pathname);
           }

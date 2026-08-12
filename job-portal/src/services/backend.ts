@@ -362,8 +362,10 @@ export const authBackend = {
     return data;
   },
 
-  async signInWithProvider(provider: Provider, role: UserRole) {
-    window.localStorage.setItem('nexora_pending_role', role);
+  async signInWithProvider(provider: Provider, _role: UserRole) {
+    // OAuth never carries a browser-stored role flag. Existing users are
+    // authorized after callback from job_user_roles; new role assignment must
+    // use the server-controlled signup flow.
     const { data, error } = await requireSupabase().auth.signInWithOAuth({
       provider,
       options: { redirectTo: appBaseUrl() },
@@ -389,19 +391,6 @@ export const authBackend = {
     if (error) throw error;
   },
 };
-
-export async function applyPendingOAuthRole(_userId: string) {
-  const pendingRole = window.localStorage.getItem('nexora_pending_role') as UserRole | null;
-  if (!pendingRole) return;
-  try {
-    await authBackend.registerRole(pendingRole);
-  } catch (error) {
-    await requireSupabase().auth.signOut();
-    throw mapPortalRoleError(error, pendingRole);
-  } finally {
-    window.localStorage.removeItem('nexora_pending_role');
-  }
-}
 
 export async function getUserRole(user: User): Promise<UserRole> {
   const { data, error } = await requireSupabase().from('job_user_roles').select('role').eq('user_id', user.id).maybeSingle();

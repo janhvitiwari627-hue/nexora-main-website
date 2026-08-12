@@ -194,7 +194,7 @@ index 972ef93..02bd3fa 100644
 - * Vercel environment variables override these defaults for another project.
 - */
 -const DEFAULT_SUPABASE_URL = 'https://qwaehqsmodekbgvnaavz.supabase.co';
--const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3YWVocXNtb2Rla2Jndm5hYXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNjQ5MjksImV4cCI6MjEwMDc0MDkyOX0.K92b2vkEb77dyu8fYYZpMTIbTyP98Vo80TaMo_Hmq_E';
+-const DEFAULT_SUPABASE_ANON_KEY = 'REMOVED_HARDCODED_ANON_KEY';
 -
 -// Accept a normal URL and also recover from accidental Markdown/brackets such as
 -// "[https://project.supabase.co](https://project.supabase.co)" pasted into Vercel.

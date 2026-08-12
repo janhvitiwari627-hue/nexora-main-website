@@ -25,8 +25,27 @@ export const FAIR_HOLD_MS = 10_000;
 /** Movement beyond this many metres triggers a distance recalculation. */
 export const MOVEMENT_THRESHOLD_M = 100;
 
-/** Readings older than this are considered stale even if the OS replays them. */
+/** Readings older than this are rejected when the OS replays them. */
 export const MAX_FIX_AGE_MS = 60_000;
+
+/** A displayed GPS reading older than this is explicitly labelled stale. */
+export const LIVE_FIX_MAX_AGE_MS = 2 * 60_000;
+
+export function isFreshGpsFix(fix: GeoFix | null, now = Date.now()): boolean {
+  return Boolean(
+    fix && fix.source === "gps" &&
+    Number.isFinite(fix.timestamp) &&
+    now >= fix.timestamp &&
+    now - fix.timestamp <= LIVE_FIX_MAX_AGE_MS,
+  );
+}
+
+export function locationFreshness(fix: GeoFix | null, now = Date.now()): "live" | "saved" | "stale" | null {
+  if (!fix) return null;
+  if (isFreshGpsFix(fix, now)) return "live";
+  if (fix.source === "saved") return "saved";
+  return "stale";
+}
 
 /** Physically impossible jump filter (m/s) — ~540 km/h. */
 const MAX_PLAUSIBLE_SPEED_MPS = 150;

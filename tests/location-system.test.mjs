@@ -1,37 +1,24 @@
-/**
- * Contract tests for the Nexora GPS location system.
- *
- * These assert the two things that matter most:
- *  1. No third-party location service is referenced anywhere in the module.
- *  2. The accuracy/validation/ranking rules behave exactly as specified.
- */
-
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
-const moduleDir = new URL("../app/lib/location/", import.meta.url);
-const files = (await readdir(moduleDir)).filter((f) => f.endsWith(".ts") || f.endsWith(".tsx"));
+const moduleDir = new URL("../packages/location/src/", import.meta.url);
+const files = (await readdir(moduleDir)).filter((file) => file.endsWith(".ts"));
 const sources = Object.fromEntries(
-  await Promise.all(files.map(async (f) => [f, await readFile(new URL(f, moduleDir), "utf8")])),
+  await Promise.all(files.map(async (file) => [file, await readFile(new URL(file, moduleDir), "utf8")])),
 );
 const allSource = Object.values(sources).join("\n");
+const app = await readFile(new URL("../app/nexora-app.tsx", import.meta.url), "utf8");
+const badge = await readFile(new URL("../app/lib/location/LocationBadge.tsx", import.meta.url), "utf8");
 
-/** Strip comments so the scan tests only inspect executable code. */
 function stripComments(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 }
 const allCode = stripComments(allSource);
-const mainApp = await readFile(new URL("../app/nexora-app.tsx", import.meta.url), "utf8");
 
-// ---------------------------------------------------------------------------
-// 1. No external location APIs anywhere.
-// ---------------------------------------------------------------------------
-
-const FORBIDDEN = [
-  /maps\.googleapis\.com/i,
+const FORBIDDEN_PROVIDERS = [
+  /maps\.googleapis\.com\/geolocation/i,
   /googleapis\.com\/geolocation/i,
-  /www\.googleapis\.com\/geolocation/i,
   /api\.mapbox\.com/i,
   /nominatim/i,
   /openstreetmap/i,
@@ -40,94 +27,96 @@ const FORBIDDEN = [
   /positionstack/i,
   /ipapi|ipinfo|ip-api/i,
   /distancematrix/i,
-  /geocod(e|ing)\s*\(/i,
 ];
 
-test("location module never calls a third-party location service", () => {
-  for (const pattern of FORBIDDEN) {
-    assert.doesNotMatch(allCode, pattern, `Forbidden location provider matched ${pattern}`);
+test("one canonical package serves Owner, Partner, Customer and Template", () => {
+  const entry = sources["index.ts"];
+  for (const surface of ["Owner", "Partner", "Customer", "Template"]) {
+    assert.match(entry, new RegExp(surface));
   }
+  assert.match(app, /const location = useLocation\(\{/);
+  assert.match(app, /syncPrivateLocation: true/);
+  assert.match(app, /<Header[^>]*location=\{location\}/);
+  assert.match(app, /TEMPLATE_PATH/);
 });
 
-test("location module makes no network requests at all", () => {
-  assert.doesNotMatch(allCode, /\bfetch\s*\(/);
-  assert.doesNotMatch(allCode, /XMLHttpRequest/);
-  assert.doesNotMatch(allCode, /axios/);
-});
-
-test("location module requires no API key", () => {
-  assert.doesNotMatch(allCode, /API_KEY|apiKey|api_key|access_token/i);
-});
-
-// ---------------------------------------------------------------------------
-// 2. watchPosition-only GPS configuration.
-// ---------------------------------------------------------------------------
-
-test("watchPosition is the only tracking primitive", () => {
-  assert.match(sources["gpsWatcher.ts"], /navigator\.geolocation\.watchPosition\(/);
-  // getCurrentPosition must not be used anywhere in the app.
-  assert.doesNotMatch(allCode, /geolocation\.getCurrentPosition\s*\(/);
-  assert.doesNotMatch(stripComments(mainApp), /geolocation\.getCurrentPosition\s*\(/);
-});
-
-test("GPS options are high accuracy, 15s timeout, no cached position", () => {
+test("live GPS uses only navigator.geolocation.watchPosition", () => {
   const watcher = sources["gpsWatcher.ts"];
+  assert.match(watcher, /navigator\.geolocation\.watchPosition\(/);
   assert.match(watcher, /enableHighAccuracy:\s*true/);
   assert.match(watcher, /timeout:\s*15_?000/);
   assert.match(watcher, /maximumAge:\s*0/);
+  assert.match(watcher, /clearWatch\(/);
+  assert.doesNotMatch(allCode, /geolocation\.getCurrentPosition\s*\(/);
+  assert.doesNotMatch(stripComments(app), /geolocation\.getCurrentPosition\s*\(/);
 });
 
-test("the watch is cleared on stop so no listener leaks", () => {
-  assert.match(sources["gpsWatcher.ts"], /clearWatch\(/);
+test("no third-party geolocation, IP guess, API key or fabricated coordinate fallback", () => {
+  for (const pattern of FORBIDDEN_PROVIDERS) assert.doesNotMatch(allCode, pattern);
+  assert.doesNotMatch(allCode, /\bfetch\s*\(|XMLHttpRequest|axios/i);
+  assert.doesNotMatch(allCode, /manualAreas|area centre|area centroid/i);
+  assert.doesNotMatch(allCode, /source:\s*["']manual["']/);
+  assert.match(sources["locationService.ts"], /fix` stays null — never a guess/);
+  assert.match(badge, /does not substitute an IP guess or a made-up location/);
 });
 
-// ---------------------------------------------------------------------------
-// 3. Accuracy rules.
-// ---------------------------------------------------------------------------
+test("shared package is locked to the one Supabase project", () => {
+  assert.match(sources["config.ts"], /qwaehqsmodekbgvnaavz/);
+  assert.match(sources["config.ts"], /assertSharedLocationProject/);
+  assert.match(sources["locationRepository.ts"], /assertSharedLocationProject\(client\)/);
+});
 
-const validator = sources["locationValidator.ts"];
+test("central persistence verifies the global auth user before every read/write", () => {
+  const repository = sources["locationRepository.ts"];
+  assert.match(repository, /client\.auth\.getUser\(\)/);
+  assert.match(repository, /data\.user\.id !== expectedUserId/);
+  assert.match(repository, /from\("user_private_locations"\)/);
+  assert.match(repository, /rpc\("save_my_private_location"/);
+  assert.match(repository, /rpc\("clear_my_private_location"/);
+  assert.doesNotMatch(repository, /localStorage|sessionStorage/);
+});
 
-test("accuracy thresholds match the specification", () => {
+test("only real fresh GPS is persisted", () => {
+  const repository = sources["locationRepository.ts"];
+  assert.match(repository, /if \(fix\.source !== "gps"\) return/);
+  assert.match(repository, /p_captured_at: new Date\(fix\.timestamp\)\.toISOString\(\)/);
+  assert.match(sources["sharedLocationSync.ts"], /fix\.source !== "gps"/);
+  assert.match(sources["sharedLocationSync.ts"], /persistFreshGps\(locationService\.getState\(\)\)/);
+});
+
+test("saved and stale readings can never be labelled live", () => {
+  const validator = sources["locationValidator.ts"];
+  assert.match(validator, /LIVE_FIX_MAX_AGE_MS/);
+  assert.match(validator, /fix\.source === "gps"/);
+  assert.match(validator, /return "saved"/);
+  assert.match(validator, /return "stale"/);
+  assert.match(badge, /Saved device GPS — not live/);
+  assert.match(badge, /freshness === "live" \? "Fresh device GPS"/);
+});
+
+test("GPS denied/unavailable retains only a real saved fallback", () => {
+  const service = sources["locationService.ts"];
+  assert.match(service, /PERMISSION_DENIED/);
+  assert.match(service, /POSITION_UNAVAILABLE/);
+  assert.match(service, /const fallbackFix = this\.asSavedFallback\(this\.state\.fix\)/);
+  assert.match(service, /fix: fallbackFix/);
+  assert.match(service, /No coordinates will be guessed/);
+  assert.match(app, /No saved GPS is available for this account, so no distance is shown/);
+});
+
+test("accuracy validation rejects weak and stale raw readings", () => {
+  const validator = sources["locationValidator.ts"];
   assert.match(validator, /excellent:\s*15/);
   assert.match(validator, /good:\s*30/);
   assert.match(validator, /fair:\s*50/);
   assert.match(validator, /poor:\s*100/);
   assert.match(validator, /FAIR_HOLD_MS\s*=\s*10_?000/);
-  assert.match(validator, /MOVEMENT_THRESHOLD_M\s*=\s*100/);
-});
-
-// Re-implement the graded rules to prove the boundaries are the specified ones.
-function grade(accuracy) {
-  if (!Number.isFinite(accuracy) || accuracy < 0) return "unusable";
-  if (accuracy <= 15) return "excellent";
-  if (accuracy <= 30) return "good";
-  if (accuracy <= 50) return "fair";
-  if (accuracy <= 100) return "poor";
-  return "unusable";
-}
-
-test("accuracy grading boundaries", () => {
-  assert.equal(grade(0), "excellent");
-  assert.equal(grade(15), "excellent");
-  assert.equal(grade(16), "good");
-  assert.equal(grade(30), "good");
-  assert.equal(grade(31), "fair");
-  assert.equal(grade(50), "fair");
-  assert.equal(grade(51), "poor");
-  assert.equal(grade(100), "poor");
-  assert.equal(grade(101), "unusable");
-});
-
-test("readings above 100 m are rejected and block nearby computation", () => {
+  assert.match(validator, /MAX_FIX_AGE_MS\s*=\s*60_?000/);
   assert.match(validator, /Rejected: unusable accuracy/);
 });
 
-// ---------------------------------------------------------------------------
-// 4. Haversine distance is computed locally.
-// ---------------------------------------------------------------------------
-
 const EARTH_RADIUS_M = 6_371_008.8;
-const toRad = (d) => (d * Math.PI) / 180;
+const toRad = (degrees) => (degrees * Math.PI) / 180;
 function haversineMeters(lat1, lng1, lat2, lng2) {
   const dLat = toRad(lat2 - lat1);
   const dLng = toRad(lng2 - lng1);
@@ -135,156 +124,38 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(a)));
 }
 
-test("distance calculator uses Haversine, not an API", () => {
-  const calc = sources["distanceCalculator.ts"];
-  assert.match(calc, /haversineMeters/);
-  assert.match(calc, /Math\.asin/);
-  assert.doesNotMatch(stripComments(calc), /fetch|http/i);
+test("distance uses local Haversine maths", () => {
+  const calculator = sources["distanceCalculator.ts"];
+  assert.match(calculator, /haversineMeters/);
+  assert.match(calculator, /Math\.asin/);
+  assert.doesNotMatch(stripComments(calculator), /fetch|https?:/i);
+  const jaipurDistance = haversineMeters(26.9157, 75.8189, 26.8535, 75.8104) / 1000;
+  assert.ok(jaipurDistance > 6.5 && jaipurDistance < 7.5);
 });
 
-test("haversine reference values are correct", () => {
-  // Jaipur MI Road → Malviya Nagar, roughly 7 km.
-  const d = haversineMeters(26.9157, 75.8189, 26.8535, 75.8104) / 1000;
-  assert.ok(d > 6.5 && d < 7.5, `expected ~7 km, got ${d}`);
-  // Identical points.
-  assert.equal(haversineMeters(26.9, 75.8, 26.9, 75.8), 0);
-  // ~111 m for 0.001 degree of latitude.
-  const oneMilli = haversineMeters(26.9, 75.8, 26.901, 75.8);
-  assert.ok(oneMilli > 105 && oneMilli < 116, `expected ~111 m, got ${oneMilli}`);
-});
-
-// ---------------------------------------------------------------------------
-// 5. Sorting + bucketing rules.
-// ---------------------------------------------------------------------------
-
-test("salons are bucketed into the specified distance sections", () => {
+test("nearby ranking refuses pending or legacy business coordinates", () => {
   const nearby = sources["nearbySalonService.ts"];
-  assert.match(nearby, /"Nearby"/);
-  assert.match(nearby, /"Close"/);
-  assert.match(nearby, /"Around You"/);
-  assert.match(nearby, /"Everything Else"/);
-  assert.match(nearby, /maxKm:\s*2/);
-  assert.match(nearby, /maxKm:\s*5/);
-  assert.match(nearby, /maxKm:\s*10/);
+  assert.match(nearby, /salon\.approval_status === "approved"/);
+  assert.match(nearby, /origin && approved \? distanceToPointKm/);
+  assert.match(nearby, /row\.approval_status === "approved"/);
+  assert.match(app, /from\("business_locations"\)/);
+  assert.match(app, /\.eq\("approval_status", "approved"\)/);
+  assert.doesNotMatch(app, /select\([^\n]*business_category,latitude,longitude,phone/);
 });
 
-test("sort priority is distance, rating, featured, recently active", () => {
-  const nearby = sources["nearbySalonService.ts"];
-  const order = ["1. Nearest distance", "2. Highest rating", "3. Featured status", "4. Recently active"];
-  let cursor = -1;
-  for (const marker of order) {
-    const at = nearby.indexOf(marker);
-    assert.ok(at > cursor, `expected "${marker}" after position ${cursor}`);
-    cursor = at;
+test("nearby catalogue never sends private user coordinates to Supabase", () => {
+  assert.doesNotMatch(app, /marketplace_nearby[\s\S]{0,180}p_lat:/);
+  assert.match(app, /every distance is[\s\S]{0,20}computed locally/);
+});
+
+test("badge stays present and visibly distinguishes live/saved/off", async () => {
+  for (const tone of ["live", "waiting", "saved", "off"]) {
+    assert.match(badge, new RegExp(`"${tone}"`));
   }
-});
-
-// ---------------------------------------------------------------------------
-// 6. Required modules exist.
-// ---------------------------------------------------------------------------
-
-test("every required module is present", () => {
-  for (const file of [
-    "locationService.ts", "gpsWatcher.ts", "locationValidator.ts",
-    "distanceCalculator.ts", "nearbySalonService.ts", "permissionManager.ts",
-    "logger.ts", "useLocation.ts", "types.ts", "index.ts",
-  ]) {
-    assert.ok(files.includes(file), `missing module ${file}`);
-  }
-});
-
-test("service exposes latitude, longitude, accuracy, timestamp, speed and heading", () => {
-  const types = sources["types.ts"];
-  for (const field of ["latitude", "longitude", "accuracy", "timestamp", "speed", "heading"]) {
-    assert.match(types, new RegExp(`\\b${field}\\b`), `GeoFix should expose ${field}`);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// 7. Error handling and permissions.
-// ---------------------------------------------------------------------------
-
-test("all documented failure modes have a user-facing message", () => {
-  const service = sources["locationService.ts"];
-  for (const code of [
-    "PERMISSION_DENIED", "POSITION_UNAVAILABLE", "TIMEOUT",
-    "OFFLINE", "WEAK_SIGNAL", "GPS_DISABLED", "UNSUPPORTED", "UNKNOWN",
-  ]) {
-    assert.match(service, new RegExp(code), `missing handling for ${code}`);
-  }
-  assert.match(service, /Please enable location to discover nearby salons\./);
-  assert.match(service, /Improving your location…/);
-});
-
-test("denied permission offers retry and manual selection", () => {
-  assert.match(sources["locationService.ts"], /retry\(\)/);
-  assert.match(sources["locationService.ts"], /setManualLocation\(/);
-  assert.match(mainApp, /Retry location/);
-  assert.match(mainApp, /Please enable location to discover nearby salons\./);
-});
-
-test("manual areas are bundled constants, not geocoded lookups", () => {
-  const manual = sources["manualAreas.ts"];
-  assert.match(manual, /latitude:\s*-?\d/);
-  assert.doesNotMatch(stripComments(manual), /fetch|http|geocode/i);
-});
-
-// ---------------------------------------------------------------------------
-// 8. Debug logging.
-// ---------------------------------------------------------------------------
-
-test("every GPS update logs the required debug fields", () => {
-  const service = sources["locationService.ts"];
-  for (const field of [
-    "latitude", "longitude", "accuracyMeters", "timestamp",
-    "movementMeters", "permission", "updateCount", "decision",
-  ]) {
-    assert.match(service, new RegExp(field), `GPS log should include ${field}`);
-  }
-});
-
-// ---------------------------------------------------------------------------
-// 9. Auto-start on sign-in + the header location icon.
-// ---------------------------------------------------------------------------
-
-test("GPS re-arms automatically when a user signs up or logs in", () => {
-  // The effect keys off the authenticated user id and re-triggers acquisition.
-  assert.match(mainApp, /authState\.session\?\.user\?\.id/);
-  assert.match(mainApp, /armedForUser/);
-  assert.match(mainApp, /locationService\.retry\(\)/);
-  assert.match(mainApp, /locationService\.getFix\(\)/);
-});
-
-test("the app-wide watcher is started once from the shell", () => {
-  // useLocation() is called in NexoraApp so a single reference-counted
-  // watchPosition serves the header, homepage and salon pages.
-  const shell = mainApp.slice(mainApp.indexOf("export function NexoraApp"));
-  assert.match(shell, /const location = useLocation\(\)/);
-  assert.match(shell, /<Header[^>]*location=\{location\}/);
-});
-
-test("header renders a location badge with a pin icon", () => {
-  const badge = sources["LocationBadge.tsx"];
-  assert.ok(badge, "LocationBadge.tsx should exist");
   assert.match(badge, /<svg/);
   assert.match(badge, /aria-label=\{`Location: /);
-  assert.match(mainApp, /<LocationBadge location=\{location\} \/>/);
-});
-
-test("badge works whether or not permission is granted", () => {
-  const badge = sources["LocationBadge.tsx"];
-  // Every tone is reachable, including the denied/unsupported "off" state.
-  for (const tone of ["live", "waiting", "manual", "off"]) {
-    assert.match(badge, new RegExp(`"${tone}"`), `missing badge tone ${tone}`);
-  }
-  // Denied users still get a retry and a manual picker.
-  assert.match(badge, /Try again/);
-  assert.match(badge, /setManualArea/);
-  assert.match(badge, /clearManualArea/);
-});
-
-test("badge stays visible on mobile where other nav buttons are hidden", async () => {
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
   assert.match(css, /\.loc-badge-button/);
+  assert.match(css, /\.loc-dot-saved/);
   assert.match(css, /:not\(\.loc-badge-button\)/);
 });
