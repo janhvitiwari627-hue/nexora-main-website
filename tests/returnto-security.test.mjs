@@ -163,8 +163,8 @@ test("16. PortalGateway has no role-home redirect; 12 path-preserving rewrites a
   assert.doesNotMatch(nextConfig, /NEXORA_TEMPLATE_PWA_ORIGIN \?\? "https:/);
   assert.match(middleware, /\/api\/portal\//);
   assert.match(middleware, /pathname === base/);
-  assert.match(portalProxy, /Same-origin PWA proxy/);
   assert.match(portalProxy, /PORTAL_ORIGINS/);
+  assert.match(portalProxy, /Nexora-Proxy/);
   for (const path of ["/app/customer", "/app/owner", "/app/partner"]) {
     assert.match(nextConfig, new RegExp(`path: "${path}"`));
   }
