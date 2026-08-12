@@ -13,6 +13,10 @@ const roles = await readFile(new URL("../packages/auth/src/roles.ts", import.met
 const app = await readFile(new URL("../app/nexora-app.tsx", import.meta.url), "utf8");
 const nextConfig = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
 const middleware = await readFile(new URL("../middleware.ts", import.meta.url), "utf8");
+const portalProxy = await readFile(
+  new URL("../app/api/portal/[portal]/[[...path]]/route.ts", import.meta.url),
+  "utf8",
+);
 
 const ROLE_HOME = {
   customer: "/app/customer",
@@ -157,8 +161,10 @@ test("16. PortalGateway has no role-home redirect; 12 path-preserving rewrites a
   assert.match(nextConfig, /DEFAULT_PARTNER_PWA_ORIGIN/);
   assert.match(nextConfig, /NEXORA_TEMPLATE_PWA_ORIGIN/);
   assert.doesNotMatch(nextConfig, /NEXORA_TEMPLATE_PWA_ORIGIN \?\? "https:/);
-  assert.match(middleware, /Edge middleware for portal mounts/);
+  assert.match(middleware, /\/api\/portal\//);
   assert.match(middleware, /pathname === base/);
+  assert.match(portalProxy, /PORTAL_ORIGINS/);
+  assert.match(portalProxy, /Nexora-Proxy/);
   for (const path of ["/app/customer", "/app/owner", "/app/partner"]) {
     assert.match(nextConfig, new RegExp(`path: "${path}"`));
   }

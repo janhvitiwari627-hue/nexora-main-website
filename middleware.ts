@@ -1,20 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import {
-  DEFAULT_CUSTOMER_PWA_ORIGIN,
-  DEFAULT_OWNER_PWA_ORIGIN,
   DEFAULT_PARTNER_PWA_ORIGIN,
   PORTAL_MOUNT_PATHS,
   type MountedPortalKey,
 } from "./app/lib/portalOrigins";
-
-const PARTNER_ORIGIN = DEFAULT_PARTNER_PWA_ORIGIN;
-
-const PORTAL_ORIGINS: Record<MountedPortalKey, string> = {
-  customer: DEFAULT_CUSTOMER_PWA_ORIGIN,
-  owner: DEFAULT_OWNER_PWA_ORIGIN,
-  partner: DEFAULT_PARTNER_PWA_ORIGIN,
-};
 
 function portalKeyFromPath(pathname: string): MountedPortalKey | null {
   for (const key of Object.keys(PORTAL_MOUNT_PATHS) as MountedPortalKey[]) {
@@ -25,20 +15,19 @@ function portalKeyFromPath(pathname: string): MountedPortalKey | null {
 }
 
 /**
- * Phase 1 — Edge middleware for portal mounts.
+ * Exact `/app/{role}` stays on PortalGateway (Next.js page).
+ * Trailing-slash and nested asset paths are rewritten SAME-ORIGIN to
+ * `/api/portal/{role}/...`, which fetches the PWA. Foreign Vercel rewrites
+ * return HTTP 500; same-origin rewrites do not.
  *
- * Exact `/app/{role}` entry points stay on Next.js (PortalGateway). Trailing-
- * slash and nested asset paths are rewritten to the matching PWA, preserving
- * the `/app/{role}` prefix so Vite `base` builds resolve. `/growth-partner`
- * remains a same-host 308 to the raw Partner origin (external rewrites on
- * that alias were unreliable).
+ * `/growth-partner` remains a 308 to the raw Partner origin.
  */
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (pathname === "/growth-partner" || pathname.startsWith("/growth-partner/")) {
     const targetPath = pathname.replace(/^\/growth-partner/, "") || "/";
-    const url = new URL(targetPath, PARTNER_ORIGIN);
+    const url = new URL(targetPath, DEFAULT_PARTNER_PWA_ORIGIN);
     request.nextUrl.searchParams.forEach((value, key) => {
       url.searchParams.set(key, value);
     });
@@ -49,14 +38,11 @@ export function middleware(request: NextRequest) {
   if (!portalKey) return NextResponse.next();
 
   const base = PORTAL_MOUNT_PATHS[portalKey];
-  // Exact entry (no trailing slash) stays on PortalGateway.
   if (pathname === base) return NextResponse.next();
 
-  const origin = PORTAL_ORIGINS[portalKey];
-  const url = new URL(pathname, origin);
-  request.nextUrl.searchParams.forEach((value, key) => {
-    url.searchParams.set(key, value);
-  });
+  const suffix = pathname.slice(base.length) || "/";
+  const url = request.nextUrl.clone();
+  url.pathname = `/api/portal/${portalKey}${suffix === "/" ? "" : suffix}`;
   return NextResponse.rewrite(url);
 }
 
