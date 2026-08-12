@@ -1,6 +1,6 @@
 {
   "name": "@nexora/auth",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "description": "Centralized Supabase auth, roles, PKCE redirect policy and canonical Auth Service shared by every Nexora app.",
   "type": "module",
@@ -15,6 +15,7 @@
     "./redirects": "./src/redirects.ts",
     "./session": "./src/session.ts",
     "./service": "./src/service.ts",
+    "./access": "./src/access.ts",
     "./provider": "./src/AuthProvider.tsx"
   },
   "peerDependencies": {

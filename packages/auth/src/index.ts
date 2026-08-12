@@ -97,6 +97,16 @@ export {
 } from "./service";
 
 export {
+  requireOwnerWorkspace,
+  requirePartnerMembership,
+  requireCustomerAccount,
+  type OwnerWorkspaceAccess,
+  type PartnerMembershipAccess,
+  type GrowthPartnerMembership,
+  type CustomerAccountAccess,
+} from "./access";
+
+export {
   AuthProvider,
   useAuth,
   useRoleGuard,

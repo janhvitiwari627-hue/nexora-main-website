@@ -59,16 +59,13 @@ function viteEnv(): { url: string; anonKey: string } {
   let url = "";
   let anonKey = "";
   try {
-    // @ts-expect-error — `import.meta.env` only exists in Vite builds.
     url = clean(import.meta.env?.VITE_SUPABASE_URL);
   } catch {
     url = "";
   }
   try {
-    // @ts-expect-error — `import.meta.env` only exists in Vite builds.
     anonKey = clean(import.meta.env?.VITE_SUPABASE_ANON_KEY);
     if (!anonKey) {
-      // @ts-expect-error — `import.meta.env` only exists in Vite builds.
       anonKey = clean(import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY);
     }
   } catch {

@@ -145,8 +145,11 @@ export function AuthProvider({
   const mountedRef = useRef(true);
   const changeHandlerRef = useRef(onAuthChange);
   const unauthorizedRef = useRef(onUnauthorizedProfile);
-  changeHandlerRef.current = onAuthChange;
-  unauthorizedRef.current = onUnauthorizedProfile;
+
+  useEffect(() => {
+    changeHandlerRef.current = onAuthChange;
+    unauthorizedRef.current = onUnauthorizedProfile;
+  }, [onAuthChange, onUnauthorizedProfile]);
 
   const applySession = useCallback(
     async (session: Session | null): Promise<NexoraProfile | null> => {
@@ -205,7 +208,6 @@ export function AuthProvider({
   useEffect(() => {
     mountedRef.current = true;
     if (!client) {
-      setState({ status: "unconfigured", session: null, profile: null, error: null });
       return () => {
         mountedRef.current = false;
       };

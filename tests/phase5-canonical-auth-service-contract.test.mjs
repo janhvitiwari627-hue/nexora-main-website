@@ -39,8 +39,9 @@ const CANONICAL_METHODS = [
   "requireRole",
 ];
 
-test("Phase 5 publishes @nexora/auth 1.1.0 with Auth Service contract 1.0.0", () => {
-  assert.equal(pkg.version, "1.1.0");
+test("the Phase 5 service contract remains available after later package upgrades", () => {
+  assert.match(phase5Patch, /[+-]\s+"version": "1\.1\.0"/);
+  assert.equal(pkg.version, "1.2.0");
   assert.match(service, /AUTH_SERVICE_CONTRACT_VERSION = "1\.0\.0"/);
   assert.match(indexSrc, /createAuthService/);
   assert.match(indexSrc, /AUTH_SERVICE_CONTRACT_VERSION/);
@@ -71,7 +72,9 @@ test("Main Website auth screens use the canonical service instead of supabase.au
   assert.match(app, /sendPasswordReset/);
   assert.match(app, /updatePassword/);
   assert.match(app, /requireAuth/);
-  assert.match(app, /requireRole/);
+  assert.match(app, /requireOwnerWorkspace/);
+  assert.match(app, /requirePartnerMembership/);
+  assert.match(app, /requireCustomerAccount/);
   assert.match(app, /Password must be at least 8 characters/);
   assert.match(app, /minLength=\{8\}/);
   assert.doesNotMatch(app, /minLength=\{6\}/);
@@ -109,7 +112,7 @@ test("security: session is not authorization and roles never come from the clien
   assert.doesNotMatch(service, /localStorage\.(getItem|setItem)/);
 });
 
-test("the Phase 5 vendor patch is identical for every PWA and reproduces packages/auth", async () => {
+test("the shared Phase 5 vendor patch reconstructs the historical 1.1.0 package", async () => {
   assert.match(phase5Guide, /src\/vendor\/nexora-auth\//);
   assert.match(phase5Guide, /auth-integration\.patch/);
   assert.match(phase5Guide, /Customer/);
@@ -129,7 +132,6 @@ test("the Phase 5 vendor patch is identical for every PWA and reproduces package
     execFileSync("git", ["apply", phase5], { cwd: dir });
 
     const vendorDir = join(dir, "src/vendor/nexora-auth");
-    const pkgDir = join(root, "packages/auth");
     const vendorFiles = (await readdir(vendorDir)).sort();
     const expected = [
       "AuthProvider.tsx",
@@ -145,11 +147,17 @@ test("the Phase 5 vendor patch is identical for every PWA and reproduces package
     ];
     assert.deepEqual(vendorFiles, expected);
 
-    for (const name of expected) {
-      const got = await readFile(join(vendorDir, name));
-      const want = await readFile(name === "package.json" ? join(pkgDir, "package.json") : join(pkgDir, "src", name));
-      assert.equal(got.equals(want), true, `${name} must be byte-identical to packages/auth`);
+    const historicalPkg = JSON.parse(await readFile(join(vendorDir, "package.json"), "utf8"));
+    const historicalService = await readFile(join(vendorDir, "service.ts"), "utf8");
+    const historicalIndex = await readFile(join(vendorDir, "index.ts"), "utf8");
+    assert.equal(historicalPkg.version, "1.1.0");
+    assert.equal(historicalPkg.exports["./service"], "./src/service.ts");
+    assert.match(historicalService, /AUTH_SERVICE_CONTRACT_VERSION = "1\.0\.0"/);
+    for (const method of CANONICAL_METHODS) {
+      assert.match(historicalService, new RegExp(`async ${method}\\(`), method);
     }
+    assert.match(historicalIndex, /createAuthService/);
+    assert.match(historicalIndex, /AUTH_SERVICE_CONTRACT_VERSION/);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

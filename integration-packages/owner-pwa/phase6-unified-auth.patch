@@ -1,0 +1,241 @@
+diff --git a/src/App.tsx b/src/App.tsx
+index 6db524f..98893c1 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -46,7 +46,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
+ import { OfflineSyncProvider } from './contexts/OfflineSyncContext';
+ import AddToHomeScreenPrompt from './components/AddToHomeScreenPrompt';
+ import { ScreenName } from './types';
+-import { useAuth } from '@nexora/auth';
++import { requireOwnerWorkspace, useAuth } from '@nexora/auth';
+ import { Download, X, WifiOff, RefreshCw } from 'lucide-react';
+ import { motion, AnimatePresence } from 'motion/react';
+ import { useRegisterSW } from 'virtual:pwa-register/react';
+@@ -81,7 +81,7 @@ export default function App() {
+     return 'splash';
+   });
+   const currentScreenRef = React.useRef(currentScreen);
+-  const { session, profile, loading: authLoading, status: authStatus, role, signOut: signOutAuth, configError } = useAuth();
++  const { session, loading: authLoading, role, signOut: signOutAuth, configError, client } = useAuth();
+   const [ownerAccessError, setOwnerAccessError] = useState(false);
+   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+   const [showInstallToast, setShowInstallToast] = useState(false);
+@@ -295,23 +295,36 @@ export default function App() {
+   useEffect(() => {
+     if (authLoading) return;
+     if (!session) {
+-      setOwnerAccessError(false);
+       const activeScreen = currentScreenRef.current;
+       const publicScreens: ScreenName[] = ['splash', 'welcome', 'login', 'register-stepper', 'reset-password', 'role-conflict', 'cancellation-refund-policy'];
+       if (!publicScreens.includes(activeScreen)) setCurrentScreen('welcome');
+       return;
+     }
+-    if (role !== 'business_user') {
+-      setOwnerAccessError(true);
+-      if (currentScreenRef.current !== 'role-conflict') setCurrentScreen('role-conflict');
+-      void signOutAuth();
+-      return;
+-    }
+-    setOwnerAccessError(false);
+-    if (['splash', 'welcome', 'login'].includes(currentScreenRef.current)) {
+-      setCurrentScreen('dashboard');
+-    }
+-  }, [authLoading, session, role, signOutAuth]);
++    if (!client) return;
++
++    // A business_user role is necessary but not sufficient. The shared gate
++    // also requires an active organization membership and an active salon
++    // returned by auth.uid()-scoped public.owner_salon_ids().
++    let active = true;
++    void requireOwnerWorkspace(client)
++      .then(() => {
++        if (!active) return;
++        setOwnerAccessError(false);
++        if (['splash', 'welcome', 'login'].includes(currentScreenRef.current)) {
++          setCurrentScreen('dashboard');
++        }
++      })
++      .catch(() => {
++        if (!active) return;
++        setOwnerAccessError(true);
++        if (currentScreenRef.current !== 'role-conflict') setCurrentScreen('role-conflict');
++        void signOutAuth();
++      });
++
++    return () => {
++      active = false;
++    };
++  }, [authLoading, client, session, role, signOutAuth]);
+ 
+   const handleInstall = async () => {
+     if (!deferredPrompt) return;
+diff --git a/src/screens/Profile.tsx b/src/screens/Profile.tsx
+index ecb8743..a08741a 100644
+--- a/src/screens/Profile.tsx
++++ b/src/screens/Profile.tsx
+@@ -5,6 +5,7 @@ import OtpVerificationModal from '../components/OtpVerificationModal';
+ import SuccessModal from '../components/SuccessModal';
+ import { NavigationProps } from '../types';
+ import { supabase } from '../lib/supabase';
++import { useAuth } from '@nexora/auth';
+ import { fetchMyShop, updateShopProfile, MyShop } from '../lib/shopRepository';
+ import { 
+   Building2, 
+@@ -44,6 +45,7 @@ interface DaySchedule {
+ import { queueAction } from '../lib/sync-manager';
+ 
+ export default function Profile({ navigate }: NavigationProps) {
++  const { signOut } = useAuth();
+   const [activeTab, setActiveTab] = useState<'business' | 'personal'>('business');
+   const [toastMessage, setToastMessage] = useState<string | null>(null);
+ 
+@@ -1113,7 +1115,7 @@ export default function Profile({ navigate }: NavigationProps) {
+             <button 
+               onClick={async () => {
+                 triggerToast('Logging out...');
+-                await supabase.auth.signOut();
++                await signOut();
+                 setTimeout(() => navigate('welcome'), 800);
+               }}
+               className="w-full bg-error/10 text-error border border-error/20 py-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:bg-error/20 transition-colors active:scale-95"
+diff --git a/src/screens/ResetPassword.tsx b/src/screens/ResetPassword.tsx
+index ee71399..cd955a4 100644
+--- a/src/screens/ResetPassword.tsx
++++ b/src/screens/ResetPassword.tsx
+@@ -2,11 +2,12 @@ import React, { useState } from 'react';
+ import { motion } from 'motion/react';
+ import { Lock, Eye, EyeOff, AlertCircle, CheckCircle2, Flower2 } from 'lucide-react';
+ import { NavigationProps } from '../types';
+-import { supabase } from '../lib/supabase';
++import { useAuth } from '@nexora/auth';
+ import { useLanguage } from '../contexts/LanguageContext';
+ 
+ export default function ResetPassword({ navigate }: NavigationProps) {
+   const { t } = useLanguage();
++  const { updatePassword } = useAuth();
+   const [password, setPassword] = useState('');
+   const [confirmPassword, setConfirmPassword] = useState('');
+   const [showPassword, setShowPassword] = useState(false);
+@@ -20,7 +21,7 @@ export default function ResetPassword({ navigate }: NavigationProps) {
+       setError(t('passwords_not_match'));
+       return;
+     }
+-    if (password.length < 6) {
++    if (password.length < 8) {
+       setError(t('password_too_short'));
+       return;
+     }
+@@ -29,11 +30,7 @@ export default function ResetPassword({ navigate }: NavigationProps) {
+     setError(null);
+ 
+     try {
+-      const { error: updateError } = await supabase.auth.updateUser({
+-        password: password
+-      });
+-
+-      if (updateError) throw updateError;
++      await updatePassword(password);
+       setSuccess(true);
+       
+       // Auto-navigate to dashboard after 2 seconds
+diff --git a/src/screens/Settings.tsx b/src/screens/Settings.tsx
+index d18fb93..bd932b0 100644
+--- a/src/screens/Settings.tsx
++++ b/src/screens/Settings.tsx
+@@ -2,6 +2,7 @@ import React, { useState } from 'react';
+ import Layout from '../components/Layout';
+ import { NavigationProps } from '../types';
+ import { supabase, isSupabaseConfigured } from '../lib/supabase';
++import { useAuth } from '@nexora/auth';
+ import { useLanguage } from '../contexts/LanguageContext';
+ import { useTheme } from '../contexts/ThemeContext';
+ import { fetchMyShop, updateShopLocation } from '../lib/shopRepository';
+@@ -38,6 +39,7 @@ import { requestNotificationPermission } from '../utils/notifications';
+ 
+ export default function Settings({ navigate }: NavigationProps) {
+   const { language, setLanguage, t } = useLanguage();
++  const { signOut } = useAuth();
+   const { systemTheme, setSystemTheme, activeTheme } = useTheme();
+   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+   const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
+@@ -611,7 +613,7 @@ export default function Settings({ navigate }: NavigationProps) {
+             <button 
+               onClick={async () => {
+                 clearOwnerSessionData();
+-                await supabase.auth.signOut();
++                await signOut();
+                 navigate('welcome');
+               }}
+               className="w-full py-4 rounded-2xl bg-error/10 text-error font-bold text-sm flex items-center justify-center gap-2 hover:bg-error/20 transition-colors active:scale-[0.98] duration-200 border border-error/20 shadow-xs"
+diff --git a/src/screens/Splash.tsx b/src/screens/Splash.tsx
+index d13c60d..9f11f60 100644
+--- a/src/screens/Splash.tsx
++++ b/src/screens/Splash.tsx
+@@ -3,21 +3,18 @@ import { motion } from 'motion/react';
+ import { Flower2 } from 'lucide-react';
+ import { NavigationProps } from '../types';
+ import ShaderBackground from '../components/ShaderBackground';
+-import { supabase, isSupabaseConfigured } from '../lib/supabase';
++import { useAuth } from '@nexora/auth';
+ 
+ export default function Splash({ navigate }: NavigationProps) {
++  const { loading, session, configError } = useAuth();
++
+   useEffect(() => {
++    if (loading) return;
+     const timer = setTimeout(() => {
+-      if (!isSupabaseConfigured()) {
+-        navigate('welcome');
+-        return;
+-      }
+-      supabase.auth.getSession()
+-        .then(({ data: { session } }) => navigate(session ? 'dashboard' : 'welcome'))
+-        .catch(() => navigate('welcome'));
++      navigate(!configError && session ? 'dashboard' : 'welcome');
+     }, 2500);
+     return () => clearTimeout(timer);
+-  }, []);
++  }, [configError, loading, navigate, session]);
+ 
+   return (
+     <div className="relative h-screen w-full flex flex-col items-center justify-center bg-black overflow-hidden selection:bg-primary-container selection:text-white pt-safe pb-safe">
+diff --git a/src/translations/index.ts b/src/translations/index.ts
+index 5eb2661..e8d0b8f 100644
+--- a/src/translations/index.ts
++++ b/src/translations/index.ts
+@@ -153,7 +153,7 @@ export const translations: Record<Language, Record<string, string>> = {
+     password_updated: 'Password Updated!',
+     password_updated_desc: 'Your password has been successfully reset. Redirecting you to the dashboard...',
+     passwords_not_match: 'Passwords do not match',
+-    password_too_short: 'Password must be at least 6 characters',
++    password_too_short: 'Password must be at least 8 characters',
+     failed_login: 'Failed to login. Please check your credentials.',
+     failed_reset_link: 'Failed to send reset link.',
+     failed_update_password: 'Failed to update password.',
+@@ -373,7 +373,7 @@ export const translations: Record<Language, Record<string, string>> = {
+     password_updated: 'पासवर्ड अपडेट हो गया!',
+     password_updated_desc: 'आपका पासवर्ड सफलतापूर्वक रीसेट हो गया है। आपको डैशबोर्ड पर रीडायरेक्ट किया जा रहा है...',
+     passwords_not_match: 'पासवर्ड मेल नहीं खाते',
+-    password_too_short: 'पासवर्ड कम से कम 6 अक्षरों का होना चाहिए',
++    password_too_short: 'पासवर्ड कम से कम 8 अक्षरों का होना चाहिए',
+     failed_login: 'लॉगिन विफल। कृपया अपने क्रेडेंशियल्स की जांच करें।',
+     failed_reset_link: 'रीसेट लिंक भेजने में विफल।',
+     failed_update_password: 'पासवर्ड अपडेट करने में विफल।',
+@@ -593,7 +593,7 @@ export const translations: Record<Language, Record<string, string>> = {
+     password_updated: 'ਪਾਸਵਰਡ ਅੱਪਡੇਟ ਹੋ ਗਿਆ!',
+     password_updated_desc: 'ਤੁਹਾਡਾ ਪਾਸਵਰਡ ਸਫਲਤਾਪੂਰਵਕ ਰੀਸੈਟ ਹੋ ਗਿਆ ਹੈ। ਤੁਹਾਨੂੰ ਡੈਸ਼ਬੋਰਡ ਤੇ ਰੀਡਾਇਰੈਕਟ ਕੀਤਾ ਜਾ ਰਿਹਾ ਹੈ...',
+     passwords_not_match: 'ਪਾਸਵਰਡ ਮੇਲ ਨਹੀਂ ਖਾਂਦੇ',
+-    password_too_short: 'ਪਾਸਵਰਡ ਘੱਟੋ-ਘੱਟ 6 ਅੱਖਰਾਂ ਦਾ ਹੋਣਾ ਚਾਹੀਦਾ ਹੈ',
++    password_too_short: 'ਪਾਸਵਰਡ ਘੱਟੋ-ਘੱਟ 8 ਅੱਖਰਾਂ ਦਾ ਹੋਣਾ ਚਾਹੀਦਾ ਹੈ',
+     failed_login: 'ਲੌਗਇਨ ਅਸਫਲ ਰਿਹਾ। ਕਿਰਪਾ ਕਰਕੇ ਆਪਣੇ ਵੇਰਵੇ ਚੈੱਕ ਕਰੋ।',
+     failed_reset_link: 'ਰੀਸੈਟ ਲਿੰਕ ਭੇਜਣ ਵਿੱਚ ਅਸਫਲ।',
+     failed_update_password: 'ਪਾਸਵਰਡ ਅੱਪਡੇਟ ਕਰਨ ਵਿੱਚ ਅਸਫਲ।',
+@@ -813,7 +813,7 @@ export const translations: Record<Language, Record<string, string>> = {
+     password_updated: 'పాస్‌వర్డ్ అప్‌డేట్ చేయబడింది!',
+     password_updated_desc: 'మీ పాస్‌వర్డ్ విజయవంతంగా రీసెట్ చేయబడింది. మీరు డాష్‌బోర్డ్‌కు మళ్లించబడుతున్నారు...',
+     passwords_not_match: 'పాస్‌వర్డ్‌లు సరిపోలడం లేదు',
+-    password_too_short: 'పాస్‌వర్డ్ కనీసం 6 అక్షరాలు ఉండాలి',
++    password_too_short: 'పాస్‌వర్డ్ కనీసం 8 అక్షరాలు ఉండాలి',
+     failed_login: 'లాగిన్ విఫలమైంది. దయచేసి మీ వివరాలను తనిఖీ చేయండి.',
+     failed_reset_link: 'రీసెట్ లింక్ పంపడం విఫలమైంది.',
+     failed_update_password: 'పాస్‌వర్డ్ అప్‌డేట్ చేయడం విఫలమైంది.',

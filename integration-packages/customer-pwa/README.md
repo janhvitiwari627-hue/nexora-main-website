@@ -62,3 +62,18 @@ After this Phase 2 patch, apply the **same** shared file
 `../PHASE5_CANONICAL_AUTH_SERVICE.md`). It updates
 `src/vendor/nexora-auth/` to `@nexora/auth` 1.1.0 / Auth Service contract
 1.0.0. Do not fork a Customer-only auth service.
+
+## Phase 6 — Customer account authorization
+
+After Phase 2 and Phase 5, apply the shared 1.2.0 package and this app's root
+gate in order:
+
+```bash
+git apply ../phase6-unified-app-auth.patch
+git apply phase6-unified-auth.patch
+```
+
+The app calls `requireCustomerAccount()` before loading customer state. This
+re-verifies the Supabase user and requires an active `customer` profile; a raw
+session or local role state is not authorization. Login, signup, recovery,
+password update, and logout use the canonical provider.

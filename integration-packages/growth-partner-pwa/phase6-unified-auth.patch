@@ -1,0 +1,588 @@
+diff --git a/src/App.tsx b/src/App.tsx
+index d93c731..e155eb5 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -8,9 +8,8 @@ import TicketDetailsScreen from './components/dashboard/TicketDetailsScreen';
+ import NewTicketScreen from './components/dashboard/NewTicketScreen';
+ import HelpArticleScreen from './components/dashboard/HelpArticleScreen';
+ import OfflineNotificationBanner from './components/OfflineNotificationBanner';
+-import { useAuth } from '@nexora/auth';
+-import { supabase, supabaseConfigError } from './lib/supabaseClient';
+-import { checkGrowthPartnerAccess } from './lib/gpRepository';
++import { requirePartnerMembership, useAuth } from '@nexora/auth';
++import { supabaseConfigError } from './lib/supabaseClient';
+ import ResetPasswordScreen from './components/ResetPasswordScreen';
+ 
+ // Heavy route-level screens are code-split so the initial bundle only carries
+@@ -100,46 +99,54 @@ export default function App() {
+ 
+   const {
+     isAuthenticated,
++    session,
+     loading: authLoading,
+-    profile,
+     error: authError,
+     signOut: signOutAuth,
+     client,
+   } = useAuth();
+ 
+-  // ---- Password recovery (Phase 2 PKCE) ----
+-  // 'pending'  = a recovery link/code was opened and is being exchanged
+-  // 'active'   = Supabase accepted the recovery token (PASSWORD_RECOVERY)
+-  // 'invalid'  = link expired/used/revoked (or carried an error) — no reset
++  // The shared AuthProvider is the only callback/session listener. Recovery
++  // UI is derived from its canonical state instead of a second auth effect.
+   type RecoveryState = 'none' | 'pending' | 'active' | 'invalid';
+-  const [recovery, setRecovery] = useState<RecoveryState>('none');
+-  const [recoveryError, setRecoveryError] = useState<string | null>(null);
++  const [recoveryDismissed, setRecoveryDismissed] = useState(false);
++  const authParams = new URLSearchParams(window.location.search);
++  const callbackError = authParams.get('error_description') ?? authParams.get('error');
++  const isRecovery = authParams.get('type') === 'recovery' || authParams.has('code');
++  const recovery: RecoveryState = recoveryDismissed || !isRecovery
++    ? 'none'
++    : callbackError
++      ? 'invalid'
++      : authLoading
++        ? 'pending'
++        : session
++          ? 'active'
++          : 'invalid';
++  const recoveryError = callbackError
++    ?? (recovery === 'invalid' ? authError?.message || 'This reset link is invalid, expired or was already used.' : null);
++
++  type PartnerAccessResult = { userId: string; status: 'authorized' | 'denied' } | null;
++  const [partnerAccessResult, setPartnerAccessResult] = useState<PartnerAccessResult>(null);
++  const currentUserId = session?.user.id ?? null;
++  const partnerAccess = currentUserId && partnerAccessResult?.userId === currentUserId
++    ? partnerAccessResult.status
++    : 'checking';
+ 
+   useEffect(() => {
+-    const params = new URLSearchParams(window.location.search);
+-    const error = params.get('error_description') ?? params.get('error');
+-    if (error) {
+-      setRecoveryError(error);
+-      setRecovery('invalid');
+-      window.history.replaceState({}, '', window.location.pathname);
+-      return;
+-    }
+-    if (params.get('type') === 'recovery' || params.get('code')) {
+-      setRecovery('pending');
+-    }
+-    if (!supabase) return;
+-    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+-      if (event === 'PASSWORD_RECOVERY' && session) {
+-        setRecovery('active');
+-        return;
+-      }
+-      if (recovery === 'pending' && !session) {
+-        setRecovery('invalid');
+-        setRecoveryError('This reset link is invalid, expired or was already used.');
+-      }
+-    });
+-    return () => data.subscription.unsubscribe();
+-  }, [recovery]);
++    if (authLoading || !isAuthenticated || !client || !currentUserId) return;
++
++    let active = true;
++    void requirePartnerMembership(client)
++      .then(() => {
++        if (active) setPartnerAccessResult({ userId: currentUserId, status: 'authorized' });
++      })
++      .catch(() => {
++        if (active) setPartnerAccessResult({ userId: currentUserId, status: 'denied' });
++      });
++    return () => {
++      active = false;
++    };
++  }, [authLoading, client, currentUserId, isAuthenticated]);
+ 
+   const [currentPage, setCurrentPage] = useState('dashboard');
+   const [history, setHistory] = useState<string[]>(['dashboard']);
+@@ -258,12 +265,9 @@ export default function App() {
+   // session is destroyed and the normal login gate resumes.
+   if (recovery === 'pending' || recovery === 'active' || recovery === 'invalid') {
+     const endRecovery = () => {
+-      if (supabase) {
+-        void supabase.auth.signOut({ scope: 'global' }).catch(() => {});
+-        void supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+-      }
+-      setRecovery('none');
+-      setRecoveryError(null);
++      void signOutAuth().catch(() => {});
++      setRecoveryDismissed(true);
++      window.history.replaceState({}, '', window.location.pathname);
+     };
+     return (
+       <ResetPasswordScreen
+@@ -294,6 +298,35 @@ export default function App() {
+     );
+   }
+ 
++  if (partnerAccess === 'checking') {
++    return (
++      <div className="min-h-screen bg-[#fcf9f8] flex flex-col items-center justify-center p-6 gap-3">
++        <div className="w-9 h-9 rounded-full border-2 border-pink-200 border-t-primary animate-spin" />
++        <p className="text-xs font-semibold text-gray-400">Verifying partner access…</p>
++      </div>
++    );
++  }
++
++  if (partnerAccess === 'denied') {
++    return (
++      <div className="min-h-screen bg-[#fcf9f8] flex items-center justify-center p-6">
++        <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 text-center shadow-sm">
++          <h1 className="mb-2 text-lg font-bold text-[#1b1c1b]">Partner access required</h1>
++          <p className="mb-5 text-sm leading-6 text-gray-600">
++            This account does not have an active Growth Partner profile linked to a Nexora partner membership.
++          </p>
++          <button
++            type="button"
++            className="h-11 rounded-xl bg-[#b90064] px-5 text-sm font-bold text-white"
++            onClick={() => void signOutAuth()}
++          >
++            Sign in with another account
++          </button>
++        </div>
++      </div>
++    );
++  }
++
+   const renderContent = () => {
+     if (currentPage === 'add-shop') {
+       return <AddShop 
+@@ -375,7 +408,7 @@ export default function App() {
+         onBack={goBack} 
+         onNavigate={navigateTo} 
+         onLogout={() => {
+-              void supabase?.auth.signOut();
++              void signOutAuth();
+         }} 
+       />;
+     }
+@@ -427,7 +460,7 @@ export default function App() {
+       isSyncing={isSyncing}
+       onNavigate={navigateTo}
+       onLogout={() => {
+-          void supabase?.auth.signOut();
++          void signOutAuth();
+       }} />;
+   };
+ 
+diff --git a/src/components/LoginForm.tsx b/src/components/LoginForm.tsx
+index e7378aa..ad785a2 100644
+--- a/src/components/LoginForm.tsx
++++ b/src/components/LoginForm.tsx
+@@ -14,10 +14,7 @@ import {
+   LogIn,
+   ShieldCheck,
+ } from 'lucide-react';
+-import { createNumericRef } from '../utils/id';
+ import { useAuth } from '@nexora/auth';
+-import { supabase, supabaseConfigError } from '../lib/supabaseClient';
+-import { isGrowthPartnerRole } from '../lib/gpRepository';
+ 
+ type AuthMode = 'login' | 'signup';
+ 
+@@ -37,14 +34,8 @@ interface SignupErrors {
+ const isValidEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+ const isValidMobile = (v: string) => /^\d{10}$/.test(v.trim());
+ 
+-/** Builds a partner code like NX-JA-4821 from the partner's city. */
+-function buildAgentCode(city: string): string {
+-  const letters = (city.replace(/[^a-zA-Z]/g, '').slice(0, 2) || 'IN').toUpperCase();
+-  return `NX-${letters}-${createNumericRef(4)}`;
+-}
+-
+ export default function LoginForm({ onLoginSuccess }: { onLoginSuccess: () => void }) {
+-  const { signIn, configError } = useAuth();
++  const { signIn, signUp, signOut, sendPasswordReset, configError } = useAuth();
+   const [mode, setMode] = useState<AuthMode>('login');
+   const [showPassword, setShowPassword] = useState(false);
+ 
+@@ -95,7 +86,7 @@ export default function LoginForm({ onLoginSuccess }: { onLoginSuccess: () => vo
+   };
+ 
+   const scorePassword = (val: string) => ({
+-    minLength: val.length >= 6,
++    minLength: val.length >= 8,
+     hasNumber: /\d/.test(val),
+     hasUpper: /[A-Z]/.test(val),
+   });
+@@ -132,8 +123,8 @@ export default function LoginForm({ onLoginSuccess }: { onLoginSuccess: () => vo
+       return;
+     }
+ 
+-    if (!supabase) {
+-      setErrors({ username: supabaseConfigError || 'Supabase is not configured.', password: '' });
++    if (configError) {
++      setErrors({ username: configError, password: '' });
+       return;
+     }
+ 
+@@ -205,74 +196,35 @@ export default function LoginForm({ onLoginSuccess }: { onLoginSuccess: () => vo
+     setSuSubmitting(true);
+ 
+     const name = suName.trim().replace(/\s+/g, ' ');
+-    const city = suCity.trim();
+ 
+     try {
+-      if (!supabase || configError) {
+-        setSuErrors({ email: configError || supabaseConfigError || 'Supabase is not configured.' });
++      if (configError) {
++        setSuErrors({ email: configError });
+         setSuSubmitting(false);
+         return;
+       }
+-      // Real account in the shared Nexora project. The Growth Partner role is
+-      // assigned by Nexora ops after verification.
+-      const { data, error } = await supabase.auth.signUp({
++      // Self-service registration always creates a customer identity. Growth
++      // Partner access is provisioned by Nexora ops and is never selected by
++      // frontend metadata.
++      const result = await signUp({
+         email,
+         password: suPassword,
+-        options: {
+-          data: {
+-            full_name: name,
+-            mobile,
+-            city,
+-            partner_code: buildAgentCode(city),
+-          },
+-        },
++        fullName: name,
++        phone: mobile,
++        role: 'customer',
+       });
+-      if (error) {
+-        setSuErrors({
+-          email: error.message.includes('already registered')
+-            ? 'This email is already registered. Please sign in instead.'
+-            : `Sign-up failed: ${error.message}`,
+-        });
+-        setSuSubmitting(false);
+-        return;
+-      }
+ 
+       localStorage.setItem('rememberedUsername', email);
+-
+-      if (!data.session) {
+-        // Email confirmation required before first sign-in.
+-        setMessage({
+-          type: 'success',
+-          text: 'Account created! Check your email to confirm your address, then sign in.',
+-        });
+-        setSuSubmitting(false);
+-        switchMode('login');
+-        return;
+-      }
+-
+-      // Signup success ≠ application access. A fresh account is always a
+-      // plain customer until Nexora ops assigns the permanent Growth Partner
+-      // role, so run the same authorization gate as login before entering.
+-      const signupUserId = data.user?.id;
+-      if (signupUserId) {
+-        const roleCheck = await isGrowthPartnerRole(supabase, signupUserId);
+-        if (!roleCheck.allowed) {
+-          await supabase.auth.signOut({ scope: 'global' }).catch(() => {});
+-          await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+-          setSuSubmitting(false);
+-          switchMode('login');
+-          setMessage({
+-            type: 'success',
+-            text:
+-              'Account created! Your Growth Partner role is assigned by Nexora ops after verification. ' +
+-              'You can sign in to this app once your role is activated — until then the Customer app works with this account.',
+-          });
+-          return;
+-        }
+-      }
+-
++      if (result.session) await signOut();
+       setSuSubmitting(false);
+-      onLoginSuccess();
++      switchMode('login');
++      setMessage({
++        type: 'success',
++        text: result.needsEmailConfirmation
++          ? 'Account created! Check your email to confirm your address, then sign in.'
++          : 'Account created! Your Growth Partner role is assigned by Nexora ops after verification. ' +
++            'Until then, use this same account in the Customer app.',
++      });
+     } catch (err) {
+       console.warn('Sign-up failed:', err);
+       setSuErrors({ email: 'Sign-up failed. Check your connection and try again.' });
+@@ -298,27 +250,21 @@ export default function LoginForm({ onLoginSuccess }: { onLoginSuccess: () => vo
+       setResetError('Password reset works with your registered email address (not mobile).');
+       return;
+     }
+-    if (configError || supabaseConfigError) {
+-      setResetError(configError || supabaseConfigError || 'Supabase is not configured.');
++    if (configError) {
++      setResetError(configError);
+       return;
+     }
+     setResetError('');
+     setResetStatus('sending');
+-    // Real Supabase Auth recovery through @nexora/auth (PKCE-safe redirects).
+-    if (!supabase) {
+-      setResetError(supabaseConfigError || 'Supabase is not configured.');
+-      setResetStatus('idle');
+-      return;
+-    }
+-    const { error } = await supabase.auth.resetPasswordForEmail(target, {
+-      redirectTo: window.location.origin,
+-    });
+-    if (error) {
++    try {
++      // Neutral response: the canonical service never reveals whether an
++      // email exists and always uses the shared PKCE recovery route.
++      await sendPasswordReset(target);
++      setResetStatus('sent');
++    } catch {
+       setResetStatus('idle');
+-      setResetError(`Could not send the reset link: ${error.message}`);
+-      return;
++      setResetError('Could not send the reset link. Check your connection and try again.');
+     }
+-    setResetStatus('sent');
+   };
+ 
+   const fieldWrap = (hasError?: string) =>
+@@ -430,7 +376,7 @@ export default function LoginForm({ onLoginSuccess }: { onLoginSuccess: () => vo
+             </div>
+             {errors.password && <p className="text-xs text-[#93000a] mt-1">{errors.password}</p>}
+             <div className="text-xs space-y-1 mt-2">
+-              <p className={passwordStrength.minLength ? 'text-[#2E7D32]' : 'text-[#8e6f77]'}>• Min 6 characters</p>
++              <p className={passwordStrength.minLength ? 'text-[#2E7D32]' : 'text-[#8e6f77]'}>• Min 8 characters</p>
+               <p className={passwordStrength.hasNumber ? 'text-[#2E7D32]' : 'text-[#8e6f77]'}>• At least one number</p>
+               <p className={passwordStrength.hasUpper ? 'text-[#2E7D32]' : 'text-[#8e6f77]'}>• At least one uppercase letter</p>
+             </div>
+@@ -595,7 +541,7 @@ export default function LoginForm({ onLoginSuccess }: { onLoginSuccess: () => vo
+             </div>
+             {suErrors.password && <p className="text-xs text-[#93000a] mt-1">{suErrors.password}</p>}
+             <div className="text-xs space-y-1 mt-2">
+-              <p className={suStrength.minLength ? 'text-[#2E7D32]' : 'text-[#8e6f77]'}>• Min 6 characters</p>
++              <p className={suStrength.minLength ? 'text-[#2E7D32]' : 'text-[#8e6f77]'}>• Min 8 characters</p>
+               <p className={suStrength.hasNumber ? 'text-[#2E7D32]' : 'text-[#8e6f77]'}>• At least one number</p>
+               <p className={suStrength.hasUpper ? 'text-[#2E7D32]' : 'text-[#8e6f77]'}>• At least one uppercase letter</p>
+             </div>
+diff --git a/src/components/ResetPasswordScreen.tsx b/src/components/ResetPasswordScreen.tsx
+index 14bb292..5486eb6 100644
+--- a/src/components/ResetPasswordScreen.tsx
++++ b/src/components/ResetPasswordScreen.tsx
+@@ -1,6 +1,6 @@
+-import React, { useEffect, useRef, useState } from 'react';
++import React, { useEffect, useState } from 'react';
+ import { Eye, EyeOff, Lock, AlertCircle, CheckCircle2, ShieldAlert, ArrowLeft } from 'lucide-react';
+-import { supabase } from '../lib/supabaseClient';
++import { useAuth } from '@nexora/auth';
+ 
+ type ResetView = 'checking' | 'form' | 'submitting' | 'success' | 'invalid';
+ 
+@@ -37,73 +37,27 @@ export default function ResetPasswordScreen({
+   const [showPassword, setShowPassword] = useState(false);
+   const [showConfirm, setShowConfirm] = useState(false);
+   const [fieldError, setFieldError] = useState('');
+-  const mountedAt = useRef(Date.now());
++  const { updatePassword, requireAuth } = useAuth();
+ 
+-  // Recovery session watch: Supabase fires PASSWORD_RECOVERY when the link's
+-  // tokens are accepted. If the event was consumed before this screen
+-  // mounted, getSession() still returns the recovery session — both paths
+-  // unlock the form. Anything else (dead/reused link) expires into 'invalid'.
++  // App.tsx only mounts this surface after the canonical provider has
++  // exchanged the PKCE callback. No second Supabase session listener lives in
++  // this component.
+   useEffect(() => {
+-    if (initialError || !supabase) return;
+-    let settled = false;
+-    // Unlock the form ONLY after the recovery session is validated against
+-    // the server. Hash-accepted tokens that were silently revoked (link
+-    // already used, session killed) fail getUser() with 401/403 → invalid.
+-    const markInvalid = (msg: string) => {
+-      if (settled) return;
+-      settled = true;
+-      setErrorText(msg);
+-      setView('invalid');
+-    };
+-    const settleWithServerCheck = () => {
+-      if (settled) return;
+-      supabase!.auth
+-        .getUser()
+-        .then(({ data, error }) => {
+-          if (settled) return;
+-          if (data?.user && !error) {
+-            settled = true;
+-            setView('form');
+-            return;
+-          }
+-          const status = (error as { status?: number } | null)?.status;
+-          if (status === 400 || status === 401 || status === 403) {
+-            markInvalid('This reset link is invalid, expired or was already used. Request a fresh one.');
+-          }
+-          // transient/network error → stay in 'checking'; fail-over timer decides
+-        })
+-        .catch(() => {});
+-    };
+-    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+-      if (event === 'PASSWORD_RECOVERY' && session && !settled) {
+-        settleWithServerCheck();
+-      }
+-    });
+-    supabase.auth
+-      .getSession()
+-      .then(({ data }) => {
+-        if (data.session && !settled) settleWithServerCheck();
+-      })
+-      .catch(() => {});
+-    const failTimer = window.setTimeout(() => {
+-      markInvalid('This reset link is invalid, expired or was already used. Request a fresh one.');
+-    }, 8000);
+-    return () => {
+-      window.clearTimeout(failTimer);
+-      sub.subscription.unsubscribe();
+-    };
+-  }, [initialError]);
+-
+-  // App-level verification finished and still no recovery session → invalid.
+-  useEffect(() => {
+-    if (!verifying && view === 'checking' && Date.now() - mountedAt.current > 1500) {
+-      setErrorText('This reset link is invalid, expired or was already used. Request a fresh one.');
++    if (initialError) {
++      setErrorText(initialError);
+       setView('invalid');
++    } else if (!verifying) {
++      void requireAuth()
++        .then(() => setView('form'))
++        .catch(() => {
++          setErrorText('This reset link is invalid, expired or was already used. Request a fresh one.');
++          setView('invalid');
++        });
+     }
+-  }, [verifying, view]);
++  }, [initialError, requireAuth, verifying]);
+ 
+   const score = (val: string) => ({
+-    minLength: val.length >= 6,
++    minLength: val.length >= 8,
+     hasNumber: /\d/.test(val),
+     hasUpper: /[A-Z]/.test(val),
+   });
+@@ -111,9 +65,8 @@ export default function ResetPasswordScreen({
+ 
+   const handleSubmit = async (e: React.FormEvent) => {
+     e.preventDefault();
+-    if (!supabase) return;
+     if (!s.minLength || !s.hasNumber || !s.hasUpper) {
+-      setFieldError('Password must be 6+ characters with a number and an uppercase letter.');
++      setFieldError('Password must be 8+ characters with a number and an uppercase letter.');
+       return;
+     }
+     if (password !== confirm) {
+@@ -122,23 +75,22 @@ export default function ResetPasswordScreen({
+     }
+     setFieldError('');
+     setView('submitting');
+-    // Supabase Auth owns the password. The recovery session issued by the
+-    // emailed link is what authorizes this update call.
+-    const { error } = await supabase.auth.updateUser({ password });
+-    if (error) {
++    try {
++      // The canonical service owns the password update; the provider's PKCE
++      // recovery session is the only authority for this operation.
++      await updatePassword(password);
++      setPassword('');
++      setConfirm('');
++      setView('success');
++    } catch (cause) {
+       setView('form');
+-      const msg = error.message || '';
++      const msg = cause instanceof Error ? cause.message : 'Unknown error';
+       setFieldError(
+         /same as the old/i.test(msg) || /different from the old/i.test(msg)
+           ? 'New password must be different from your current password.'
+           : `Could not update password: ${msg}`,
+       );
+-      return;
+     }
+-    // Password is NEVER kept in state beyond this submit, never persisted.
+-    setPassword('');
+-    setConfirm('');
+-    setView('success');
+   };
+ 
+   const inputWrap =
+@@ -232,7 +184,7 @@ export default function ResetPasswordScreen({
+                 </button>
+               </div>
+               <div className="text-[11px] text-gray-400 space-y-0.5 ml-1 pt-1">
+-                <p className={s.minLength ? 'text-emerald-600' : ''}>• Min 6 characters</p>
++                <p className={s.minLength ? 'text-emerald-600' : ''}>• Min 8 characters</p>
+                 <p className={s.hasNumber ? 'text-emerald-600' : ''}>• At least one number</p>
+                 <p className={s.hasUpper ? 'text-emerald-600' : ''}>• At least one uppercase letter</p>
+               </div>
+diff --git a/src/components/dashboard/AccountSettingsScreen.tsx b/src/components/dashboard/AccountSettingsScreen.tsx
+index 5447109..a2ffc31 100644
+--- a/src/components/dashboard/AccountSettingsScreen.tsx
++++ b/src/components/dashboard/AccountSettingsScreen.tsx
+@@ -1,5 +1,5 @@
+ import React, { useState, useEffect } from 'react';
+-import { supabase } from '../../lib/supabaseClient';
++import { useAuth } from '@nexora/auth';
+ import { updatePartnerProfile } from '../../lib/gpRepository';
+ import { 
+   ArrowLeft, 
+@@ -19,16 +19,17 @@ import {
+ } from 'lucide-react';
+ 
+ export default function AccountSettingsScreen({ onBack }: { onBack: () => void }) {
++  const { client, getCurrentUser, updatePassword } = useAuth();
+   const [profile, setProfile] = useState({ name: '', email: '', mobile: '', alternateMobile: '' });
+ 
+   useEffect(() => {
+     let cancelled = false;
+     const load = async () => {
+       try {
+-        if (!supabase) return;
+-        const { data: { user } } = await supabase.auth.getUser();
+-        if (!user || cancelled) return;
+-        const { data: row } = await supabase
++        if (!client) return;
++        const user = await getCurrentUser();
++        if (cancelled) return;
++        const { data: row } = await client
+           .from('profiles')
+           .select('full_name, phone')
+           .eq('id', user.id)
+@@ -45,7 +46,7 @@ export default function AccountSettingsScreen({ onBack }: { onBack: () => void }
+     };
+     void load();
+     return () => { cancelled = true; };
+-  }, []);
++  }, [client, getCurrentUser]);
+ 
+ 
+   const [savedSuccess, setSavedSuccess] = useState(false);
+@@ -69,7 +70,8 @@ export default function AccountSettingsScreen({ onBack }: { onBack: () => void }
+ 
+   const handleSaveProfile = async () => {
+     try {
+-      await updatePartnerProfile(supabase!, {
++      if (!client) throw new Error('Supabase is not configured.');
++      await updatePartnerProfile(client, {
+         full_name: profile.name,
+         phone: profile.mobile || null,
+       });
+@@ -110,8 +112,7 @@ export default function AccountSettingsScreen({ onBack }: { onBack: () => void }
+       return;
+     }
+     try {
+-      const { error } = await supabase!.auth.updateUser({ password: newPassword });
+-      if (error) throw error;
++      await updatePassword(newPassword);
+       setCurrentPassword('');
+       setNewPassword('');
+       setConfirmPassword('');

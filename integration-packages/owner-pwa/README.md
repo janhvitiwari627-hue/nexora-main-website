@@ -67,3 +67,18 @@ After this Phase 2 patch, apply the **same** shared file
 `npx tsc --noEmit` still reports unrelated pre-existing target-repo errors in
 Razorpay API route typings and `Settings.tsx`; no changed auth file contributes
 to those errors. The production Vite + esbuild build passes.
+
+## Phase 6 — Owner workspace authorization
+
+After Phase 2 and Phase 5, apply the shared 1.2.0 package and this app's root
+gate in order:
+
+```bash
+git apply ../phase6-unified-app-auth.patch
+git apply phase6-unified-auth.patch
+```
+
+The app now requires an active `business_user` profile **and** at least one
+salon from `public.owner_salon_ids()` before opening the dashboard. The RPC is
+scoped by `auth.uid()`; no URL, localStorage role, or client-provided salon id
+grants access. A failed gate signs the session out and fails closed.

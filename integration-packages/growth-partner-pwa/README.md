@@ -62,3 +62,18 @@ After this Phase 2 patch, apply the **same** shared file
 `../PHASE5_CANONICAL_AUTH_SERVICE.md`). It updates
 `src/vendor/nexora-auth/` to `@nexora/auth` 1.1.0 / Auth Service contract
 1.0.0. Do not fork a Growth Partner-only auth service.
+
+## Phase 6 — Growth Partner membership authorization
+
+After Phase 2 and Phase 5, apply the shared 1.2.0 package and this app's root
+gate in order:
+
+```bash
+git apply ../phase6-unified-app-auth.patch
+git apply phase6-unified-auth.patch
+```
+
+The app requires an active `growth_partner` profile and a
+`growth_partners.user_id = auth.uid()` row. There is no separate membership
+`status` requirement. Public signup requests only the allowed `customer` role;
+Growth Partner access remains operations-provisioned and cannot be self-granted.
