@@ -29,8 +29,11 @@ function safePortalOrigin(value: string | undefined): string | null {
   }
 }
 
+// Growth Partner PWA deployed URL — used as fallback when Vercel env var is not set
 const GROWTH_PARTNER_APP_ORIGIN = safePortalOrigin(
-  process.env.GROWTH_PARTNER_APP_ORIGIN ?? process.env.NEXORA_PARTNER_PWA_ORIGIN,
+  process.env.GROWTH_PARTNER_APP_ORIGIN ?? 
+  process.env.NEXORA_PARTNER_PWA_ORIGIN ??
+  "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app",
 );
 
 const nextConfig: NextConfig = {
@@ -123,7 +126,7 @@ const nextConfig: NextConfig = {
     // here would hide a runtime key behind a build-time miss.
     NEXT_PUBLIC_NEXORA_CUSTOMER_PORTAL_MOUNTED: process.env.NEXORA_CUSTOMER_PWA_ORIGIN ? "true" : "false",
     NEXT_PUBLIC_NEXORA_OWNER_PORTAL_MOUNTED: process.env.NEXORA_OWNER_PWA_ORIGIN ? "true" : "false",
-    NEXT_PUBLIC_NEXORA_PARTNER_PORTAL_MOUNTED: (process.env.GROWTH_PARTNER_APP_ORIGIN || process.env.NEXORA_PARTNER_PWA_ORIGIN) ? "true" : "false",
+    NEXT_PUBLIC_NEXORA_PARTNER_PORTAL_MOUNTED: GROWTH_PARTNER_APP_ORIGIN ? "true" : "false",
     NEXT_PUBLIC_NEXORA_TEMPLATE_PORTAL_MOUNTED: process.env.NEXORA_TEMPLATE_PWA_ORIGIN ? "true" : "false",
     NEXT_PUBLIC_EXPECTED_SUPABASE_URL: EXPECTED_SUPABASE_URL,
     // Phase 1 — origins allowed to receive an authenticated PKCE redirect.
