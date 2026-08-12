@@ -3,13 +3,21 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Session, SupabaseClient } from "@supabase/supabase-js";
 import {
+  AUTH_ROUTES,
   EXPECTED_SUPABASE_HOSTNAME,
+  ROLE_LABELS,
   SUPABASE_PROJECT_REF,
+  authErrorMessage,
   getSupabaseClient,
   homePathForRole,
-  useAuth,
+  isSignupRole,
+  neutralRecoveryMessage,
+  normalizeSignupRole,
   safeRedirectUrl,
+  safeReturnPath,
   supabaseConfigErrorMessage,
+  useAuth,
+  type PlatformRole,
 } from "./lib/auth";
 import {
   PORTAL_PATHS,
@@ -33,7 +41,7 @@ import {
 } from "./lib/location";
 import { LocationBadge } from "./lib/location/LocationBadge";
 
-type Role = "customer" | "business_user" | "growth_partner";
+type Role = PlatformRole;
 type Salon = {
   id: string;
   slug: string;
@@ -276,7 +284,7 @@ const EXPECTED_SUPABASE_HOST = EXPECTED_SUPABASE_HOSTNAME;
 const missingSupabaseConfigMessage =
   `Nexora login service is not configured for this deployment. Set NEXT_PUBLIC_SUPABASE_URL=https://${EXPECTED_SUPABASE_HOST} and NEXT_PUBLIC_SUPABASE_ANON_KEY from the shared Supabase project ${SUPABASE_PROJECT_REF}.`;
 
-function isKnownPlatformRole(value: unknown): value is Role {
+function isMountedPortalRole(value: unknown): value is "customer" | "business_user" | "growth_partner" {
   return value === "customer" || value === "business_user" || value === "growth_partner";
 }
 
@@ -362,9 +370,7 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   const authState: AuthState = {
     loading: authLoading,
     session,
-    role: providerRole === "customer" || providerRole === "business_user" || providerRole === "growth_partner"
-      ? providerRole
-      : undefined,
+    role: providerRole ?? undefined,
   };
 
   // Auto GPS for the whole app. The watcher starts on mount and is shared by
@@ -450,16 +456,12 @@ function Header({
   authState: AuthState;
   location: UseLocationResult;
 }) {
-  const dashboardLabel =
-    authState.role === "business_user"
-      ? "Shop Owner app"
-      : authState.role === "growth_partner"
-        ? "Growth Partner app"
-        : authState.role === "customer"
-          ? "Customer app"
-          : "Account";
+  const dashboardLabel = authState.role
+    ? `${ROLE_LABELS[authState.role]} app`
+    : "Account";
   // Canonical same-origin portal paths keep all PWAs on one browser origin.
-  const dashboardPath = authState.role ? portalPathForRole(authState.role) : "/dashboard";
+  // Delivery/Admin homes resolve to the authenticated "portal not mounted" screens.
+  const dashboardPath = authState.role ? homePathForRole(authState.role) : "/dashboard";
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const go = (target: string) => { setMobileMenuOpen(false); navigate(target); };
   const openJobPortal = () => {
@@ -748,7 +750,7 @@ function RoleCard({ title, text, path, navigate }: { title: string; text: string
 
 function RoleEntry({ path, navigate }: { path: string; navigate: (path: string) => void }) {
   const label = path === "/owner" ? "Shop Owner" : path === "/growth-partner" ? "Growth Partner" : "Customer";
-  const platformRole: Role = path === "/owner" ? "business_user" : path === "/growth-partner" ? "growth_partner" : "customer";
+  const platformRole = path === "/owner" ? "business_user" as const : path === "/growth-partner" ? "growth_partner" as const : "customer" as const;
   const role = roleQueryForPortalRole(platformRole);
   const portalPath = portalPathForRole(platformRole);
   return (
@@ -1826,7 +1828,7 @@ function SalonPage({
   const [nextSlot, setNextSlot] = useState<string | null>(null);
   const [similar, setSimilar] = useState<NearbyRow[]>([]);
   const [shareToast, setShareToast] = useState(false);
-  const [mySession, setMySession] = useState<Session | null>(null);
+  const { session: mySession } = useAuth();
   const { plans: membershipPlans } = useMembershipPlans(online);
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -1848,16 +1850,14 @@ function SalonPage({
         if ((ns ?? [])[0]?.next_slot_iso) setNextSlot(String((ns ?? [])[0].next_slot_iso));
         const { data: sim } = await client.rpc("marketplace_nearby", { p_area: match.area ?? null, p_city: match.city ?? null, p_limit: 3 });
         setSimilar(((sim ?? []) as NearbyRow[]).filter((r) => r.id !== match.id));
-        // Favourite state (own rows only).
-        const { data: { session } } = await client.auth.getSession();
-        setMySession(session);
-        if (session?.user) {
-          const { data: fav } = await client.from("favorite_salons").select("salon_id").eq("user_id", session.user.id).eq("salon_id", match.id).maybeSingle();
+        // Favourite state (own rows only). Session comes from the shared provider.
+        if (mySession?.user) {
+          const { data: fav } = await client.from("favorite_salons").select("salon_id").eq("user_id", mySession.user.id).eq("salon_id", match.id).maybeSingle();
           setIsFavourite(Boolean(fav));
         }
       }
     } catch (cause) { setError(friendlyError(cause)); } finally { setLoading(false); }
-  }, [slug]);
+  }, [mySession?.user?.id, slug]);
   useEffect(() => {
     const timer = window.setTimeout(() => {
       if (online) void load();
@@ -2054,10 +2054,20 @@ function readAuthQueryParams() {
 }
 
 function mapRequestedRoleToPlatformRole(requested: string | null): Role {
-  if (requested === "owner") return "business_user";
-  if (requested === "growth-partner") return "growth_partner";
-  if (requested === "customer" || requested === "business_user" || requested === "growth_partner") return requested as Role;
+  if (requested === "owner" || requested === "business_user") return "business_user";
+  if (requested === "growth-partner" || requested === "growth_partner") return "growth_partner";
+  if (requested === "delivery" || requested === "delivery_partner") return "delivery_partner";
+  if (requested === "admin" || requested === "administrator") return "admin";
+  if (requested === "customer") return "customer";
   return "customer";
+}
+
+function destinationForVerifiedRole(role: PlatformRole, requestedReturnTo: string | null): string {
+  const home = homePathForRole(role);
+  // Customers may resume only a validated local path. Every other role —
+  // including Delivery Partner and Admin — continues to its server-profile home.
+  if (role !== "customer") return home;
+  return safeReturnPath(requestedReturnTo, home);
 }
 
 function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navigate: (path: string) => void; refCode: string }) {
@@ -2071,39 +2081,35 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState<"error" | "success" | "info">("error");
   const [showPassword, setShowPassword] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
   // Section 10.2 — Google OAuth is fail-safe OFF unless the deployment opts in.
   const googleOauthConfigured = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED === "true";
   const [googleOauthFailed, setGoogleOauthFailed] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
+  const {
+    signIn,
+    signUp,
+    signInWithGoogle,
+    resendVerification,
+    requireAuth,
+    configError,
+  } = useAuth();
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const { requested, reason } = readAuthQueryParams();
       if (requested) {
-        setRole(mapRequestedRoleToPlatformRole(requested));
+        const mapped = mapRequestedRoleToPlatformRole(requested);
+        // Admin is never a public self-service signup choice.
+        setRole(mode === "signup" && mapped === "admin" ? "customer" : mapped);
       }
       if (reason === "session-expired") {
-        setMessage("Your Customer session expired. Log in again to continue booking.");
+        setMessage("Your session expired. Log in again to continue.");
         setMessageType("info");
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
-
-  // The auth trigger is the only profile creator. The website may retry a
-  // read while the trigger transaction settles, but it never upserts a role.
-  const ensureProfileWithRetry = async (client: SupabaseClient, userId: string) => {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const { data, error } = await client
-        .from("profiles")
-        .select("platform_role,is_active,full_name")
-        .eq("id", userId)
-        .maybeSingle();
-      if (!error && data) return data;
-      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
-    }
-    return null;
-  };
+  }, [mode]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -2114,8 +2120,8 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
       setMessageType("error");
       return;
     }
-    if (password.length < 6) {
-      setMessage("Password must be at least 6 characters.");
+    if (password.length < 8) {
+      setMessage("Password must be at least 8 characters.");
       setMessageType("error");
       return;
     }
@@ -2129,63 +2135,31 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
     setMessage("");
     setMessageType("error");
     try {
-      const client = getClient();
-      if (!client) throw new Error(getDetailedConfigError());
-
       if (mode === "signup") {
-        // Real Supabase signup. Confirmation email uses the PKCE callback
-        // route; the confirmation link lands on /auth/callback.
-        const { data, error } = await client.auth.signUp({
+        const signupRole = normalizeSignupRole(role);
+        const result = await signUp({
           email: trimmedEmail,
           password,
-          options: {
-            data: { full_name: trimmedName || trimmedEmail.split("@")[0], signup_role: role, ...(refCode ? { ref_code: refCode } : {}) },
-          },
+          fullName: trimmedName,
+          role: signupRole,
+          refCode: refCode || null,
+          returnTo: readAuthQueryParams().returnTo,
         });
-        if (error) throw error;
-
-        if (!data.session) throw new Error("Account activation did not complete. Please try logging in or contact support.");
-        // Auto-confirmed signup continues directly to the server profile check.
+        if (result.needsEmailConfirmation || !result.session) {
+          setNeedsVerification(true);
+          setMessage("Account created. Check your email for a confirmation link before signing in.");
+          setMessageType("success");
+          return;
+        }
       } else {
-        // login mode
-        // Preserve contract pattern for auth-config test while using sanitized email
-        const email = trimmedEmail;
-        const { error } = await client.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        await signIn({ email: trimmedEmail, password });
       }
 
-      // After signup or login, verify user and profile
-      const { data: { user }, error: userError } = await client.auth.getUser();
-      if (userError) throw userError;
-      if (!user) throw new Error("We could not verify this session. Please try logging in again.");
-
-      // Ensure profile exists and active – handles trigger race and missing profile bug
-      const profile = await ensureProfileWithRetry(client, user.id);
-
-      // If still no profile, fetch with single to get error for debugging
-      let finalProfile = profile;
-      if (!finalProfile) {
-        const { data: p, error: pErr } = await client.from("profiles").select("platform_role,is_active").eq("id", user.id).single();
-        if (pErr) throw pErr;
-        finalProfile = p as typeof profile;
-      }
-
-      if (!finalProfile) throw new Error("Profile not found. Please contact support – your auth user exists but profile row is missing.");
-      if (!(finalProfile as { is_active?: boolean }).is_active) {
-        await client.auth.signOut();
-        throw new Error("This account is inactive. Contact Nexora support.");
-      }
-
-      const platformRole = (finalProfile as { platform_role: Role }).platform_role as Role;
-      if (!["customer", "business_user", "growth_partner"].includes(platformRole)) {
-        await client.auth.signOut();
-        throw new Error("This account has no valid Nexora role. Contact support.");
-      }
+      const { profile } = await requireAuth();
       const { returnTo } = readAuthQueryParams();
-      // Customers keep their deep link; other roles always land on their own portal.
-      navigate(platformRole === "customer" && returnTo ? returnTo : portalPathForRole(platformRole));
+      navigate(destinationForVerifiedRole(profile.role, returnTo));
     } catch (cause) {
-      const parsed = parseSupabaseAuthError(cause);
+      const parsed = authErrorMessage(cause);
       setMessage(parsed);
       setMessageType(parsed.startsWith("Account created") || parsed.includes("check your email") ? "success" : "error");
     } finally {
@@ -2193,33 +2167,40 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
     }
   };
 
-  // Section 10.2 — Google OAuth via Supabase, PKCE end-to-end (client
-  // flowType is "pkce", so signInWithOAuth generates and verifies the code
-  // challenge). Fail-safe: any provider error hides the button entirely.
+  const resend = async () => {
+    setBusy(true);
+    try {
+      await resendVerification(email.trim().toLowerCase());
+      setMessage("If that address still needs confirming, we have sent a new link. Check your inbox and spam folder.");
+      setMessageType("success");
+    } catch (cause) {
+      setMessage(authErrorMessage(cause));
+      setMessageType("error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Section 10.2 — Google OAuth via the shared Auth Service. The client
+  // flowType is "pkce", so signInWithGoogle generates and verifies the code
+  // challenge through buildCallbackUrl(). Fail-safe: any provider error hides
+  // the button entirely.
   const continueWithGoogle = async () => {
     setGoogleBusy(true);
     try {
-      const client = getClient();
-      if (!client) throw new Error(missingSupabaseConfigMessage);
-      const { error } = await client.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-          queryParams: { prompt: "select_account" },
-        },
-      });
-      if (error) throw error;
+      const { returnTo } = readAuthQueryParams();
+      await signInWithGoogle({ returnTo, role: isSignupRole(role) ? role : undefined });
     } catch (cause) {
       // Unverified provider, missing keys, or blocked redirect → hide button.
-      console.warn("[Nexora] Google OAuth unavailable:", friendlyError(cause));
+      console.warn("[Nexora] Google OAuth unavailable:", authErrorMessage(cause));
       setGoogleOauthFailed(true);
     } finally {
       setGoogleBusy(false);
     }
   };
 
-  const roleLabel = role === "business_user" ? "Shop Owner" : role === "growth_partner" ? "Growth Partner" : "Customer";
-  const configDiagnostics = typeof window !== "undefined" && !getClient() ? getDetailedConfigError() : "";
+  const roleLabel = ROLE_LABELS[role] ?? "Customer";
+  const configDiagnostics = configError || (typeof window !== "undefined" && !getClient() ? getDetailedConfigError() : "");
 
   return (
     <main className="center-page auth-bg">
@@ -2237,6 +2218,8 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
             <option value="customer">Customer</option>
             <option value="business_user">Shop Owner</option>
             <option value="growth_partner">Growth Partner</option>
+            <option value="delivery_partner">Delivery Partner</option>
+            {mode === "login" && <option value="admin">Administrator</option>}
           </select>
           {mode === "login" && <small className="preview-note">Role is fixed to your existing profile. You will be routed automatically.</small>}
         </label>
@@ -2255,12 +2238,12 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
           <div style={{ position: "relative" }}>
             <input
               required
-              minLength={6}
+              minLength={8}
               type={showPassword ? "text" : "password"}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               autoComplete={mode === "login" ? "current-password" : "new-password"}
-              placeholder="At least 6 characters"
+              placeholder="At least 8 characters"
               style={{ paddingRight: 44 }}
             />
             <button
@@ -2299,8 +2282,13 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
               Forgot password?
             </button>
           )}
+          {needsVerification && mode === "signup" && (
+            <button type="button" className="secondary compact" disabled={busy} onClick={() => void resend()}>
+              {busy ? "Sending…" : "Resend confirmation email"}
+            </button>
+          )}
           {messageType === "success" && mode === "signup" && (
-            <button type="button" className="secondary compact" onClick={() => navigate(`/auth/login?role=${role === "business_user" ? "owner" : role === "growth_partner" ? "growth-partner" : "customer"}`)}>
+            <button type="button" className="secondary compact" onClick={() => navigate(`${AUTH_ROUTES.login}?role=${role === "business_user" ? "owner" : role === "growth_partner" ? "growth-partner" : role === "delivery_partner" ? "delivery" : "customer"}`)}>
               Go to login →
             </button>
           )}
@@ -2319,17 +2307,6 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
 // through supabase-js against the shared project, PKCE only.
 // ---------------------------------------------------------------------------
 
-/** Resolve the caller's active profile; never trust URL or storage roles. */
-async function resolveActiveProfile(client: SupabaseClient, userId: string) {
-  const { data, error } = await client
-    .from("profiles")
-    .select("platform_role,is_active")
-    .eq("id", userId)
-    .maybeSingle();
-  if (error || !data || data.is_active !== true || !isKnownPlatformRole(data.platform_role)) return null;
-  return data as { platform_role: Role; is_active: boolean };
-}
-
 /** Same-origin-only redirect target; blocks protocol-relative and absolute URLs. */
 function safeSameOriginPath(candidate: string | null, fallback: string): string {
   if (!candidate || !candidate.startsWith("/") || candidate.startsWith("//") || candidate.includes("\\")) return fallback;
@@ -2338,6 +2315,7 @@ function safeSameOriginPath(candidate: string | null, fallback: string): string 
 }
 
 function AuthCallbackPage({ navigate }: { navigate: (path: string) => void }) {
+  const { handleAuthCallback } = useAuth();
   const [state, setState] = useState<{ status: "working" | "error"; message: string }>({
     status: "working",
     message: "Completing secure sign-in…",
@@ -2345,59 +2323,33 @@ function AuthCallbackPage({ navigate }: { navigate: (path: string) => void }) {
 
   useEffect(() => {
     const timer = window.setTimeout(async () => {
-      const client = getClient();
-      if (!client) {
-        setState({ status: "error", message: missingSupabaseConfigMessage });
-        return;
-      }
       try {
         const url = new URL(window.location.href);
-        const providerError = url.searchParams.get("error_description") ?? url.searchParams.get("error");
-        if (providerError) throw new Error(providerError);
-        const code = url.searchParams.get("code");
-        if (code) {
-          // PKCE: exchange the one-time code with the locally stored
-          // code_verifier. supabase-js may already have exchanged it
-          // (detectSessionInUrl), so a code-consumed error is tolerated
-          // when a live session exists afterwards.
-          const { error } = await client.auth.exchangeCodeForSession(code);
-          if (error && !/invalid|expired|not found|already|code challenge/i.test(error.message)) {
-            throw error;
-          }
-        }
-        const { data: { session } } = await client.auth.getSession();
-        if (!session?.user) {
-          throw new Error("This sign-in link is invalid or has expired. Please log in again.");
-        }
-        const profile = await resolveActiveProfile(client, session.user.id);
-        if (!profile) {
-          await client.auth.signOut();
-          throw new Error("This account is inactive or has no valid Nexora role. Contact support.");
-        }
+        // Canonical PKCE + active-profile verification. Roles never come from
+        // the URL or localStorage — handleAuthCallback fails closed.
+        const profile = await handleAuthCallback(url.toString());
         // Cross-origin handoff: a PWA on another origin may have started this
         // login. `safeRedirectUrl` accepts ONLY allowlisted Nexora origins, so
         // an attacker-supplied returnTo cannot capture the authenticated user.
         // No tokens travel in the URL — the destination origin runs its own
         // PKCE exchange against the shared project.
         const rawReturnTo = url.searchParams.get("returnTo");
-        const homePath = portalPathForRole(profile.platform_role);
         const crossOrigin = rawReturnTo && /^https?:\/\//i.test(rawReturnTo.trim())
           ? safeRedirectUrl(rawReturnTo)
           : null;
         // Strip the one-time code from the URL before continuing.
-        window.history.replaceState({}, "", "/auth/callback");
+        window.history.replaceState({}, "", AUTH_ROUTES.callback);
         if (crossOrigin) {
           window.location.assign(crossOrigin);
           return;
         }
-        const returnTo = safeSameOriginPath(rawReturnTo, homePath);
-        navigate(profile.platform_role === "customer" ? returnTo : homePath);
+        navigate(destinationForVerifiedRole(profile.role, rawReturnTo));
       } catch (cause) {
-        setState({ status: "error", message: friendlyError(cause) });
+        setState({ status: "error", message: authErrorMessage(cause) });
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [navigate]);
+  }, [handleAuthCallback, navigate]);
 
   if (state.status === "working") {
     return (
@@ -2495,6 +2447,7 @@ function AuthContinuePage({ navigate }: { navigate: (path: string) => void }) {
 }
 
 function ForgotPasswordPage({ navigate }: { navigate: (path: string) => void }) {
+  const { sendPasswordReset } = useAuth();
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -2511,19 +2464,13 @@ function ForgotPasswordPage({ navigate }: { navigate: (path: string) => void }) 
     setBusy(true);
     setMessage("");
     try {
-      const client = getClient();
-      if (!client) throw new Error(missingSupabaseConfigMessage);
-      // Real Supabase reset flow: email contains a PKCE recovery link to
-      // /auth/reset-password, which must be whitelisted in Supabase Auth.
-      const { error } = await client.auth.resetPasswordForEmail(
-        trimmedEmail,
-        { redirectTo: `${window.location.origin}/auth/reset-password` },
-      );
-      if (error) throw error;
-      setMessage(`If an account exists for ${trimmedEmail}, a password reset link has been sent. Check your inbox and spam folder.`);
+      // Neutral recovery: never reveal whether the email exists. The shared
+      // service sends a PKCE recovery link to AUTH_ROUTES.resetPassword.
+      await sendPasswordReset(trimmedEmail);
+      setMessage(neutralRecoveryMessage(trimmedEmail));
       setMessageType("success");
     } catch (cause) {
-      setMessage(friendlyError(cause));
+      setMessage(authErrorMessage(cause));
       setMessageType("error");
     } finally {
       setBusy(false);
@@ -2558,52 +2505,61 @@ function ForgotPasswordPage({ navigate }: { navigate: (path: string) => void }) 
 }
 
 function ResetPasswordPage({ navigate }: { navigate: (path: string) => void }) {
+  const { session, loading, configError, updatePassword, requireAuth, handleAuthCallback } = useAuth();
   const [ready, setReady] = useState<"waiting" | "ready" | "failed">("waiting");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
-  // The recovery link lands with ?code=…&type=recovery. supabase-js (PKCE,
-  // detectSessionInUrl) exchanges the code; we wait for the resulting session.
+  // The recovery link lands with ?code=…&type=recovery. The shared provider
+  // already owns the single root session listener; this page only consumes
+  // provider state and, if a PKCE code is present, the canonical callback.
   useEffect(() => {
-    const client = getClient();
-    if (!client) {
-      const failTimer = window.setTimeout(() => {
-        setReady("failed");
-        setMessage(missingSupabaseConfigMessage);
-      }, 0);
-      return () => window.clearTimeout(failTimer);
+    if (configError) {
+      setReady("failed");
+      setMessage(configError);
+      return;
+    }
+    if (loading) {
+      setReady("waiting");
+      return;
+    }
+    if (session) {
+      setReady("ready");
+      return;
     }
     let active = true;
-    const check = async () => {
-      const { data: { session } } = await client.auth.getSession();
-      if (!active) return;
-      if (session) {
-        setReady("ready");
+    const timer = window.setTimeout(async () => {
+      try {
+        const href = typeof window !== "undefined" ? window.location.href : "";
+        if (href && new URL(href).searchParams.get("code")) {
+          await handleAuthCallback(href);
+          if (active) setReady("ready");
+          return;
+        }
+      } catch (cause) {
+        if (active) {
+          setReady("failed");
+          setMessage(authErrorMessage(cause));
+        }
         return;
       }
-      setReady("failed");
-      setMessage("This password reset link is invalid or has expired. Request a new one.");
-    };
-    const timer = window.setTimeout(() => void check(), 1200);
-    const { data: { subscription } } = client.auth.onAuthStateChange((event, session) => {
-      if (!active) return;
-      if (session && (event === "SIGNED_IN" || event === "PASSWORD_RECOVERY" || event === "TOKEN_REFRESHED")) {
-        setReady("ready");
+      if (active) {
+        setReady("failed");
+        setMessage("This password reset link is invalid or has expired. Request a new one.");
       }
-    });
+    }, 0);
     return () => {
       active = false;
       window.clearTimeout(timer);
-      subscription.unsubscribe();
     };
-  }, []);
+  }, [configError, handleAuthCallback, loading, session]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (password.length < 6) {
-      setMessage("Password must be at least 6 characters.");
+    if (password.length < 8) {
+      setMessage("Password must be at least 8 characters.");
       return;
     }
     if (password !== confirm) {
@@ -2613,20 +2569,11 @@ function ResetPasswordPage({ navigate }: { navigate: (path: string) => void }) {
     setBusy(true);
     setMessage("");
     try {
-      const client = getClient();
-      if (!client) throw new Error(missingSupabaseConfigMessage);
-      const { data: { user } } = await client.auth.getUser();
-      if (!user) throw new Error("Your reset session has expired. Request a new reset link.");
-      const { error } = await client.auth.updateUser({ password });
-      if (error) throw error;
-      const profile = await resolveActiveProfile(client, user.id);
-      if (!profile) {
-        await client.auth.signOut();
-        throw new Error("This account is inactive or has no valid Nexora role. Contact support.");
-      }
-      navigate(portalPathForRole(profile.platform_role));
+      await updatePassword(password);
+      const { profile } = await requireAuth();
+      navigate(homePathForRole(profile.role));
     } catch (cause) {
-      setMessage(friendlyError(cause));
+      setMessage(authErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -2657,11 +2604,11 @@ function ResetPasswordPage({ navigate }: { navigate: (path: string) => void }) {
         <h1>Choose a new password</h1>
         <label>
           New password
-          <input required minLength={6} type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" placeholder="At least 6 characters" />
+          <input required minLength={8} type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" placeholder="At least 8 characters" />
         </label>
         <label>
           Confirm new password
-          <input required minLength={6} type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" placeholder="Repeat the new password" />
+          <input required minLength={8} type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" placeholder="Repeat the new password" />
         </label>
         {message && <div className="form-message" role="alert">{message}</div>}
         <button className="primary" disabled={busy}>{busy ? "Saving…" : "Update password"}</button>
@@ -2671,12 +2618,12 @@ function ResetPasswordPage({ navigate }: { navigate: (path: string) => void }) {
 }
 
 function SessionExpiredPage({ navigate }: { navigate: (path: string) => void }) {
+  const { signOut } = useAuth();
   useEffect(() => {
-    const client = getClient();
-    if (client) void client.auth.signOut();
-  }, []);
+    void signOut();
+  }, [signOut]);
   const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
-  const returnTo = safeSameOriginPath(params.get("returnTo"), "/auth/login");
+  const returnTo = safeSameOriginPath(params.get("returnTo"), AUTH_ROUTES.login);
   return (
     <main className="center-page">
       <section className="entry-card">
@@ -2704,7 +2651,8 @@ function getDetailedConfigError(): string {
 function isPortalMounted(role: Role): boolean {
   if (role === "customer") return process.env.NEXT_PUBLIC_NEXORA_CUSTOMER_PORTAL_MOUNTED === "true";
   if (role === "business_user") return process.env.NEXT_PUBLIC_NEXORA_OWNER_PORTAL_MOUNTED === "true";
-  return process.env.NEXT_PUBLIC_NEXORA_PARTNER_PORTAL_MOUNTED === "true";
+  if (role === "growth_partner") return process.env.NEXT_PUBLIC_NEXORA_PARTNER_PORTAL_MOUNTED === "true";
+  return false;
 }
 
 function PortalGateway({
@@ -2712,37 +2660,41 @@ function PortalGateway({
   navigate,
   signOut,
 }: {
-  expectedRole?: Role;
+  expectedRole?: "customer" | "business_user" | "growth_partner";
   navigate: (path: string) => void;
   signOut: (destination?: string) => Promise<void>;
 }) {
+  const { requireAuth, requireRole } = useAuth();
   const [state, setState] = useState<{ loading: boolean; error?: string; role?: Role }>({ loading: true });
   const load = useCallback(async () => {
     const currentPath = window.location.pathname;
     const requestedRole = expectedRole ?? portalRoleFromPath(currentPath) ?? legacyDashboardRoleFromPath(currentPath);
     const loginRole = requestedRole ?? "customer";
     const returnTo = isPortalPath(currentPath) ? currentPath : portalPathForRole(loginRole);
-    const client = getClient();
-    if (!client) {
-      setState({ loading: false, error: missingSupabaseConfigMessage });
-      return;
-    }
     try {
-      const { data: { user } } = await client.auth.getUser();
-      if (!user) {
-        navigate(`/auth/login?role=${roleQueryForPortalRole(loginRole)}&returnTo=${encodeURIComponent(returnTo)}`);
-        return;
-      }
-      const { data: profile, error: profileError } = await client
-        .from("profiles")
-        .select("platform_role,is_active")
-        .eq("id", user.id)
-        .maybeSingle();
-      if (profileError || !profile || profile.is_active !== true || !["customer", "business_user", "growth_partner"].includes(profile.platform_role)) {
+      // requireAuth verifies the user AND the active profile. A raw session
+      // is not enough; missing/inactive profiles are signed out.
+      const access = await requireAuth();
+      const profile = { platform_role: access.profile.role, is_active: access.profile.isActive };
+      if (profile.is_active !== true) {
         await signOut(`/auth/login?role=${roleQueryForPortalRole(loginRole)}&returnTo=${encodeURIComponent(returnTo)}`);
         return;
       }
-      const profileRole = profile.platform_role as Role;
+      const profileRole = profile.platform_role;
+      if (!isMountedPortalRole(profileRole)) {
+        navigate(homePathForRole(profileRole));
+        return;
+      }
+      if (requestedRole) {
+        try {
+          await requireRole(requestedRole);
+        } catch {
+          if (requestedRole && requestedRole !== profileRole) {
+            navigate(isMountedPortalRole(profileRole) ? portalPathForRole(profileRole) : homePathForRole(profileRole));
+            return;
+          }
+        }
+      }
       if (requestedRole && requestedRole !== profileRole) {
         navigate(portalPathForRole(profileRole));
         return;
@@ -2753,9 +2705,18 @@ function PortalGateway({
       }
       setState({ loading: false, role: profileRole });
     } catch (cause) {
-      setState({ loading: false, error: friendlyError(cause) });
+      const code = cause && typeof cause === "object" && "code" in cause ? String((cause as { code: unknown }).code) : "";
+      if (code === "session_expired" || code === "profile_inactive" || code === "not_configured") {
+        if (code === "not_configured") {
+          setState({ loading: false, error: missingSupabaseConfigMessage });
+          return;
+        }
+        navigate(`/auth/login?role=${roleQueryForPortalRole(loginRole)}&returnTo=${encodeURIComponent(returnTo)}`);
+        return;
+      }
+      setState({ loading: false, error: authErrorMessage(cause) });
     }
-  }, [expectedRole, navigate, signOut]);
+  }, [expectedRole, navigate, requireAuth, requireRole, signOut]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   if (state.loading) return <main className="center-page"><div className="loader" aria-label="Loading portal gateway" /></main>;
   if (state.error) return <main className="center-page"><StateCard title="Portal unavailable" text={state.error} action="Retry" onAction={load} /></main>;

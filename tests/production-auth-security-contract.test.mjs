@@ -6,6 +6,9 @@ import test from "node:test";
 
 const app = await readFile(new URL("../app/nexora-app.tsx", import.meta.url), "utf8");
 const nextConfig = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
+const service = await readFile(new URL("../packages/auth/src/service.ts", import.meta.url), "utf8");
+const session = await readFile(new URL("../packages/auth/src/session.ts", import.meta.url), "utf8");
+const clientSrc = await readFile(new URL("../packages/auth/src/client.ts", import.meta.url), "utf8");
 const gates = await readFile(new URL("../supabase/migrations/20260808_production_gates_and_blockers.sql", import.meta.url), "utf8");
 const phase8 = await readFile(new URL("../supabase/migrations/20260807_phase8_security_and_isolation.sql", import.meta.url), "utf8");
 
@@ -21,26 +24,32 @@ test("10.1 dedicated auth routes are wired in the app router", () => {
 });
 
 test("10.1 every auth flow uses real Supabase APIs (PKCE), never mocks", () => {
-  assert.match(app, /exchangeCodeForSession\(code\)/);
-  assert.match(app, /resetPasswordForEmail\(/);
-  assert.match(app, /updateUser\(\{ password \}\)/);
-  assert.match(app, /auth\.signUp\(\{/);
-  assert.match(app, /auth\.signOut\(\)/);
-  assert.match(app, /flowType: "pkce"/);
+  assert.match(session, /exchangeCodeForSession\(code\)/);
+  assert.match(session, /resetPasswordForEmail\(/);
+  assert.match(session, /updateUser\(\{ password \}\)/);
+  assert.match(session, /auth\.signUp\(\{/);
+  assert.match(session, /auth\.signOut\(\)/);
+  assert.match(clientSrc, /flowType: "pkce"/);
+  assert.match(app, /handleAuthCallback|sendPasswordReset|updatePassword|signIn\(|signUp\(/);
+  assert.doesNotMatch(app, /\.auth\./);
   // No mock/fake auth anywhere in the main website.
   assert.doesNotMatch(app, /localStorage\.setItem\(\s*["']isAuthenticated/i);
   assert.doesNotMatch(app, /fakeSession|mockSession|mockAuth|demoUser/i);
 });
 
-test("10.1 signup uses immediate activation without verification-email resends", () => {
-  assert.match(app, /if \(!data\.session\) throw new Error\("Account activation did not complete/);
-  assert.doesNotMatch(app, /auth\.resend\(\{\s*type:\s*"signup"/);
+test("10.1 signup supports verification resend through the canonical service", () => {
+  assert.match(app, /needsEmailConfirmation/);
+  assert.match(app, /resendVerification/);
+  assert.match(service, /auth\.resend\(\{\s*type:\s*"signup"/);
+  assert.match(service, /buildCallbackUrl\(\)/);
 });
 
 test("10.1 callback never trusts URL roles; profile decides the portal", () => {
-  assert.match(app, /resolveActiveProfile/);
+  assert.match(app, /handleAuthCallback/);
+  assert.match(app, /destinationForVerifiedRole\(profile\.role/);
   // Role authority remains profiles.platform_role, server-verified.
-  assert.match(app, /platform_role is assigned permanently by Nexora|select\("platform_role,is_active"\)/);
+  assert.match(service, /profiles\.platform_role/);
+  assert.match(service, /URL parameters and localStorage never select or grant a role/);
 });
 
 // ---------------------------------------------------------------------------
@@ -50,8 +59,9 @@ test("10.1 callback never trusts URL roles; profile decides the portal", () => {
 test("10.2 Google OAuth button is opt-in and fails safe", () => {
   assert.match(app, /process\.env\.NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED === "true"/);
   assert.match(app, /googleOauthConfigured && !googleOauthFailed/);
-  assert.match(app, /signInWithOAuth\(\{\s*provider: "google"/);
-  assert.match(app, /redirectTo: `\$\{window\.location\.origin\}\/auth\/callback`/);
+  assert.match(app, /signInWithGoogle\(/);
+  assert.match(session, /signInWithOAuth/);
+  assert.match(session, /buildCallbackUrl\(/);
   assert.match(nextConfig, /NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED/);
 });
 

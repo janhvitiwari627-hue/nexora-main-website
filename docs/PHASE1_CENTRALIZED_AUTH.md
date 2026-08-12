@@ -285,3 +285,22 @@ same-origin validation. Other authenticated roles always continue to their
 server-profile role home, so URL parameters cannot select another portal.
 Delivery Partner and Administrator role homes intentionally resolve to their
 authenticated "portal not mounted" fallbacks until those apps are deployed.
+
+## Canonical Auth Service (Phase 5)
+
+`@nexora/auth` **1.1.0** adds the versioned Auth Service contract **1.0.0** in
+`packages/auth/src/service.ts`. Every consumer — Main Website and every PWA —
+must use `createAuthService()` / `useAuth()` for the twelve canonical
+operations (`signUp`, `signIn`, `signOut`, `sendPasswordReset`,
+`updatePassword`, `resendVerification`, `getCurrentUser`, `getSession`,
+`refreshSession`, `handleAuthCallback`, `requireAuth`, `requireRole`).
+
+A Supabase session is still not authorization. Identity-returning calls
+verify the current user; an active `profiles.platform_role` is the only
+role authority; missing or inactive profiles fail closed and sign out.
+Phase 2 aliases (`setPassword`, `completeAuthCallback`, `refresh`) remain
+until external consumers migrate. `AUTH_ROUTES` now point at `/auth/*`;
+the Main Website keeps `/login`, `/signup`, `/forgot-password` and
+`/reset-password` as compatibility routes only.
+
+See `docs/PHASE5_CANONICAL_AUTH_SERVICE.md`.

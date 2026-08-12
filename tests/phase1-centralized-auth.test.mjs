@@ -52,6 +52,7 @@ const migration = await readFile(
 const clientSrc = await readFile(new URL("../packages/auth/src/client.ts", import.meta.url), "utf8");
 const providerSrc = await readFile(new URL("../packages/auth/src/AuthProvider.tsx", import.meta.url), "utf8");
 const sessionSrc = await readFile(new URL("../packages/auth/src/session.ts", import.meta.url), "utf8");
+const serviceSrc = await readFile(new URL("../packages/auth/src/service.ts", import.meta.url), "utf8");
 const appSrc = await readFile(new URL("../app/nexora-app.tsx", import.meta.url), "utf8");
 const websiteClient = await readFile(new URL("../app/lib/supabaseClient.ts", import.meta.url), "utf8");
 
@@ -326,6 +327,7 @@ test("5.3 no credential is hardcoded anywhere in the auth package", () => {
     ["client", clientSrc],
     ["provider", providerSrc],
     ["session", sessionSrc],
+    ["service", serviceSrc],
   ]) {
     assert.doesNotMatch(src, /eyJhbGciOiJIUzI1Ni/, name);
     assert.doesNotMatch(src, /service_role_key/i, name);
@@ -519,6 +521,6 @@ test("8.2 the website still reads only NEXT_PUBLIC_* env names", () => {
 
 test("8.3 the auth callback validates cross-origin returns before handing off", () => {
   assert.match(appSrc, /safeRedirectUrl/);
-  assert.match(appSrc, /exchangeCodeForSession\(code\)/);
+  assert.match(appSrc, /handleAuthCallback/);
   assert.doesNotMatch(appSrc, /access_token|refresh_token/i);
 });

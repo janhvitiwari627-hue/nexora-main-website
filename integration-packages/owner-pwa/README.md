@@ -54,6 +54,14 @@ base; `auth-integration.patch` is sufficient.
 5. Apply and verify PR #48's database migration before rollout:
    `select * from public.verify_phase1_auth();` must return all passed.
 
+## Phase 5 — Canonical Auth Service
+
+After this Phase 2 patch, apply the **same** shared file
+`../phase5-canonical-auth-service.patch` (see
+`../PHASE5_CANONICAL_AUTH_SERVICE.md`). It updates
+`src/vendor/nexora-auth/` to `@nexora/auth` 1.1.0 / Auth Service contract
+1.0.0. Do not fork an Owner-only auth service.
+
 ## Notes
 
 `npx tsc --noEmit` still reports unrelated pre-existing target-repo errors in

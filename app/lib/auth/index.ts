@@ -32,6 +32,7 @@ export {
   ROLE_LABELS,
   ROLE_HOME_PATHS,
   isPlatformRole,
+  isSignupRole,
   normalizeRole,
   normalizeSignupRole,
   homePathForRole,
@@ -55,6 +56,10 @@ export {
   completeCodeExchange,
   signOut,
   handoffTo,
+  // Canonical Auth Service (contract 1.0.0)
+  AUTH_SERVICE_CONTRACT_VERSION,
+  AUTH_SERVICE_METHODS,
+  createAuthService,
   // Errors
   NexoraAuthError,
   toAuthError,
@@ -65,6 +70,8 @@ export {
   type AuthErrorCode,
   type AuthErrorState,
   type AuthStatus,
+  type AuthenticatedAccess,
+  type AuthService,
   type NexoraProfile,
   type PlatformRole,
   type SignupRole,

@@ -33,14 +33,14 @@ test("Phase 4 exposes canonical auth routes while preserving legacy links", () =
   assert.doesNotMatch(app, /(?:navigate|go)\((?:"|`)\/(?:login|signup|forgot-password|reset-password)(?:[?"`])/);
   assert.match(app, /go\("\/auth\/login"\)/);
   assert.match(app, /navigate\("\/auth\/signup"\)/);
-  assert.match(app, /window\.location\.origin}\/auth\/reset-password/);
+  assert.match(app, /sendPasswordReset|AUTH_ROUTES\.resetPassword/);
 
   // Verification is an alias of the same profile-verified PKCE callback.
   assert.match(app, /path === "\/auth\/callback" \|\| path === "\/auth\/verify"/);
   const callback = componentSource("AuthCallbackPage", "AuthLogoutPage");
-  assert.match(callback, /exchangeCodeForSession\(code\)/);
-  assert.match(callback, /resolveActiveProfile\(client, session\.user\.id\)/);
-  assert.match(callback, /profile\.platform_role/);
+  assert.match(callback, /handleAuthCallback/);
+  assert.match(callback, /destinationForVerifiedRole\(profile\.role/);
+  assert.match(callback, /profile\.role/);
 });
 
 test("canonical logout uses shared sign-out and accepts only safe local paths", () => {

@@ -88,6 +88,15 @@ export {
 } from "./session";
 
 export {
+  AUTH_SERVICE_CONTRACT_VERSION,
+  AUTH_SERVICE_METHODS,
+  createAuthService,
+  type AuthService,
+  type AuthServiceMethod,
+  type AuthenticatedAccess,
+} from "./service";
+
+export {
   AuthProvider,
   useAuth,
   useRoleGuard,
