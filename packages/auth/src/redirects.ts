@@ -10,8 +10,10 @@
  *
  * THE MODEL
  * ---------
- * 1. The Main Website hosts the central auth surface: /login, /signup,
- *    /auth/callback, /forgot-password, /reset-password.
+ * 1. The Main Website hosts the central auth surface: /auth/login, /auth/signup,
+ *    /auth/callback, /auth/forgot-password, /auth/reset-password. Legacy
+ *    compatibility routes (/login, /signup, /forgot-password, /reset-password)
+ *    remain on the Main Website only.
  * 2. A PWA that needs a session sends the user to the central login with a
  *    `returnTo` that points back at its own origin.
  * 3. `returnTo` is validated against a strict allowlist (this module). Any
@@ -28,11 +30,14 @@
 
 /** Paths that make up the central auth surface on the Main Website. */
 export const AUTH_ROUTES = {
-  login: "/login",
-  signup: "/signup",
+  login: "/auth/login",
+  signup: "/auth/signup",
+  forgotPassword: "/auth/forgot-password",
+  resetPassword: "/auth/reset-password",
+  verify: "/auth/verify",
   callback: "/auth/callback",
-  forgotPassword: "/forgot-password",
-  resetPassword: "/reset-password",
+  logout: "/auth/logout",
+  continue: "/auth/continue",
   expired: "/auth/expired",
 } as const;
 
@@ -52,17 +57,32 @@ export const DEFAULT_ALLOWED_AUTH_ORIGINS: readonly string[] = [
   "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app",
 ];
 
+function readCsvEnv(raw: string | undefined | null): string[] {
+  return String(raw ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
 function envAllowedOrigins(): string[] {
+  const origins: string[] = [];
   try {
-    const raw =
-      (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_NEXORA_ALLOWED_AUTH_ORIGINS) || "";
-    return raw
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
+    origins.push(
+      ...readCsvEnv(
+        typeof process !== "undefined" ? process.env?.NEXT_PUBLIC_NEXORA_ALLOWED_AUTH_ORIGINS : "",
+      ),
+    );
   } catch {
-    return [];
+    /* Next/Node env unavailable */
   }
+  try {
+    const vite = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env
+      ?.VITE_NEXORA_ALLOWED_AUTH_ORIGINS;
+    origins.push(...readCsvEnv(vite));
+  } catch {
+    /* Vite env unavailable (Next/tsc) */
+  }
+  return origins;
 }
 
 function normalizeOrigin(value: string): string | null {

@@ -54,3 +54,11 @@ base; `auth-integration.patch` is sufficient.
    `select * from public.verify_phase1_auth();` must return all passed.
 6. Partner access remains server-owned: sign-up alone does not grant access.
    Nexora ops must assign the active Growth Partner role.
+
+## Phase 5 — Canonical Auth Service
+
+After this Phase 2 patch, apply the **same** shared file
+`../phase5-canonical-auth-service.patch` (see
+`../PHASE5_CANONICAL_AUTH_SERVICE.md`). It updates
+`src/vendor/nexora-auth/` to `@nexora/auth` 1.1.0 / Auth Service contract
+1.0.0. Do not fork a Growth Partner-only auth service.

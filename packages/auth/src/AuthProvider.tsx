@@ -32,15 +32,11 @@ import type { Session, SupabaseClient, User } from "@supabase/supabase-js";
 import { getSupabaseClient, supabaseConfigErrorMessage, type NexoraClientOptions } from "./client";
 import { NexoraAuthError, toAuthError, type AuthErrorCode } from "./errors";
 import { homePathForRole, type PlatformRole } from "./roles";
+import { createAuthService, type AuthenticatedAccess } from "./service";
 import {
-  completeCodeExchange,
-  requestPasswordReset,
   resolveProfile,
   signInWithOAuth as oauthSignIn,
-  signInWithPassword,
   signOut as endSession,
-  signUpWithPassword,
-  updatePassword,
   type NexoraProfile,
   type SignInInput,
   type SignUpInput,
@@ -73,10 +69,22 @@ export type AuthContextValue = {
   signUp: (input: SignUpInput) => Promise<SignUpResult>;
   signInWithGoogle: (options?: { returnTo?: string | null; role?: string }) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
+  updatePassword: (password: string) => Promise<void>;
+  resendVerification: (email: string) => Promise<void>;
+  getCurrentUser: () => Promise<User>;
+  getSession: () => Promise<Session | null>;
+  refreshSession: () => Promise<Session | null>;
+  handleAuthCallback: (href?: string) => Promise<NexoraProfile>;
+  requireAuth: () => Promise<AuthenticatedAccess>;
+  requireRole: (allowed: PlatformRole | PlatformRole[]) => Promise<AuthenticatedAccess>;
+  signOut: () => Promise<void>;
+  /**
+   * Phase 2 compatibility aliases. Do not remove until every external
+   * consumer has migrated to the canonical names above.
+   */
   setPassword: (password: string) => Promise<void>;
   /** Run the PKCE exchange on this origin; returns the resolved profile. */
   completeAuthCallback: (href?: string) => Promise<NexoraProfile>;
-  signOut: () => Promise<void>;
   refresh: () => Promise<void>;
   clearError: () => void;
   /** Canonical app path for the current role. */
@@ -256,27 +264,28 @@ export function AuthProvider({
     [requireClient],
   );
 
+  const syncFromClient = useCallback(
+    async (activeClient: SupabaseClient) => {
+      const { data } = await activeClient.auth.getSession();
+      return applySession(data.session);
+    },
+    [applySession],
+  );
+
   const signIn = useCallback(
     (input: SignInInput) =>
       runGuarded(async (activeClient) => {
-        const { session } = await signInWithPassword(activeClient, input);
-        const profile = await applySession(session);
-        if (!profile) {
-          throw new NexoraAuthError(
-            "profile_inactive",
-            "This account is inactive or has no valid Nexora role. Contact Nexora support.",
-            { retryable: false },
-          );
-        }
+        const profile = await createAuthService(activeClient).signIn(input);
+        await syncFromClient(activeClient);
         return profile;
       }),
-    [runGuarded, applySession],
+    [runGuarded, syncFromClient],
   );
 
   const signUp = useCallback(
     (input: SignUpInput) =>
       runGuarded(async (activeClient) => {
-        const result = await signUpWithPassword(activeClient, input);
+        const result = await createAuthService(activeClient).signUp(input);
         // Auto-confirm projects return a session immediately; adopt it now so
         // the caller can route straight into the app.
         if (result.session) await applySession(result.session);
@@ -292,45 +301,76 @@ export function AuthProvider({
   );
 
   const sendPasswordReset = useCallback(
-    (email: string) => runGuarded((activeClient) => requestPasswordReset(activeClient, email)),
+    (email: string) => runGuarded((activeClient) => createAuthService(activeClient).sendPasswordReset(email)),
     [runGuarded],
   );
 
-  const setPassword = useCallback(
-    (password: string) => runGuarded((activeClient) => updatePassword(activeClient, password)),
+  const updatePasswordFn = useCallback(
+    (password: string) => runGuarded((activeClient) => createAuthService(activeClient).updatePassword(password)),
     [runGuarded],
   );
 
-  const completeAuthCallback = useCallback(
-    (href?: string) =>
+  const resendVerification = useCallback(
+    (email: string) => runGuarded((activeClient) => createAuthService(activeClient).resendVerification(email)),
+    [runGuarded],
+  );
+
+  const getCurrentUser = useCallback(
+    () => runGuarded((activeClient) => createAuthService(activeClient).getCurrentUser()),
+    [runGuarded],
+  );
+
+  const getSessionFn = useCallback(
+    () => runGuarded((activeClient) => createAuthService(activeClient).getSession()),
+    [runGuarded],
+  );
+
+  const refreshSessionFn = useCallback(
+    () =>
       runGuarded(async (activeClient) => {
-        const session = await completeCodeExchange(activeClient, href);
-        const profile = await applySession(session);
-        if (!profile) {
-          throw new NexoraAuthError(
-            "profile_inactive",
-            "This account is inactive or has no valid Nexora role. Contact Nexora support.",
-            { retryable: false },
-          );
-        }
-        return profile;
+        const session = await createAuthService(activeClient).refreshSession();
+        await applySession(session);
+        return session;
       }),
     [runGuarded, applySession],
   );
+
+  const handleAuthCallback = useCallback(
+    (href?: string) =>
+      runGuarded(async (activeClient) => {
+        const profile = await createAuthService(activeClient).handleAuthCallback(href);
+        await syncFromClient(activeClient);
+        return profile;
+      }),
+    [runGuarded, syncFromClient],
+  );
+
+  const requireAuth = useCallback(
+    () => runGuarded((activeClient) => createAuthService(activeClient).requireAuth()),
+    [runGuarded],
+  );
+
+  const requireRole = useCallback(
+    (allowed: PlatformRole | PlatformRole[]) =>
+      runGuarded((activeClient) => createAuthService(activeClient).requireRole(allowed)),
+    [runGuarded],
+  );
+
+  // Phase 2 compatibility aliases — keep until every PWA has migrated.
+  const setPassword = updatePasswordFn;
+  const completeAuthCallback = handleAuthCallback;
 
   const signOutCallback = useCallback(async () => {
     // Optimistic local clear so the UI never shows a stale identity.
     revisionRef.current += 1;
     setState({ status: "anonymous", session: null, profile: null, error: null });
-    if (client) await endSession(client).catch(() => undefined);
+    if (client) await createAuthService(client).signOut().catch(() => undefined);
     changeHandlerRef.current?.({ session: null, profile: null });
   }, [client]);
 
   const refresh = useCallback(async () => {
-    if (!client) return;
-    const { data } = await client.auth.getSession();
-    await applySession(data.session);
-  }, [client, applySession]);
+    await refreshSessionFn();
+  }, [refreshSessionFn]);
 
   const clearError = useCallback(() => {
     setState((prev) => (prev.error ? { ...prev, error: null } : prev));
@@ -351,6 +391,14 @@ export function AuthProvider({
       signUp,
       signInWithGoogle,
       sendPasswordReset,
+      updatePassword: updatePasswordFn,
+      resendVerification,
+      getCurrentUser,
+      getSession: getSessionFn,
+      refreshSession: refreshSessionFn,
+      handleAuthCallback,
+      requireAuth,
+      requireRole,
       setPassword,
       completeAuthCallback,
       signOut: signOutCallback,
@@ -366,6 +414,14 @@ export function AuthProvider({
       signUp,
       signInWithGoogle,
       sendPasswordReset,
+      updatePasswordFn,
+      resendVerification,
+      getCurrentUser,
+      getSessionFn,
+      refreshSessionFn,
+      handleAuthCallback,
+      requireAuth,
+      requireRole,
       setPassword,
       completeAuthCallback,
       signOutCallback,

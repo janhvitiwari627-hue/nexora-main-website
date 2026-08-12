@@ -20,8 +20,8 @@ test("Main Website does not duplicate the customer booking/payment implementatio
 });
 
 test("portal access is role-gated by the permanent profile", () => {
-  assert.match(app, /\.from\("profiles"\)/);
-  assert.match(app, /platform_role,is_active/);
+  assert.match(app, /requireAuth\(\)/);
+  assert.match(app, /requireRole/);
   assert.match(app, /profile\.is_active !== true/);
   assert.match(app, /requestedRole && requestedRole !== profileRole/);
   assert.match(app, /navigate\(portalPathForRole\(profileRole\)\)/);

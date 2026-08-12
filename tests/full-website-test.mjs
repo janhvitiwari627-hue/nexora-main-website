@@ -17,11 +17,13 @@ test("Main Website is locked to the shared Supabase project and Next env names",
   assert.match(supabaseClient, /NEXT_PUBLIC_SUPABASE_ANON_KEY/);
 });
 
-test("account creation and permanent profile trigger support all non-admin roles", () => {
+test("account creation and permanent profile trigger support all non-admin roles", async () => {
+  const session = await readFile(new URL("../packages/auth/src/session.ts", import.meta.url), "utf8");
   assert.match(app, /customer/);
   assert.match(app, /business_user/);
   assert.match(app, /growth_partner/);
-  assert.match(app, /signup_role/);
+  assert.match(app, /normalizeSignupRole/);
+  assert.match(session, /signup_role/);
   assert.match(migration, /handle_new_user/);
   assert.match(migration, /on_auth_user_created/);
   assert.match(migration, /signup_role/);

@@ -138,7 +138,7 @@ test("Main app portal gateway does not claim to enforce security", () => {
 });
 
 test("Main app auth flow relies on server profile check", () => {
-  assert.match(mainApp, /profileError\s*\|\|\s*!profile/);
+  assert.match(mainApp, /requireAuth\(\)/);
   assert.match(mainApp, /platform_role/);
   assert.match(mainApp, /is_active/);
 });
