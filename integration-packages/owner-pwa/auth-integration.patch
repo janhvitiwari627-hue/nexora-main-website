@@ -1,0 +1,2316 @@
+From 2459275d5c9a35c3cb64500babfa588fae3e9491 Mon Sep 17 00:00:00 2001
+From: Arena Integration Bot <arena-bot@users.noreply.github.com>
+Date: Tue, 11 Aug 2026 16:10:20 +0000
+Subject: [PATCH] feat(auth): roll out shared @nexora/auth package
+
+Wires the Phase 1 centralized Supabase auth package into this PWA with
+PKCE, shared project validation, AuthProvider state, role-gated access,
+and vendored source so the patch is self-contained.
+---
+ src/App.tsx                             |  93 +++---
+ src/lib/supabase.ts                     | 150 +--------
+ src/main.tsx                            |   6 +-
+ src/screens/Login.tsx                   |  31 +-
+ src/screens/RegistrationStepper.tsx     |  22 +-
+ src/screens/RoleConflict.tsx            |   5 +-
+ src/vendor/nexora-auth/AuthProvider.tsx | 415 ++++++++++++++++++++++++
+ src/vendor/nexora-auth/client.ts        | 125 +++++++
+ src/vendor/nexora-auth/env.ts           | 222 +++++++++++++
+ src/vendor/nexora-auth/errors.ts        | 163 ++++++++++
+ src/vendor/nexora-auth/index.ts         |  99 ++++++
+ src/vendor/nexora-auth/package.json     |  28 ++
+ src/vendor/nexora-auth/redirects.ts     | 245 ++++++++++++++
+ src/vendor/nexora-auth/roles.ts         | 148 +++++++++
+ src/vendor/nexora-auth/session.ts       | 278 ++++++++++++++++
+ tsconfig.json                           |   3 +
+ vite.config.ts                          |   1 +
+ 17 files changed, 1812 insertions(+), 222 deletions(-)
+ create mode 100644 src/vendor/nexora-auth/AuthProvider.tsx
+ create mode 100644 src/vendor/nexora-auth/client.ts
+ create mode 100644 src/vendor/nexora-auth/env.ts
+ create mode 100644 src/vendor/nexora-auth/errors.ts
+ create mode 100644 src/vendor/nexora-auth/index.ts
+ create mode 100644 src/vendor/nexora-auth/package.json
+ create mode 100644 src/vendor/nexora-auth/redirects.ts
+ create mode 100644 src/vendor/nexora-auth/roles.ts
+ create mode 100644 src/vendor/nexora-auth/session.ts
+
+diff --git a/src/App.tsx b/src/App.tsx
+index e1d619b..6db524f 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -46,8 +46,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
+ import { OfflineSyncProvider } from './contexts/OfflineSyncContext';
+ import AddToHomeScreenPrompt from './components/AddToHomeScreenPrompt';
+ import { ScreenName } from './types';
+-import { supabase } from './lib/supabase';
+-import { Session } from '@supabase/supabase-js';
++import { useAuth } from '@nexora/auth';
+ import { Download, X, WifiOff, RefreshCw } from 'lucide-react';
+ import { motion, AnimatePresence } from 'motion/react';
+ import { useRegisterSW } from 'virtual:pwa-register/react';
+@@ -82,7 +81,8 @@ export default function App() {
+     return 'splash';
+   });
+   const currentScreenRef = React.useRef(currentScreen);
+-  const [session, setSession] = useState<Session | null>(null);
++  const { session, profile, loading: authLoading, status: authStatus, role, signOut: signOutAuth, configError } = useAuth();
++  const [ownerAccessError, setOwnerAccessError] = useState(false);
+   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+   const [showInstallToast, setShowInstallToast] = useState(false);
+   const [isAppInstalled, setIsAppInstalled] = useState(false);
+@@ -199,25 +199,10 @@ export default function App() {
+     };
+     window.addEventListener('appinstalled', handleAppInstalledGlobal);
+ 
+-    // Initial session check — already-logged-in user reload par bhi location auto-maango
+-    supabase.auth.getSession().then(({ data: { session } }) => {
+-      setSession(session);
+-      if (session && !locationAutoAskedRef.current) {
+-        locationAutoAskedRef.current = true;
+-        setTimeout(() => requestLocation(), 800);
+-      }
+-    });
+-
+-    // 🔹 LOGIN KE TURANT BAAD LOCATION AUTO-REQUEST (requirement: login hote hi location)
+-    // Jab bhi login hota hai (SIGNED_IN), ek baar (per browser session) location permission
+-    // maang lo → browser ka prompt turant aata hai.
+-    const unsubscribeAuth = supabase.auth.onAuthStateChange((_event, s) => {
+-      if (s && !locationAutoAskedRef.current) {
+-        locationAutoAskedRef.current = true;
+-        // Thoda sa delay taaki dashboard render ho jaye, phir permission prompt
+-        setTimeout(() => requestLocation(), 800);
+-      }
+-    });
++    if (session && !locationAutoAskedRef.current) {
++      locationAutoAskedRef.current = true;
++      setTimeout(() => requestLocation(), 800);
++    }
+ 
+     // Handle initial hash routing and hash changes
+     const handleHashRouting = () => {
+@@ -300,31 +285,33 @@ export default function App() {
+     handleHashRouting();
+     window.addEventListener('hashchange', handleHashRouting);
+ 
+-    // Listen for auth changes
+-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+-      setSession(session);
+-      const activeScreen = currentScreenRef.current;
+-      
+-      if (!session) {
+-        // Only force welcome if we are on a protected screen
+-        const authScreens: ScreenName[] = ['splash', 'welcome', 'login', 'register-stepper', 'website-builder', 'dashboard', 'staff', 'new-staff', 'staff-detail', 'staff-schedule', 'staff-attendance', 'leave-swap', 'staff-payroll', 'staff-payroll-detail', 'staff-payroll-breakdown', 'staff-roles-access', 'staff-performance', 'staff-self-service', 'staff-website-booking'];
+-        if (!authScreens.includes(activeScreen)) {
+-          setCurrentScreen('welcome');
+-        }
+-      } else if (['splash', 'welcome', 'login'].includes(activeScreen)) {
+-        // Automatically go to dashboard if logged in from these entry screens
+-        setCurrentScreen('dashboard');
+-      }
+-    });
+-
+     return () => {
+-      subscription.unsubscribe();
+-      unsubscribeAuth.data.subscription.unsubscribe();
+       window.removeEventListener('hashchange', handleHashRouting);
+       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+       window.removeEventListener('appinstalled', handleAppInstalledGlobal);
+     };
+-  }, [requestLocation]);
++  }, [requestLocation, session]);
++
++  useEffect(() => {
++    if (authLoading) return;
++    if (!session) {
++      setOwnerAccessError(false);
++      const activeScreen = currentScreenRef.current;
++      const publicScreens: ScreenName[] = ['splash', 'welcome', 'login', 'register-stepper', 'reset-password', 'role-conflict', 'cancellation-refund-policy'];
++      if (!publicScreens.includes(activeScreen)) setCurrentScreen('welcome');
++      return;
++    }
++    if (role !== 'business_user') {
++      setOwnerAccessError(true);
++      if (currentScreenRef.current !== 'role-conflict') setCurrentScreen('role-conflict');
++      void signOutAuth();
++      return;
++    }
++    setOwnerAccessError(false);
++    if (['splash', 'welcome', 'login'].includes(currentScreenRef.current)) {
++      setCurrentScreen('dashboard');
++    }
++  }, [authLoading, session, role, signOutAuth]);
+ 
+   const handleInstall = async () => {
+     if (!deferredPrompt) return;
+@@ -350,6 +337,26 @@ export default function App() {
+     window.scrollTo(0, 0);
+   }, []);
+ 
++  if (configError) {
++    return (
++      <div className="min-h-screen bg-surface-container-lowest flex items-center justify-center p-6">
++        <div className="max-w-md rounded-3xl bg-white p-8 text-center shadow-xl">
++          <h1 className="text-2xl font-bold text-on-surface">Configuration required</h1>
++          <p className="mt-3 text-sm text-on-surface-variant">{configError}</p>
++        </div>
++      </div>
++    );
++  }
++
++  if (authLoading) {
++    return (
++      <div className="min-h-screen bg-surface-container-lowest flex flex-col items-center justify-center gap-3">
++        <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary-fixed border-t-primary-container" />
++        <p className="text-sm font-semibold text-on-surface-variant">Loading Nexora Owner…</p>
++      </div>
++    );
++  }
++
+   const renderScreen = () => {
+     switch (currentScreen) {
+       case 'splash':
+@@ -383,7 +390,7 @@ export default function App() {
+       case 'customer-profile':
+         return <CustomerProfile navigate={navigate} />;
+       case 'role-conflict':
+-        return <RoleConflict navigate={navigate} />;
++        return <RoleConflict navigate={navigate} existingRole={ownerAccessError ? role ?? undefined : undefined} />;
+       case 'cancellation-refund-policy':
+         return <CancellationRefundPolicy navigate={navigate} />;
+       case 'website-builder':
+diff --git a/src/lib/supabase.ts b/src/lib/supabase.ts
+index 972ef93..02bd3fa 100644
+--- a/src/lib/supabase.ts
++++ b/src/lib/supabase.ts
+@@ -1,142 +1,10 @@
+ /// <reference types="vite/client" />
+-import { createClient } from '@supabase/supabase-js';
+-
+-/**
+- * Public Supabase project settings for Nexora.
+- * The anon/publishable key is designed to be present in browser bundles; access
+- * to data is protected by Supabase Row Level Security, not by hiding this key.
+- * Vercel environment variables override these defaults for another project.
+- */
+-const DEFAULT_SUPABASE_URL = 'https://qwaehqsmodekbgvnaavz.supabase.co';
+-const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3YWVocXNtb2Rla2Jndm5hYXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNjQ5MjksImV4cCI6MjEwMDc0MDkyOX0.K92b2vkEb77dyu8fYYZpMTIbTyP98Vo80TaMo_Hmq_E';
+-
+-// Accept a normal URL and also recover from accidental Markdown/brackets such as
+-// "[https://project.supabase.co](https://project.supabase.co)" pasted into Vercel.
+-function normaliseSupabaseUrl(value?: string): string | undefined {
+-  const match = value?.trim().match(/https:\/\/[a-z0-9-]+\.supabase\.co/i);
+-  return match?.[0];
+-}
+-
+-const configuredUrl = normaliseSupabaseUrl(import.meta.env.VITE_SUPABASE_URL);
+-const configuredAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
+-const effectiveUrl = configuredUrl || DEFAULT_SUPABASE_URL;
+-const effectiveKey = configuredAnonKey || DEFAULT_SUPABASE_ANON_KEY;
+-
+-export const supabase = createClient(effectiveUrl, effectiveKey);
+-
+-/** True when a usable Supabase client is available. */
+-export const isSupabaseConfigured = () =>
+-  Boolean(effectiveUrl && effectiveKey && !effectiveUrl.includes('placeholder'));
+-
+-type AuthApiResponse = {
+-  access_token?: string;
+-  refresh_token?: string;
+-  expires_in?: number;
+-  expires_at?: number;
+-  token_type?: string;
+-  user?: unknown;
+-  message?: string;
+-  hint?: string;
+-  error?: { message?: string };
+-  msg?: string;
+-};
+-
+-/**
+- * Uses Vercel's same-origin function for the initial credentials exchange.
+- * This avoids client-network/CORS failures seen on some installed PWA browsers.
+- */
+-async function directSupabaseAuth(route: 'signup' | 'login', payload: Record<string, unknown>) {
+-  const email = String(payload.email || '').trim();
+-  const password = String(payload.password || '');
+-
+-  if (route === 'login') {
+-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+-    if (error) throw error;
+-    return data;
+-  }
+-
+-  const metadata = payload.data && typeof payload.data === 'object'
+-    ? payload.data as Record<string, any>
+-    : undefined;
+-  const { data, error } = await supabase.auth.signUp({
+-    email,
+-    password,
+-    options: metadata ? { data: metadata } : undefined,
+-  });
+-  if (error) throw error;
+-  return data;
+-}
+-
+-async function applyAuthTokens(result: AuthApiResponse) {
+-  if (!result.access_token || !result.refresh_token) return null;
+-
+-  try {
+-    const { data, error } = await supabase.auth.setSession({
+-      access_token: result.access_token,
+-      refresh_token: result.refresh_token,
+-    });
+-    if (error) throw error;
+-    return data;
+-  } catch {
+-    // Some installed browsers block direct cross-origin requests after the
+-    // server exchange. Keep the authenticated session locally so login is
+-    // still successful; the next app load restores it through Supabase.
+-    const projectRef = new URL(effectiveUrl).hostname.split('.')[0];
+-    const expiresAt = result.expires_at || Math.floor(Date.now() / 1000) + (result.expires_in || 3600);
+-    const session = {
+-      access_token: result.access_token,
+-      refresh_token: result.refresh_token,
+-      expires_at: expiresAt,
+-      expires_in: result.expires_in || 3600,
+-      token_type: result.token_type || 'bearer',
+-      user: result.user,
+-    };
+-    localStorage.setItem(`sb-${projectRef}-auth-token`, JSON.stringify(session));
+-    return { session, user: result.user };
+-  }
+-}
+-
+-/**
+- * Uses the same-origin auth proxy first. Local Express previews mount the
+- * proxy directly; Vercel uses api/auth/*.ts. If either proxy is unavailable,
+- * fall back to Supabase's browser client instead of showing a generic
+- * "Authentication request failed" message.
+- */
+-export async function authenticateThroughApp(
+-  route: 'signup' | 'login',
+-  payload: Record<string, unknown>,
+-) {
+-  let proxyError: Error | null = null;
+-
+-  try {
+-    const response = await fetch(`/api/auth/${route}`, {
+-      method: 'POST',
+-      headers: { 'Content-Type': 'application/json' },
+-      body: JSON.stringify(payload),
+-    });
+-    const result = (await response.json().catch(() => ({}))) as AuthApiResponse;
+-
+-    if (response.ok) {
+-      const tokenSession = await applyAuthTokens(result);
+-      if (tokenSession) return tokenSession;
+-      // Supabase can create an account successfully while email confirmation
+-      // is enabled, so a signup response may contain a user but no session.
+-      if (route === 'signup' && result.user) return { session: null, user: result.user };
+-      proxyError = new Error('The authentication proxy returned an incomplete response.');
+-    } else {
+-      proxyError = new Error(result.error?.message || result.message || result.msg || 'Authentication request failed.');
+-    }
+-  } catch (error: any) {
+-    proxyError = error instanceof Error ? error : new Error(String(error));
+-  }
+-
+-  try {
+-    return await directSupabaseAuth(route, payload);
+-  } catch (directError: any) {
+-    // Prefer the real Supabase error because it explains invalid credentials,
+-    // unconfirmed email, rate limiting, etc. much better than a proxy error.
+-    if (directError instanceof Error) throw directError;
+-    if (proxyError) throw proxyError;
+-    throw new Error('Authentication request failed.');
+-  }
+-}
++import {
++  getSupabaseClient,
++  isSupabaseConfigured as isNexoraSupabaseConfigured,
++  supabaseConfigErrorMessage,
++} from '@nexora/auth';
++
++export const supabase = getSupabaseClient();
++export const supabaseConfigError = supabase ? null : supabaseConfigErrorMessage();
++export const isSupabaseConfigured = () => Boolean(supabase) && isNexoraSupabaseConfigured();
+diff --git a/src/main.tsx b/src/main.tsx
+index d170cf6..151cf7e 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -5,16 +5,18 @@ import './index.css';
+ import { LanguageProvider } from './contexts/LanguageContext.tsx';
+ import { LocationProvider } from './contexts/LocationContext.tsx';
+ import { ErrorBoundary } from './components/ErrorBoundary.tsx';
++import { AuthProvider } from '@nexora/auth';
+ 
+ createRoot(document.getElementById('root')!).render(
+   <StrictMode>
+     <ErrorBoundary>
+       <LanguageProvider>
+         <LocationProvider>
+-          <App />
++          <AuthProvider>
++            <App />
++          </AuthProvider>
+         </LocationProvider>
+       </LanguageProvider>
+     </ErrorBoundary>
+   </StrictMode>,
+ );
+-
+diff --git a/src/screens/Login.tsx b/src/screens/Login.tsx
+index 2d90f76..f4eb981 100644
+--- a/src/screens/Login.tsx
++++ b/src/screens/Login.tsx
+@@ -2,7 +2,7 @@ import React, { useState } from 'react';
+ import { motion, AnimatePresence } from 'motion/react';
+ import { Flower2, Mail, Lock, Eye, EyeOff, Check, X, AlertCircle, CheckCircle2 } from 'lucide-react';
+ import { NavigationProps } from '../types';
+-import { supabase, isSupabaseConfigured, authenticateThroughApp } from '../lib/supabase';
++import { useAuth } from '@nexora/auth';
+ import { useLanguage } from '../contexts/LanguageContext';
+ 
+ function getAuthErrorMessage(error: unknown, fallback: string) {
+@@ -23,6 +23,7 @@ function getAuthErrorMessage(error: unknown, fallback: string) {
+ 
+ export default function Login({ navigate }: NavigationProps) {
+   const { t } = useLanguage();
++  const { signIn, sendPasswordReset, configError } = useAuth();
+   const [showPassword, setShowPassword] = useState(false);
+   const [email, setEmail] = useState('');
+   const [password, setPassword] = useState('');
+@@ -38,18 +39,15 @@ export default function Login({ navigate }: NavigationProps) {
+     setLoading(true);
+     setError(null);
+ 
+-    if (!isSupabaseConfigured()) {
+-      setError('Authentication is not configured yet. Please add the Supabase URL and anon key in Vercel environment variables.');
++    if (configError) {
++      setError(configError);
+       setLoading(false);
+       return;
+     }
+ 
+     try {
+-      const data = await authenticateThroughApp('login', { email, password });
+-
+-      if (data.user) {
+-        navigate('dashboard');
+-      }
++      await signIn({ email, password });
++      navigate('dashboard');
+     } catch (err: any) {
+       setError(getAuthErrorMessage(err, t('failed_login')));
+     } finally {
+@@ -57,30 +55,21 @@ export default function Login({ navigate }: NavigationProps) {
+     }
+   };
+ 
+-  const handleDemoMode = () => {
+-    // Demo mode intentionally skips Supabase auth so the PWA can be reviewed
+-    // even when a deployment has not received its current public anon key yet.
+-    localStorage.setItem('nexora-demo-mode', 'true');
+-    navigate('dashboard');
+-  };
++
+ 
+   const handleForgotPassword = async (e: React.FormEvent) => {
+     e.preventDefault();
+     setForgotLoading(true);
+     setError(null);
+ 
+-    if (!isSupabaseConfigured()) {
+-      setError('Authentication is not configured yet. Please contact the administrator.');
++    if (configError) {
++      setError(configError);
+       setForgotLoading(false);
+       return;
+     }
+ 
+     try {
+-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+-        redirectTo: `${window.location.origin}/#/app/owner/reset-password`,
+-      });
+-
+-      if (resetError) throw resetError;
++      await sendPasswordReset(forgotEmail);
+       setForgotSuccess(true);
+     } catch (err: any) {
+       setError(err.message || t('failed_reset_link'));
+diff --git a/src/screens/RegistrationStepper.tsx b/src/screens/RegistrationStepper.tsx
+index 7d45eee..b878766 100644
+--- a/src/screens/RegistrationStepper.tsx
++++ b/src/screens/RegistrationStepper.tsx
+@@ -2,11 +2,13 @@ import React, { useState } from 'react';
+ import { motion } from 'motion/react';
+ import { X, ChevronDown, ArrowRight, ArrowLeft, AlertCircle, Check, MapPin } from 'lucide-react';
+ import { NavigationProps } from '../types';
+-import { supabase, isSupabaseConfigured, authenticateThroughApp } from '../lib/supabase';
++import { supabase } from '../lib/supabase';
++import { useAuth } from '@nexora/auth';
+ import { bootstrapMyShop, updateShopLocation } from '../lib/shopRepository';
+ import ShopLocationPicker, { ConfirmedShopLocation } from '../components/ShopLocationPicker';
+ 
+ export default function RegistrationStepper({ navigate }: NavigationProps) {
++  const { signUp, configError } = useAuth();
+   const [step, setStep] = useState<1 | 2>(1);
+   const [loading, setLoading] = useState(false);
+   const [error, setError] = useState<string | null>(null);
+@@ -56,26 +58,22 @@ export default function RegistrationStepper({ navigate }: NavigationProps) {
+       return;
+     }
+ 
+-    if (!isSupabaseConfigured()) {
+-      setError('Sign-up is not configured yet. Please add the Supabase URL and anon key in Vercel environment variables.');
++    if (configError) {
++      setError(configError);
+       return;
+     }
+ 
+     setLoading(true);
+     try {
+-      const data = await authenticateThroughApp('signup', {
++      const data = await signUp({
+         email,
+         password,
+-        data: {
+-          signup_role: 'business_user',
+-          full_name: businessName,
+-          business_name: businessName,
+-          business_category: businessCategory,
+-          contact_number: contactNumber,
+-        },
++        fullName: businessName,
++        role: 'business_user',
++        phone: contactNumber,
+       });
+ 
+-      if (data.session) {
++      if (data.session && supabase) {
+         // Create shop workspace (draft), phir canonical location save
+         try {
+           await bootstrapMyShop(supabase, {
+diff --git a/src/screens/RoleConflict.tsx b/src/screens/RoleConflict.tsx
+index 1a991cb..4a0cc72 100644
+--- a/src/screens/RoleConflict.tsx
++++ b/src/screens/RoleConflict.tsx
+@@ -10,9 +10,8 @@ import {
+ } from 'lucide-react';
+ import { NavigationProps } from '../types';
+ 
+-export default function RoleConflict({ navigate }: NavigationProps) {
+-  // Mock data for the existing role
+-  const existingRole = "Customer"; 
++export default function RoleConflict({ navigate, existingRole }: NavigationProps & { existingRole?: string }) {
++  const assignedRole = existingRole ? existingRole.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Customer';
+ 
+   return (
+     <div className="relative min-h-screen bg-surface-off-white overflow-hidden flex flex-col">
+diff --git a/src/vendor/nexora-auth/AuthProvider.tsx b/src/vendor/nexora-auth/AuthProvider.tsx
+new file mode 100644
+index 0000000..6a5bd53
+--- /dev/null
++++ b/src/vendor/nexora-auth/AuthProvider.tsx
+@@ -0,0 +1,415 @@
++"use client";
++
++/**
++ * Nexora — shared Auth Provider / Context.
++ *
++ * Drop this at the root of any Nexora React app (Main Website or a PWA). It
++ * owns exactly one auth state machine per origin:
++ *
++ *   initializing → authenticated | anonymous | unconfigured | error
++ *
++ * Responsibilities:
++ *  - restore a persisted session on boot (session persistence)
++ *  - subscribe to `onAuthStateChange` (multi-tab + token refresh)
++ *  - resolve the server-side profile that carries the authoritative role
++ *  - fail closed: a session without an active profile is signed out
++ *  - expose login / signup / recovery / PKCE-callback helpers
++ *
++ * It renders no UI of its own, so it composes with any design system.
++ */
++
++import {
++  createContext,
++  useCallback,
++  useContext,
++  useEffect,
++  useMemo,
++  useRef,
++  useState,
++  type ReactNode,
++} from "react";
++import type { Session, SupabaseClient, User } from "@supabase/supabase-js";
++import { getSupabaseClient, supabaseConfigErrorMessage, type NexoraClientOptions } from "./client";
++import { NexoraAuthError, toAuthError, type AuthErrorCode } from "./errors";
++import { homePathForRole, type PlatformRole } from "./roles";
++import {
++  completeCodeExchange,
++  requestPasswordReset,
++  resolveProfile,
++  signInWithOAuth as oauthSignIn,
++  signInWithPassword,
++  signOut as endSession,
++  signUpWithPassword,
++  updatePassword,
++  type NexoraProfile,
++  type SignInInput,
++  type SignUpInput,
++  type SignUpResult,
++} from "./session";
++
++export type AuthStatus = "initializing" | "authenticated" | "anonymous" | "unconfigured";
++
++export type AuthErrorState = {
++  code: AuthErrorCode;
++  message: string;
++  retryable: boolean;
++} | null;
++
++export type AuthContextValue = {
++  status: AuthStatus;
++  /** True until the first session resolution settles. */
++  loading: boolean;
++  session: Session | null;
++  user: User | null;
++  profile: NexoraProfile | null;
++  /** Authoritative role from `profiles.platform_role`, never from a URL. */
++  role: PlatformRole | null;
++  error: AuthErrorState;
++  /** Configuration problem, if any. Operator-facing. */
++  configError: string | null;
++  isAuthenticated: boolean;
++
++  signIn: (input: SignInInput) => Promise<NexoraProfile>;
++  signUp: (input: SignUpInput) => Promise<SignUpResult>;
++  signInWithGoogle: (options?: { returnTo?: string | null; role?: string }) => Promise<void>;
++  sendPasswordReset: (email: string) => Promise<void>;
++  setPassword: (password: string) => Promise<void>;
++  /** Run the PKCE exchange on this origin; returns the resolved profile. */
++  completeAuthCallback: (href?: string) => Promise<NexoraProfile>;
++  signOut: () => Promise<void>;
++  refresh: () => Promise<void>;
++  clearError: () => void;
++  /** Canonical app path for the current role. */
++  homePath: () => string;
++  /** Escape hatch for data access; `null` when unconfigured. */
++  client: SupabaseClient | null;
++};
++
++const AuthContext = createContext<AuthContextValue | null>(null);
++
++export type AuthProviderProps = {
++  children: ReactNode;
++  /** Supabase overrides; normally omitted so env config is used. */
++  clientOptions?: NexoraClientOptions;
++  /**
++   * Called when a session is present but has no active/valid profile.
++   * Defaults to signing the user out (fail closed).
++   */
++  onUnauthorizedProfile?: (user: User) => void;
++  /** Notified on every settled auth change — handy for analytics or GPS re-arm. */
++  onAuthChange?: (state: { session: Session | null; profile: NexoraProfile | null }) => void;
++};
++
++type InternalState = {
++  status: AuthStatus;
++  session: Session | null;
++  profile: NexoraProfile | null;
++  error: AuthErrorState;
++};
++
++function errorState(cause: unknown): AuthErrorState {
++  const authError = toAuthError(cause);
++  return { code: authError.code, message: authError.message, retryable: authError.retryable };
++}
++
++export function AuthProvider({
++  children,
++  clientOptions,
++  onUnauthorizedProfile,
++  onAuthChange,
++}: AuthProviderProps) {
++  // The client is memoized once: recreating it would drop the auth listener.
++  const client = useMemo(() => getSupabaseClient(clientOptions), [clientOptions]);
++  const configError = useMemo(
++    () => (client ? null : supabaseConfigErrorMessage(clientOptions)),
++    [client, clientOptions],
++  );
++
++  const [state, setState] = useState<InternalState>({
++    status: client ? "initializing" : "unconfigured",
++    session: null,
++    profile: null,
++    error: null,
++  });
++
++  // Guards against out-of-order async resolutions (fast login/logout cycles).
++  const revisionRef = useRef(0);
++  const mountedRef = useRef(true);
++  const changeHandlerRef = useRef(onAuthChange);
++  const unauthorizedRef = useRef(onUnauthorizedProfile);
++  changeHandlerRef.current = onAuthChange;
++  unauthorizedRef.current = onUnauthorizedProfile;
++
++  const applySession = useCallback(
++    async (session: Session | null): Promise<NexoraProfile | null> => {
++      if (!client) return null;
++      const revision = ++revisionRef.current;
++      const stale = () => !mountedRef.current || revision !== revisionRef.current;
++
++      if (!session?.user) {
++        if (stale()) return null;
++        setState({ status: "anonymous", session: null, profile: null, error: null });
++        changeHandlerRef.current?.({ session: null, profile: null });
++        return null;
++      }
++
++      try {
++        const profile = await resolveProfile(client, session.user.id);
++        if (stale()) return profile;
++
++        if (!profile) {
++          // Fail closed: a session without an active profile is not a session.
++          if (unauthorizedRef.current) {
++            unauthorizedRef.current(session.user);
++          } else {
++            await endSession(client).catch(() => undefined);
++          }
++          if (stale()) return null;
++          setState({
++            status: "anonymous",
++            session: null,
++            profile: null,
++            error: {
++              code: "profile_inactive",
++              message:
++                "This account is inactive or has no valid Nexora role. Contact Nexora support if you believe this is a mistake.",
++              retryable: false,
++            },
++          });
++          changeHandlerRef.current?.({ session: null, profile: null });
++          return null;
++        }
++
++        setState({ status: "authenticated", session, profile, error: null });
++        changeHandlerRef.current?.({ session, profile });
++        return profile;
++      } catch (cause) {
++        if (stale()) return null;
++        // Transport/RLS failure: keep the session, surface a retryable error.
++        setState({ status: "authenticated", session, profile: null, error: errorState(cause) });
++        changeHandlerRef.current?.({ session, profile: null });
++        return null;
++      }
++    },
++    [client],
++  );
++
++  useEffect(() => {
++    mountedRef.current = true;
++    if (!client) {
++      setState({ status: "unconfigured", session: null, profile: null, error: null });
++      return () => {
++        mountedRef.current = false;
++      };
++    }
++
++    // 1. Restore any persisted session for this origin.
++    void client.auth
++      .getSession()
++      .then(({ data }) => applySession(data.session))
++      .catch((cause) => {
++        if (!mountedRef.current) return;
++        setState({ status: "anonymous", session: null, profile: null, error: errorState(cause) });
++      });
++
++    // 2. Track sign-in, sign-out, token refresh and multi-tab changes.
++    const {
++      data: { subscription },
++    } = client.auth.onAuthStateChange((event, session) => {
++      // A token refresh keeps the same user; skip the profile round-trip.
++      if (event === "TOKEN_REFRESHED" && session) {
++        setState((prev) => (prev.profile ? { ...prev, session } : prev));
++        return;
++      }
++      // Deferred: supabase-js forbids awaiting inside the callback.
++      setTimeout(() => void applySession(session), 0);
++    });
++
++    return () => {
++      mountedRef.current = false;
++      revisionRef.current += 1;
++      subscription.unsubscribe();
++    };
++  }, [client, applySession]);
++
++  const requireClient = useCallback((): SupabaseClient => {
++    if (!client) {
++      throw new NexoraAuthError("not_configured", configError ?? "Nexora auth is not configured.", {
++        retryable: false,
++      });
++    }
++    return client;
++  }, [client, configError]);
++
++  const runGuarded = useCallback(
++    async <T,>(operation: (activeClient: SupabaseClient) => Promise<T>): Promise<T> => {
++      const activeClient = requireClient();
++      try {
++        setState((prev) => ({ ...prev, error: null }));
++        return await operation(activeClient);
++      } catch (cause) {
++        const next = errorState(cause);
++        if (mountedRef.current) setState((prev) => ({ ...prev, error: next }));
++        throw toAuthError(cause);
++      }
++    },
++    [requireClient],
++  );
++
++  const signIn = useCallback(
++    (input: SignInInput) =>
++      runGuarded(async (activeClient) => {
++        const { session } = await signInWithPassword(activeClient, input);
++        const profile = await applySession(session);
++        if (!profile) {
++          throw new NexoraAuthError(
++            "profile_inactive",
++            "This account is inactive or has no valid Nexora role. Contact Nexora support.",
++            { retryable: false },
++          );
++        }
++        return profile;
++      }),
++    [runGuarded, applySession],
++  );
++
++  const signUp = useCallback(
++    (input: SignUpInput) =>
++      runGuarded(async (activeClient) => {
++        const result = await signUpWithPassword(activeClient, input);
++        // Auto-confirm projects return a session immediately; adopt it now so
++        // the caller can route straight into the app.
++        if (result.session) await applySession(result.session);
++        return result;
++      }),
++    [runGuarded, applySession],
++  );
++
++  const signInWithGoogle = useCallback(
++    (options: { returnTo?: string | null; role?: string } = {}) =>
++      runGuarded((activeClient) => oauthSignIn(activeClient, "google", options)),
++    [runGuarded],
++  );
++
++  const sendPasswordReset = useCallback(
++    (email: string) => runGuarded((activeClient) => requestPasswordReset(activeClient, email)),
++    [runGuarded],
++  );
++
++  const setPassword = useCallback(
++    (password: string) => runGuarded((activeClient) => updatePassword(activeClient, password)),
++    [runGuarded],
++  );
++
++  const completeAuthCallback = useCallback(
++    (href?: string) =>
++      runGuarded(async (activeClient) => {
++        const session = await completeCodeExchange(activeClient, href);
++        const profile = await applySession(session);
++        if (!profile) {
++          throw new NexoraAuthError(
++            "profile_inactive",
++            "This account is inactive or has no valid Nexora role. Contact Nexora support.",
++            { retryable: false },
++          );
++        }
++        return profile;
++      }),
++    [runGuarded, applySession],
++  );
++
++  const signOutCallback = useCallback(async () => {
++    // Optimistic local clear so the UI never shows a stale identity.
++    revisionRef.current += 1;
++    setState({ status: "anonymous", session: null, profile: null, error: null });
++    if (client) await endSession(client).catch(() => undefined);
++    changeHandlerRef.current?.({ session: null, profile: null });
++  }, [client]);
++
++  const refresh = useCallback(async () => {
++    if (!client) return;
++    const { data } = await client.auth.getSession();
++    await applySession(data.session);
++  }, [client, applySession]);
++
++  const clearError = useCallback(() => {
++    setState((prev) => (prev.error ? { ...prev, error: null } : prev));
++  }, []);
++
++  const value = useMemo<AuthContextValue>(
++    () => ({
++      status: state.status,
++      loading: state.status === "initializing",
++      session: state.session,
++      user: state.session?.user ?? null,
++      profile: state.profile,
++      role: state.profile?.role ?? null,
++      error: state.error,
++      configError,
++      isAuthenticated: state.status === "authenticated" && Boolean(state.profile),
++      signIn,
++      signUp,
++      signInWithGoogle,
++      sendPasswordReset,
++      setPassword,
++      completeAuthCallback,
++      signOut: signOutCallback,
++      refresh,
++      clearError,
++      homePath: () => (state.profile ? homePathForRole(state.profile.role) : "/"),
++      client,
++    }),
++    [
++      state,
++      configError,
++      signIn,
++      signUp,
++      signInWithGoogle,
++      sendPasswordReset,
++      setPassword,
++      completeAuthCallback,
++      signOutCallback,
++      refresh,
++      clearError,
++      client,
++    ],
++  );
++
++  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
++}
++
++/** Access the Nexora auth context. Throws outside an `<AuthProvider>`. */
++export function useAuth(): AuthContextValue {
++  const context = useContext(AuthContext);
++  if (!context) {
++    throw new Error("useAuth must be used inside <AuthProvider>. Wrap your app root with it.");
++  }
++  return context;
++}
++
++/**
++ * Role gate for a protected screen.
++ *
++ * Returns the current authorization decision without rendering anything, so
++ * each app can show its own loading/denied UI. The decision is always based
++ * on the server-resolved profile role.
++ */
++export function useRoleGuard(allowed: PlatformRole | PlatformRole[]): {
++  loading: boolean;
++  allowed: boolean;
++  reason: "loading" | "anonymous" | "role_mismatch" | "unconfigured" | "ok";
++  role: PlatformRole | null;
++} {
++  const { status, role, loading } = useAuth();
++  const list = Array.isArray(allowed) ? allowed : [allowed];
++
++  if (status === "unconfigured") return { loading: false, allowed: false, reason: "unconfigured", role };
++  if (loading) return { loading: true, allowed: false, reason: "loading", role };
++  if (status !== "authenticated" || !role) {
++    return { loading: false, allowed: false, reason: "anonymous", role: null };
++  }
++  if (!list.includes(role)) return { loading: false, allowed: false, reason: "role_mismatch", role };
++  return { loading: false, allowed: true, reason: "ok", role };
++}
++
++export { AuthContext };
+diff --git a/src/vendor/nexora-auth/client.ts b/src/vendor/nexora-auth/client.ts
+new file mode 100644
+index 0000000..89b57a3
+--- /dev/null
++++ b/src/vendor/nexora-auth/client.ts
+@@ -0,0 +1,125 @@
++/**
++ * Nexora — centralized Supabase client factory.
++ *
++ * One browser client per origin, per configuration. Every Nexora app builds
++ * its client here so the auth options (PKCE, persistence, storage key) are
++ * identical everywhere.
++ *
++ * WHY PKCE:
++ *   The apps live on different origins, so a localStorage session cannot be
++ *   shared between them. PKCE lets each origin complete its own secure code
++ *   exchange against the shared project, which is the only correct way to
++ *   establish a session cross-origin without ever moving tokens through a URL.
++ *
++ * WHY A NAMESPACED STORAGE KEY:
++ *   When two Nexora apps are mounted on the SAME origin (the website proxies
++ *   the PWAs under /app/*), a shared default storage key makes them fight over
++ *   one session slot. `storageKey` is derived from the project ref so all
++ *   Nexora surfaces on one origin intentionally share exactly one session,
++ *   and never collide with an unrelated Supabase app on that origin.
++ */
++
++import { createClient, type SupabaseClient, type SupabaseClientOptions } from "@supabase/supabase-js";
++import { NexoraAuthError } from "./errors";
++import {
++  EXPECTED_SUPABASE_URL,
++  SUPABASE_PROJECT_REF,
++  resolveSupabaseEnv,
++  validateSupabaseEnv,
++  type SupabaseEnv,
++  type SupabaseEnvOverrides,
++} from "./env";
++
++export const NEXORA_STORAGE_KEY = `nexora.auth.${SUPABASE_PROJECT_REF}`;
++
++export type NexoraClientOptions = SupabaseEnvOverrides & {
++  /**
++   * Allow a non-shared project. Defaults to false: pointing an app at another
++   * project silently forks the user directory, which Phase 1 forbids.
++   * Only tests and local forks should set this.
++   */
++  allowForeignProject?: boolean;
++  /** Extra supabase-js options merged over the Nexora defaults. */
++  clientOptions?: SupabaseClientOptions<"public">;
++};
++
++let cachedClient: SupabaseClient | null = null;
++let cachedKey = "";
++
++function buildClient(env: SupabaseEnv, options: NexoraClientOptions): SupabaseClient {
++  const extra = options.clientOptions ?? {};
++  return createClient(env.url, env.anonKey, {
++    ...extra,
++    auth: {
++      // Session survives reloads and app re-mounts on this origin.
++      persistSession: true,
++      autoRefreshToken: true,
++      // Required for the /auth/callback code exchange and recovery links.
++      detectSessionInUrl: true,
++      // PKCE is mandatory: implicit flow puts tokens in the URL fragment.
++      flowType: "pkce",
++      storageKey: NEXORA_STORAGE_KEY,
++      ...(extra.auth ?? {}),
++    },
++    global: {
++      ...(extra.global ?? {}),
++      headers: {
++        "x-nexora-client": "nexora-auth/1",
++        ...(extra.global?.headers ?? {}),
++      },
++    },
++  });
++}
++
++/**
++ * Get the shared Supabase client, or `null` when this deployment is not
++ * correctly configured.
++ *
++ * Returning `null` (instead of throwing) is deliberate: the public website
++ * must still render salons and marketing content when auth is misconfigured.
++ * Auth-dependent screens call `requireSupabaseClient()` instead.
++ */
++export function getSupabaseClient(options: NexoraClientOptions = {}): SupabaseClient | null {
++  const env = resolveSupabaseEnv(options);
++  const validation = validateSupabaseEnv(env, { strictProject: !options.allowForeignProject });
++  if (!validation.valid) {
++    if (typeof console !== "undefined" && env.url) {
++      // One-line operator signal; contains no secrets.
++      console.warn(`[Nexora auth] ${validation.message}`);
++    }
++    return null;
++  }
++
++  const cacheKey = `${env.url}::${env.anonKey}`;
++  if (cachedClient && cachedKey === cacheKey) return cachedClient;
++  cachedClient = buildClient(env, options);
++  cachedKey = cacheKey;
++  return cachedClient;
++}
++
++/** Same as `getSupabaseClient`, but throws a typed error when unconfigured. */
++export function requireSupabaseClient(options: NexoraClientOptions = {}): SupabaseClient {
++  const client = getSupabaseClient(options);
++  if (client) return client;
++  throw new NexoraAuthError("not_configured", supabaseConfigErrorMessage(options), { retryable: false });
++}
++
++export function isSupabaseConfigured(options: NexoraClientOptions = {}): boolean {
++  return getSupabaseClient(options) !== null;
++}
++
++/** Operator-facing configuration error, safe to show in an admin banner. */
++export function supabaseConfigErrorMessage(options: NexoraClientOptions = {}): string {
++  return validateSupabaseEnv(resolveSupabaseEnv(options), {
++    strictProject: !options.allowForeignProject,
++  }).message;
++}
++
++/** Test seam: drop the memoized client. */
++export function resetSupabaseClient(): void {
++  cachedClient = null;
++  cachedKey = "";
++}
++
++export { EXPECTED_SUPABASE_URL, SUPABASE_PROJECT_REF };
++export type { SupabaseClient };
+diff --git a/src/vendor/nexora-auth/env.ts b/src/vendor/nexora-auth/env.ts
+new file mode 100644
+index 0000000..084a785
+--- /dev/null
++++ b/src/vendor/nexora-auth/env.ts
+@@ -0,0 +1,222 @@
++/**
++ * Nexora — centralized Supabase environment resolution.
++ *
++ * PHASE 1 CONTRACT
++ * ----------------
++ * Every Nexora surface (Main Website, Customer PWA, Shop Owner PWA, Growth
++ * Partner PWA, Delivery PWA, Job Portal) MUST resolve to the *same* Supabase
++ * project so that `auth.users` identities are literally the same rows.
++ *
++ * This module is the single place that decides which project the running
++ * bundle talks to. It supports both build systems used across the ecosystem:
++ *
++ *   Next / vinext  →  process.env.NEXT_PUBLIC_SUPABASE_URL / _ANON_KEY
++ *   Vite PWAs      →  import.meta.env.VITE_SUPABASE_URL / _ANON_KEY
++ *
++ * Only the anon/publishable key is ever read here. A service-role key must
++ * never reach a browser bundle.
++ */
++
++/** The one shared Supabase project for the whole Nexora platform. */
++export const SUPABASE_PROJECT_REF = "qwaehqsmodekbgvnaavz";
++export const EXPECTED_SUPABASE_HOSTNAME = `${SUPABASE_PROJECT_REF}.supabase.co`;
++export const EXPECTED_SUPABASE_URL = `https://${EXPECTED_SUPABASE_HOSTNAME}`;
++
++export type SupabaseEnvSource = "explicit" | "next-public" | "vite" | "none";
++
++export type SupabaseEnv = {
++  url: string;
++  anonKey: string;
++  /** Where the values came from — surfaced in diagnostics, never in the UI. */
++  source: SupabaseEnvSource;
++};
++
++export type SupabaseEnvOverrides = {
++  url?: string;
++  anonKey?: string;
++};
++
++/** Read `process.env` without exploding in browser bundles that lack it. */
++function processEnv(): Record<string, string | undefined> {
++  try {
++    if (typeof process === "undefined" || !process || typeof process.env !== "object") return {};
++    return process.env as Record<string, string | undefined>;
++  } catch {
++    return {};
++  }
++}
++
++/**
++ * Read the Vite build-time variables.
++ *
++ * Each key MUST be accessed as a complete static expression
++ * (`import.meta.env.VITE_SUPABASE_URL`). Vite replaces those literally at
++ * build time and its dev module-runner throws on dynamic access such as
++ * `meta.env[key]` or spreading `meta.env`. The whole block is wrapped because
++ * `import.meta.env` is undefined under Next/webpack and in plain Node.
++ */
++function viteEnv(): { url: string; anonKey: string } {
++  let url = "";
++  let anonKey = "";
++  try {
++    url = clean(import.meta.env?.VITE_SUPABASE_URL);
++  } catch {
++    url = "";
++  }
++  try {
++    anonKey = clean(import.meta.env?.VITE_SUPABASE_ANON_KEY);
++    if (!anonKey) {
++        anonKey = clean(import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY);
++    }
++  } catch {
++    anonKey = "";
++  }
++  return { url, anonKey };
++}
++
++function clean(value: string | undefined | null): string {
++  return typeof value === "string" ? value.trim() : "";
++}
++
++/**
++ * Resolve the Supabase connection for the current runtime.
++ *
++ * Precedence: explicit overrides → NEXT_PUBLIC_* → VITE_*. Overrides exist so
++ * a host app (or a test) can inject configuration without touching globals.
++ */
++export function resolveSupabaseEnv(overrides: SupabaseEnvOverrides = {}): SupabaseEnv {
++  const explicitUrl = clean(overrides.url);
++  const explicitKey = clean(overrides.anonKey);
++  if (explicitUrl && explicitKey) {
++    return { url: explicitUrl, anonKey: explicitKey, source: "explicit" };
++  }
++
++  const nodeEnv = processEnv();
++  const nextUrl = clean(nodeEnv.NEXT_PUBLIC_SUPABASE_URL);
++  const nextKey = clean(nodeEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY);
++  if (nextUrl && nextKey) {
++    return { url: nextUrl, anonKey: nextKey, source: "next-public" };
++  }
++
++  const { url: viteUrl, anonKey: viteKey } = viteEnv();
++  if (viteUrl && viteKey) {
++    return { url: viteUrl, anonKey: viteKey, source: "vite" };
++  }
++
++  // Partial configuration is reported as-is so diagnostics can say exactly
++  // which half is missing instead of a generic "not configured".
++  return {
++    url: explicitUrl || nextUrl || viteUrl,
++    anonKey: explicitKey || nextKey || viteKey,
++    source: "none",
++  };
++}
++
++export type SupabaseEnvProblem =
++  | "missing-url"
++  | "missing-anon-key"
++  | "invalid-url"
++  | "wrong-project"
++  | "service-role-key";
++
++export type SupabaseEnvValidation = {
++  valid: boolean;
++  problems: SupabaseEnvProblem[];
++  /** Operator-facing message. Safe to log; contains no secrets. */
++  message: string;
++  env: SupabaseEnv;
++};
++
++/**
++ * A service-role JWT decodes to `{"role":"service_role"}`. We do not decode
++ * the token (it may be a non-JWT publishable key); we only reject the obvious
++ * mistake of pasting a key that self-identifies as privileged.
++ */
++function looksLikeServiceRoleKey(key: string): boolean {
++  if (!key.startsWith("eyJ")) return false;
++  const payload = key.split(".")[1];
++  if (!payload) return false;
++  try {
++    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
++    const decoded =
++      typeof atob === "function"
++        ? atob(normalized)
++        : Buffer.from(normalized, "base64").toString("utf8");
++    return /"role"\s*:\s*"service_role"/.test(decoded);
++  } catch {
++    return false;
++  }
++}
++
++/**
++ * Validate that this deployment points at the shared project with a public key.
++ *
++ * `strictProject` (default true) is what guarantees cross-app identity
++ * sharing: a bundle configured against a different project is treated as
++ * unconfigured rather than silently creating a parallel user directory.
++ */
++export function validateSupabaseEnv(
++  env: SupabaseEnv = resolveSupabaseEnv(),
++  options: { strictProject?: boolean } = {},
++): SupabaseEnvValidation {
++  const strictProject = options.strictProject !== false;
++  const problems: SupabaseEnvProblem[] = [];
++
++  if (!env.url) problems.push("missing-url");
++  if (!env.anonKey) problems.push("missing-anon-key");
++
++  let hostname = "";
++  if (env.url) {
++    try {
++      hostname = new URL(env.url).hostname;
++    } catch {
++      problems.push("invalid-url");
++    }
++  }
++  if (hostname && strictProject && hostname !== EXPECTED_SUPABASE_HOSTNAME) {
++    problems.push("wrong-project");
++  }
++  if (env.anonKey && looksLikeServiceRoleKey(env.anonKey)) {
++    problems.push("service-role-key");
++  }
++
++  return {
++    valid: problems.length === 0,
++    problems,
++    message: describeEnvProblems(problems, hostname),
++    env,
++  };
++}
++
++function describeEnvProblems(problems: SupabaseEnvProblem[], hostname: string): string {
++  if (problems.length === 0) return "Supabase configuration is valid.";
++  const parts: string[] = [];
++  if (problems.includes("missing-url")) parts.push("SUPABASE_URL is missing");
++  if (problems.includes("missing-anon-key")) parts.push("SUPABASE_ANON_KEY is missing");
++  if (problems.includes("invalid-url")) parts.push("SUPABASE_URL is not a valid URL");
++  if (problems.includes("wrong-project")) {
++    parts.push(
++      `SUPABASE_URL points at ${hostname || "an unknown host"} instead of the shared project ${EXPECTED_SUPABASE_HOSTNAME}`,
++    );
++  }
++  if (problems.includes("service-role-key")) {
++    parts.push("the configured key is a service-role key and must never ship to a browser");
++  }
++  return `Nexora auth is not configured: ${parts.join("; ")}. Set the URL to ${EXPECTED_SUPABASE_URL} and use the anon/publishable key of project ${SUPABASE_PROJECT_REF}.`;
++}
++
++/** Non-secret snapshot for health endpoints and support tooling. */
++export function describeSupabaseEnv(env: SupabaseEnv = resolveSupabaseEnv()) {
++  const validation = validateSupabaseEnv(env);
++  return {
++    configured: validation.valid,
++    url: env.url || EXPECTED_SUPABASE_URL,
++    hasAnonKey: Boolean(env.anonKey),
++    anonKeyFingerprint: env.anonKey ? `${env.anonKey.slice(0, 6)}…${env.anonKey.slice(-4)}` : "",
++    source: env.source,
++    projectRef: SUPABASE_PROJECT_REF,
++    expectedHostname: EXPECTED_SUPABASE_HOSTNAME,
++    problems: validation.problems,
++    message: validation.message,
++  };
++}
+diff --git a/src/vendor/nexora-auth/errors.ts b/src/vendor/nexora-auth/errors.ts
+new file mode 100644
+index 0000000..252d793
+--- /dev/null
++++ b/src/vendor/nexora-auth/errors.ts
+@@ -0,0 +1,163 @@
++/**
++ * Nexora — auth error taxonomy.
++ *
++ * Goals:
++ *  1. Never swallow a real Supabase cause (a masked "Invalid credentials" cost
++ *     this platform a production incident — see docs/CUSTOMER_LOGIN_*.md).
++ *  2. Never leak whether an email exists during recovery flows.
++ *  3. Give the UI a stable machine-readable `code` so screens can branch
++ *     without string matching.
++ */
++
++export type AuthErrorCode =
++  | "offline"
++  | "network"
++  | "rate_limited"
++  | "not_configured"
++  | "invalid_credentials"
++  | "email_not_confirmed"
++  | "email_taken"
++  | "weak_password"
++  | "signup_disabled"
++  | "session_expired"
++  | "pkce_failed"
++  | "oauth_failed"
++  | "profile_missing"
++  | "profile_inactive"
++  | "role_mismatch"
++  | "forbidden"
++  | "unknown";
++
++export class NexoraAuthError extends Error {
++  readonly code: AuthErrorCode;
++  /** True when retrying the same action may succeed (network blips, races). */
++  readonly retryable: boolean;
++  /** Original Supabase/network error, preserved for logging and debugging. */
++  readonly cause?: unknown;
++
++  constructor(code: AuthErrorCode, message: string, options: { retryable?: boolean; cause?: unknown } = {}) {
++    super(message);
++    this.name = "NexoraAuthError";
++    this.code = code;
++    this.retryable = options.retryable ?? RETRYABLE_CODES.has(code);
++    this.cause = options.cause;
++  }
++}
++
++const RETRYABLE_CODES = new Set<AuthErrorCode>(["offline", "network", "rate_limited", "profile_missing"]);
++
++function rawMessage(error: unknown): string {
++  if (error instanceof Error) return error.message;
++  if (typeof error === "string") return error;
++  if (error && typeof error === "object" && "message" in error) {
++    return String((error as { message: unknown }).message ?? "");
++  }
++  return "";
++}
++
++function statusOf(error: unknown): number | undefined {
++  if (error && typeof error === "object" && "status" in error) {
++    const status = (error as { status: unknown }).status;
++    if (typeof status === "number") return status;
++  }
++  return undefined;
++}
++
++function isOffline(): boolean {
++  return typeof navigator !== "undefined" && navigator.onLine === false;
++}
++
++/**
++ * Map any thrown value to a `NexoraAuthError`.
++ *
++ * Unrecognized messages are passed through verbatim under `unknown` — that is
++ * deliberate. Hiding an unexpected Supabase message (wrong project, disabled
++ * provider, RLS denial) makes production incidents undebuggable.
++ */
++export function toAuthError(error: unknown, fallbackCode: AuthErrorCode = "unknown"): NexoraAuthError {
++  if (error instanceof NexoraAuthError) return error;
++
++  const raw = rawMessage(error);
++  const lower = raw.toLowerCase();
++  const status = statusOf(error);
++
++  if (isOffline()) {
++    return new NexoraAuthError("offline", "You appear to be offline. Reconnect and try again.", { cause: error });
++  }
++  if (/failed to fetch|network ?error|load failed|econnrefused|fetch failed/i.test(raw)) {
++    return new NexoraAuthError("network", "We could not reach Nexora. Check your connection and retry.", { cause: error });
++  }
++  if (status === 429 || /rate ?limit|too many requests|email rate limit/i.test(lower)) {
++    return new NexoraAuthError("rate_limited", "Too many attempts. Please wait a moment and try again.", { cause: error });
++  }
++  if (/invalid login credentials|invalid credentials|invalid email or password/i.test(lower)) {
++    return new NexoraAuthError(
++      "invalid_credentials",
++      "Email or password is incorrect. If you just signed up, confirm your email first.",
++      { cause: error },
++    );
++  }
++  if (/email not confirmed|confirm your email|email_not_confirmed/i.test(lower)) {
++    return new NexoraAuthError(
++      "email_not_confirmed",
++      "Please confirm your email address first. Check your inbox and spam folder for the Nexora link.",
++      { cause: error },
++    );
++  }
++  if (/already registered|user already exists|already been registered|duplicate key.*users/i.test(lower)) {
++    return new NexoraAuthError(
++      "email_taken",
++      "An account with this email already exists. Log in instead, or reset your password.",
++      { cause: error },
++    );
++  }
++  if (/password should be at least|password is too short|weak password|password.*6 characters/i.test(lower)) {
++    return new NexoraAuthError("weak_password", raw || "Please choose a stronger password.", { cause: error });
++  }
++  if (/signups? (are )?(not allowed|disabled)|signup disabled/i.test(lower)) {
++    return new NexoraAuthError(
++      "signup_disabled",
++      "New account creation is temporarily disabled. Please contact Nexora support.",
++      { cause: error },
++    );
++  }
++  if (/jwt expired|token (has )?expired|session (from session_id claim )?(is )?(not )?expired|refresh_token_not_found|invalid refresh token/i.test(lower)) {
++    return new NexoraAuthError("session_expired", "Your session expired. Please sign in again.", { cause: error });
++  }
++  if (/code (challenge|verifier)|pkce|both auth code and code verifier|invalid request.*code/i.test(lower)) {
++    return new NexoraAuthError(
++      "pkce_failed",
++      "This sign-in link is invalid, already used, or was opened in a different browser. Request a new link.",
++      { cause: error },
++    );
++  }
++  if (/oauth|provider is not enabled|unsupported provider|redirect_uri/i.test(lower)) {
++    return new NexoraAuthError(
++      "oauth_failed",
++      "Social sign-in is unavailable right now. Use your email and password instead.",
++      { cause: error },
++    );
++  }
++  if (status === 403 || /permission denied|row-level security|not authorized|forbidden/i.test(lower)) {
++    return new NexoraAuthError(
++      "forbidden",
++      "Your account is not allowed to perform this action.",
++      { cause: error },
++    );
++  }
++
++  return new NexoraAuthError(fallbackCode, raw || "Something went wrong. Please try again.", { cause: error });
++}
++
++/** Convenience: the user-facing string for any thrown value. */
++export function authErrorMessage(error: unknown): string {
++  return toAuthError(error).message;
++}
++
++/**
++ * Recovery flows must not reveal whether an email is registered.
++ * Real transport failures are still surfaced so users are not left guessing.
++ */
++export function neutralRecoveryMessage(email: string): string {
++  return `If an account exists for ${email}, we've sent a password reset link. Check your inbox and spam folder.`;
++}
+diff --git a/src/vendor/nexora-auth/index.ts b/src/vendor/nexora-auth/index.ts
+new file mode 100644
+index 0000000..935db7d
+--- /dev/null
++++ b/src/vendor/nexora-auth/index.ts
+@@ -0,0 +1,99 @@
++/**
++ * @nexora/auth — Phase 1 centralized Supabase auth for the Nexora platform.
++ *
++ * Import surface for every Nexora app:
++ *
++ *   import { AuthProvider, useAuth, getSupabaseClient } from "@nexora/auth";
++ *
++ * In this repository the same modules are reachable through
++ * `app/lib/supabaseClient.ts` and `app/lib/auth/*` re-exports.
++ */
++
++export {
++  SUPABASE_PROJECT_REF,
++  EXPECTED_SUPABASE_HOSTNAME,
++  EXPECTED_SUPABASE_URL,
++  resolveSupabaseEnv,
++  validateSupabaseEnv,
++  describeSupabaseEnv,
++  type SupabaseEnv,
++  type SupabaseEnvOverrides,
++  type SupabaseEnvProblem,
++  type SupabaseEnvValidation,
++  type SupabaseEnvSource,
++} from "./env";
++
++export {
++  NEXORA_STORAGE_KEY,
++  getSupabaseClient,
++  requireSupabaseClient,
++  isSupabaseConfigured,
++  supabaseConfigErrorMessage,
++  resetSupabaseClient,
++  type NexoraClientOptions,
++  type SupabaseClient,
++} from "./client";
++
++export {
++  PLATFORM_ROLES,
++  SELF_SERVICE_SIGNUP_ROLES,
++  ROLE_LABELS,
++  ROLE_HOME_PATHS,
++  ROLE_QUERY_SLUGS,
++  isPlatformRole,
++  isSignupRole,
++  normalizeRole,
++  normalizeSignupRole,
++  homePathForRole,
++  roleQuerySlug,
++  type PlatformRole,
++  type SignupRole,
++} from "./roles";
++
++export {
++  NexoraAuthError,
++  toAuthError,
++  authErrorMessage,
++  neutralRecoveryMessage,
++  type AuthErrorCode,
++} from "./errors";
++
++export {
++  AUTH_ROUTES,
++  DEFAULT_ALLOWED_AUTH_ORIGINS,
++  allowedAuthOrigins,
++  safeReturnPath,
++  safeRedirectUrl,
++  buildCallbackUrl,
++  buildRecoveryUrl,
++  buildLoginUrl,
++  readAuthParams,
++  supabaseRedirectAllowlist,
++} from "./redirects";
++
++export {
++  resolveProfile,
++  signInWithPassword,
++  signUpWithPassword,
++  requestPasswordReset,
++  updatePassword,
++  completeCodeExchange,
++  signInWithOAuth,
++  signOut,
++  handoffTo,
++  type NexoraProfile,
++  type SignInInput,
++  type SignUpInput,
++  type SignUpResult,
++} from "./session";
++
++export {
++  AuthProvider,
++  useAuth,
++  useRoleGuard,
++  AuthContext,
++  type AuthContextValue,
++  type AuthProviderProps,
++  type AuthStatus,
++  type AuthErrorState,
++} from "./AuthProvider";
+diff --git a/src/vendor/nexora-auth/package.json b/src/vendor/nexora-auth/package.json
+new file mode 100644
+index 0000000..4eb49e7
+--- /dev/null
++++ b/src/vendor/nexora-auth/package.json
+@@ -0,0 +1,28 @@
++{
++  "name": "@nexora/auth",
++  "version": "1.0.0",
++  "private": true,
++  "description": "Centralized Supabase auth, roles and PKCE redirect policy shared by every Nexora app.",
++  "type": "module",
++  "main": "./src/index.ts",
++  "types": "./src/index.ts",
++  "exports": {
++    ".": "./src/index.ts",
++    "./client": "./src/client.ts",
++    "./env": "./src/env.ts",
++    "./roles": "./src/roles.ts",
++    "./errors": "./src/errors.ts",
++    "./redirects": "./src/redirects.ts",
++    "./session": "./src/session.ts",
++    "./provider": "./src/AuthProvider.tsx"
++  },
++  "peerDependencies": {
++    "@supabase/supabase-js": ">=2.90.0",
++    "react": ">=18"
++  },
++  "peerDependenciesMeta": {
++    "react": {
++      "optional": true
++    }
++  }
++}
+diff --git a/src/vendor/nexora-auth/redirects.ts b/src/vendor/nexora-auth/redirects.ts
+new file mode 100644
+index 0000000..70da389
+--- /dev/null
++++ b/src/vendor/nexora-auth/redirects.ts
+@@ -0,0 +1,245 @@
++/**
++ * Nexora — central auth redirect / PKCE redirect-target policy.
++ *
++ * THE CROSS-ORIGIN PROBLEM
++ * ------------------------
++ * Each Nexora PWA runs on its own origin. A Supabase session lives in that
++ * origin's localStorage, so signing in on the website does NOT create a
++ * session inside the Customer PWA. Tokens must never be copied across origins
++ * through a URL — that leaks credentials into history, logs and referrers.
++ *
++ * THE MODEL
++ * ---------
++ * 1. The Main Website hosts the central auth surface: /login, /signup,
++ *    /auth/callback, /forgot-password, /reset-password.
++ * 2. A PWA that needs a session sends the user to the central login with a
++ *    `returnTo` that points back at its own origin.
++ * 3. `returnTo` is validated against a strict allowlist (this module). Any
++ *    unknown origin is dropped and replaced by a safe same-origin default —
++ *    this is what stops open-redirect and token-phishing attacks.
++ * 4. After authentication the browser lands on the destination origin, where
++ *    supabase-js performs its OWN PKCE exchange against the shared project.
++ *    Only a single-use `code` ever travels in the URL; the `code_verifier`
++ *    never leaves the destination origin's storage.
++ *
++ * Every URL in `redirectTo` must also be registered in
++ * Supabase → Authentication → URL Configuration → Redirect URLs.
++ */
++
++/** Paths that make up the central auth surface on the Main Website. */
++export const AUTH_ROUTES = {
++  login: "/login",
++  signup: "/signup",
++  callback: "/auth/callback",
++  forgotPassword: "/forgot-password",
++  resetPassword: "/reset-password",
++  expired: "/auth/expired",
++} as const;
++
++/**
++ * Origins allowed to receive an authenticated redirect.
++ *
++ * Configure per environment with NEXT_PUBLIC_NEXORA_ALLOWED_AUTH_ORIGINS
++ * (comma-separated). The built-in list covers the current production
++ * deployments so a missing env var cannot break sign-in.
++ *
++ * Keep this list identical to the Supabase Redirect URL allowlist.
++ */
++export const DEFAULT_ALLOWED_AUTH_ORIGINS: readonly string[] = [
++  "https://nexora-main-website.vercel.app",
++  "https://custmer-fresh-app.vercel.app",
++  "https://shop-onwer-pink-nexora-aap.vercel.app",
++  "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app",
++];
++
++function envAllowedOrigins(): string[] {
++  try {
++    const raw =
++      (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_NEXORA_ALLOWED_AUTH_ORIGINS) || "";
++    return raw
++      .split(",")
++      .map((value) => value.trim())
++      .filter(Boolean);
++  } catch {
++    return [];
++  }
++}
++
++function viteAllowedOrigins(): string[] {
++  try {
++    const raw = String((import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env?.VITE_NEXORA_ALLOWED_AUTH_ORIGINS ?? "");
++    return raw.split(",").map((value) => value.trim()).filter(Boolean);
++  } catch {
++    return [];
++  }
++}
++
++function normalizeOrigin(value: string): string | null {
++  try {
++    const url = new URL(value);
++    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
++    // Plain http is only ever acceptable for local development.
++    if (url.protocol === "http:" && !isLocalHostname(url.hostname)) return null;
++    return url.origin;
++  } catch {
++    return null;
++  }
++}
++
++function isLocalHostname(hostname: string): boolean {
++  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
++}
++
++/** The effective allowlist: defaults + env + the current origin. */
++export function allowedAuthOrigins(currentOrigin?: string): string[] {
++  const origins = new Set<string>();
++  for (const candidate of [...DEFAULT_ALLOWED_AUTH_ORIGINS, ...envAllowedOrigins(), ...viteAllowedOrigins()]) {
++    const normalized = normalizeOrigin(candidate);
++    if (normalized) origins.add(normalized);
++  }
++  const self = currentOrigin ?? browserOrigin();
++  if (self) {
++    const normalized = normalizeOrigin(self);
++    // An app is always allowed to redirect back to itself.
++    if (normalized) origins.add(normalized);
++  }
++  return [...origins];
++}
++
++function browserOrigin(): string {
++  return typeof window !== "undefined" && window.location ? window.location.origin : "";
++}
++
++/**
++ * Validate a same-origin redirect path.
++ *
++ * Rejects protocol-relative (`//evil.com`), backslash-smuggled, and absolute
++ * URLs. Query strings are preserved (PWAs need deep-link context), but a
++ * fragment is dropped because Supabase uses the fragment on some flows.
++ */
++export function safeReturnPath(candidate: string | null | undefined, fallback = "/"): string {
++  if (!candidate) return fallback;
++  const value = candidate.trim();
++  if (!value.startsWith("/")) return fallback;
++  if (value.startsWith("//") || value.includes("\\")) return fallback;
++  if (/^\/+\s*javascript:/i.test(value)) return fallback;
++  return value.split("#")[0] || fallback;
++}
++
++/**
++ * Validate a full redirect URL against the allowlist.
++ * Returns the normalized absolute URL, or `null` when it is not allowed.
++ */
++export function safeRedirectUrl(
++  candidate: string | null | undefined,
++  options: { currentOrigin?: string } = {},
++): string | null {
++  if (!candidate) return null;
++  const currentOrigin = options.currentOrigin ?? browserOrigin();
++  const value = candidate.trim();
++
++  // Relative target → resolve against the current origin.
++  if (value.startsWith("/") && !value.startsWith("//")) {
++    if (!currentOrigin) return safeReturnPath(value, "/");
++    return new URL(safeReturnPath(value, "/"), currentOrigin).toString();
++  }
++
++  let parsed: URL;
++  try {
++    parsed = new URL(value);
++  } catch {
++    return null;
++  }
++  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLocalHostname(parsed.hostname))) {
++    return null;
++  }
++  const allowed = allowedAuthOrigins(currentOrigin);
++  if (!allowed.includes(parsed.origin)) return null;
++  parsed.hash = "";
++  return parsed.toString();
++}
++
++/**
++ * Build the `redirectTo` passed to Supabase for signup confirmation, magic
++ * links and OAuth. Always points at the central callback on THIS origin, with
++ * the validated final destination carried in `returnTo`.
++ */
++export function buildCallbackUrl(
++  options: { returnTo?: string | null; origin?: string; role?: string } = {},
++): string {
++  const origin = options.origin ?? browserOrigin();
++  const base = `${origin}${AUTH_ROUTES.callback}`;
++  const url = new URL(base);
++  const returnTo = options.returnTo ? safeRedirectUrl(options.returnTo, { currentOrigin: origin }) : null;
++  if (returnTo) {
++    // Same-origin destinations travel as a path, cross-origin as a full URL.
++    const parsed = new URL(returnTo);
++    url.searchParams.set("returnTo", parsed.origin === origin ? `${parsed.pathname}${parsed.search}` : returnTo);
++  }
++  if (options.role) url.searchParams.set("role", options.role);
++  return url.toString();
++}
++
++/** Build the password-recovery landing URL (must be allowlisted in Supabase). */
++export function buildRecoveryUrl(options: { origin?: string } = {}): string {
++  const origin = options.origin ?? browserOrigin();
++  return `${origin}${AUTH_ROUTES.resetPassword}`;
++}
++
++/**
++ * Build a link to the central login for an app that needs a session.
++ * Used by a PWA (or a guarded route) to bounce an anonymous visitor.
++ */
++export function buildLoginUrl(
++  options: { returnTo?: string | null; role?: string; origin?: string; centralOrigin?: string } = {},
++): string {
++  const origin = options.origin ?? browserOrigin();
++  const centralOrigin = options.centralOrigin ?? origin;
++  const url = new URL(`${centralOrigin}${AUTH_ROUTES.login}`);
++  if (options.role) url.searchParams.set("role", options.role);
++  const returnTo = options.returnTo ? safeRedirectUrl(options.returnTo, { currentOrigin: origin }) : null;
++  if (returnTo) {
++    const parsed = new URL(returnTo);
++    url.searchParams.set(
++      "returnTo",
++      parsed.origin === centralOrigin ? `${parsed.pathname}${parsed.search}` : returnTo,
++    );
++  }
++  // Same-origin central login → return a path so client routers can push it.
++  return centralOrigin === origin ? `${url.pathname}${url.search}` : url.toString();
++}
++
++/** Read auth-related query params from the current URL (or a provided one). */
++export function readAuthParams(href?: string): {
++  code: string | null;
++  role: string | null;
++  returnTo: string | null;
++  reason: string | null;
++  error: string | null;
++} {
++  const target = href ?? (typeof window !== "undefined" ? window.location.href : "");
++  if (!target) return { code: null, role: null, returnTo: null, reason: null, error: null };
++  let url: URL;
++  try {
++    url = new URL(target);
++  } catch {
++    return { code: null, role: null, returnTo: null, reason: null, error: null };
++  }
++  const params = url.searchParams;
++  return {
++    code: params.get("code"),
++    role: params.get("role"),
++    returnTo: params.get("returnTo"),
++    reason: params.get("reason"),
++    error: params.get("error_description") ?? params.get("error"),
++  };
++}
++
++/**
++ * Documentation helper: the exact list to paste into
++ * Supabase → Authentication → URL Configuration → Redirect URLs.
++ */
++export function supabaseRedirectAllowlist(): string[] {
++  const paths = [AUTH_ROUTES.callback, AUTH_ROUTES.resetPassword];
++  return allowedAuthOrigins().flatMap((origin) => paths.map((path) => `${origin}${path}`));
++}
+diff --git a/src/vendor/nexora-auth/roles.ts b/src/vendor/nexora-auth/roles.ts
+new file mode 100644
+index 0000000..5121673
+--- /dev/null
++++ b/src/vendor/nexora-auth/roles.ts
+@@ -0,0 +1,148 @@
++/**
++ * Nexora — canonical platform roles.
++ *
++ * `public.profiles.platform_role` is the ONLY role authority. A URL, a
++ * localStorage flag, or a client-supplied form field must never promote an
++ * authenticated user; the database trigger `guard_profile_platform_role()`
++ * enforces that server-side.
++ *
++ * Canonical values (must match the `profiles_platform_role_check` constraint):
++ *
++ *   customer         — end user booking services            (alias: "user")
++ *   business_user    — salon / shop owner                   (alias: "shop_owner")
++ *   growth_partner   — onboarding & growth partner
++ *   delivery_partner — delivery / field partner
++ *   admin            — platform staff (never self-service signup)
++ *
++ * The alias layer exists because product docs and the newer PWAs speak in
++ * terms of `user` / `shop_owner`. Aliases are normalized at the edge; only
++ * canonical values are ever written to the database.
++ */
++
++export const PLATFORM_ROLES = [
++  "customer",
++  "business_user",
++  "growth_partner",
++  "delivery_partner",
++  "admin",
++] as const;
++
++export type PlatformRole = (typeof PLATFORM_ROLES)[number];
++
++/** Roles a visitor may create for themselves through public signup. */
++export const SELF_SERVICE_SIGNUP_ROLES = [
++  "customer",
++  "business_user",
++  "growth_partner",
++  "delivery_partner",
++] as const;
++
++export type SignupRole = (typeof SELF_SERVICE_SIGNUP_ROLES)[number];
++
++/**
++ * Every accepted spelling → canonical value. Keep in sync with the SQL
++ * function `private.normalize_platform_role()`.
++ */
++const ROLE_ALIASES: Record<string, PlatformRole> = {
++  // customer
++  customer: "customer",
++  user: "customer",
++  client: "customer",
++  consumer: "customer",
++  // shop owner
++  business_user: "business_user",
++  "business-user": "business_user",
++  shop_owner: "business_user",
++  "shop-owner": "business_user",
++  shopowner: "business_user",
++  owner: "business_user",
++  business_owner: "business_user",
++  merchant: "business_user",
++  vendor: "business_user",
++  // growth partner
++  growth_partner: "growth_partner",
++  "growth-partner": "growth_partner",
++  growthpartner: "growth_partner",
++  partner: "growth_partner",
++  // delivery partner
++  delivery_partner: "delivery_partner",
++  "delivery-partner": "delivery_partner",
++  deliverypartner: "delivery_partner",
++  delivery: "delivery_partner",
++  rider: "delivery_partner",
++  courier: "delivery_partner",
++  // admin
++  admin: "admin",
++  administrator: "admin",
++  staff: "admin",
++};
++
++export function isPlatformRole(value: unknown): value is PlatformRole {
++  return typeof value === "string" && (PLATFORM_ROLES as readonly string[]).includes(value);
++}
++
++export function isSignupRole(value: unknown): value is SignupRole {
++  return typeof value === "string" && (SELF_SERVICE_SIGNUP_ROLES as readonly string[]).includes(value);
++}
++
++/**
++ * Normalize any accepted alias to a canonical role.
++ * Returns `null` for unknown input — callers decide the fallback so that a
++ * typo never silently grants a role.
++ */
++export function normalizeRole(value: unknown): PlatformRole | null {
++  if (typeof value !== "string") return null;
++  const key = value.trim().toLowerCase().replace(/\s+/g, "_");
++  return ROLE_ALIASES[key] ?? null;
++}
++
++/**
++ * Normalize a role requested at signup time.
++ * `admin` is never self-service: it degrades to `customer`, matching the
++ * server-side trigger. Provisioning an admin requires service-role access.
++ */
++export function normalizeSignupRole(value: unknown, fallback: SignupRole = "customer"): SignupRole {
++  const role = normalizeRole(value);
++  if (!role || role === "admin") return fallback;
++  return role;
++}
++
++/** Human label used in UI copy. */
++export const ROLE_LABELS: Record<PlatformRole, string> = {
++  customer: "Customer",
++  business_user: "Shop Owner",
++  growth_partner: "Growth Partner",
++  delivery_partner: "Delivery Partner",
++  admin: "Administrator",
++};
++
++/**
++ * Canonical app home for each role.
++ *
++ * The three original portals stay on the same-origin mounts owned by
++ * `app/lib/portalRoutes.ts`; the two Phase 1 roles extend the same scheme.
++ */
++export const ROLE_HOME_PATHS: Record<PlatformRole, string> = {
++  customer: "/app/customer",
++  business_user: "/app/owner",
++  growth_partner: "/app/partner",
++  delivery_partner: "/app/delivery",
++  admin: "/app/admin",
++};
++
++export function homePathForRole(role: PlatformRole): string {
++  return ROLE_HOME_PATHS[role] ?? ROLE_HOME_PATHS.customer;
++}
++
++/** Short slug used in `?role=` query parameters on the central login screen. */
++export const ROLE_QUERY_SLUGS: Record<PlatformRole, string> = {
++  customer: "customer",
++  business_user: "owner",
++  growth_partner: "growth-partner",
++  delivery_partner: "delivery",
++  admin: "admin",
++};
++
++export function roleQuerySlug(role: PlatformRole): string {
++  return ROLE_QUERY_SLUGS[role] ?? "customer";
++}
+diff --git a/src/vendor/nexora-auth/session.ts b/src/vendor/nexora-auth/session.ts
+new file mode 100644
+index 0000000..40c2083
+--- /dev/null
++++ b/src/vendor/nexora-auth/session.ts
+@@ -0,0 +1,278 @@
++/**
++ * Nexora — framework-agnostic auth operations.
++ *
++ * Everything here is pure logic over a SupabaseClient so it can be reused by
++ * React (AuthProvider), by tests, and by non-React surfaces.
++ *
++ * SECURITY INVARIANT
++ * ------------------
++ * A Supabase session alone never authorizes anything. Authorization is the
++ * pair (session, active profile). `resolveProfile()` fails closed: a session
++ * without an active profile carrying a known role is signed out.
++ */
++
++import type { Session, SupabaseClient, User } from "@supabase/supabase-js";
++import { NexoraAuthError, toAuthError } from "./errors";
++import { isPlatformRole, normalizeSignupRole, type PlatformRole, type SignupRole } from "./roles";
++import { buildCallbackUrl, buildRecoveryUrl, safeRedirectUrl } from "./redirects";
++
++export type NexoraProfile = {
++  id: string;
++  fullName: string;
++  role: PlatformRole;
++  isActive: boolean;
++  avatarUrl: string | null;
++  phone: string | null;
++};
++
++/** Columns the client is allowed to read. RLS restricts rows to the owner. */
++const PROFILE_COLUMNS = "id,full_name,platform_role,is_active,avatar_url,phone";
++
++type ProfileRow = {
++  id: string;
++  full_name: string | null;
++  platform_role: string | null;
++  is_active: boolean | null;
++  avatar_url: string | null;
++  phone: string | null;
++};
++
++function mapProfile(row: ProfileRow): NexoraProfile | null {
++  if (!row || !isPlatformRole(row.platform_role) || row.is_active !== true) return null;
++  return {
++    id: row.id,
++    fullName: row.full_name?.trim() || "User",
++    role: row.platform_role,
++    isActive: true,
++    avatarUrl: row.avatar_url,
++    phone: row.phone,
++  };
++}
++
++/**
++ * Fetch the caller's profile, retrying briefly.
++ *
++ * The retry exists for one specific race: right after signup the
++ * `on_auth_user_created` trigger may not have committed when the client reads.
++ * The client NEVER creates or upserts a profile — the trigger is the only
++ * writer of `platform_role`, enforced by `guard_profile_platform_role()`.
++ */
++export async function resolveProfile(
++  client: SupabaseClient,
++  userId: string,
++  options: { attempts?: number; delayMs?: number } = {},
++): Promise<NexoraProfile | null> {
++  const attempts = options.attempts ?? 3;
++  const delayMs = options.delayMs ?? 350;
++  let lastError: unknown = null;
++
++  for (let attempt = 0; attempt < attempts; attempt += 1) {
++    const { data, error } = await client
++      .from("profiles")
++      .select(PROFILE_COLUMNS)
++      .eq("id", userId)
++      .maybeSingle();
++
++    if (!error && data) {
++      const profile = mapProfile(data as ProfileRow);
++      // An existing-but-inactive/invalid row is authoritative: stop retrying.
++      if (profile) return profile;
++      return null;
++    }
++    lastError = error;
++    if (attempt < attempts - 1) {
++      await new Promise((resolve) => setTimeout(resolve, delayMs * (attempt + 1)));
++    }
++  }
++
++  if (lastError) {
++    // Surface RLS/network problems instead of pretending the user has no profile.
++    throw toAuthError(lastError, "profile_missing");
++  }
++  return null;
++}
++
++export type SignInInput = {
++  email: string;
++  password: string;
++};
++
++export async function signInWithPassword(
++  client: SupabaseClient,
++  { email, password }: SignInInput,
++): Promise<{ session: Session; user: User }> {
++  const trimmed = email.trim().toLowerCase();
++  if (!trimmed || !password) {
++    throw new NexoraAuthError("invalid_credentials", "Email and password are required.", { retryable: false });
++  }
++  const { data, error } = await client.auth.signInWithPassword({ email: trimmed, password });
++  if (error) throw toAuthError(error, "invalid_credentials");
++  if (!data.session || !data.user) {
++    throw new NexoraAuthError("unknown", "Sign-in did not return a session. Please try again.");
++  }
++  return { session: data.session, user: data.user };
++}
++
++export type SignUpInput = {
++  email: string;
++  password: string;
++  fullName: string;
++  role?: SignupRole | string;
++  /** Optional growth-partner referral code captured from the landing URL. */
++  refCode?: string | null;
++  /** Where to send the user after email confirmation. Validated. */
++  returnTo?: string | null;
++  phone?: string | null;
++};
++
++export type SignUpResult = {
++  /** True when the project auto-confirms and a session already exists. */
++  session: Session | null;
++  user: User | null;
++  /** True when Supabase requires the user to click a confirmation email. */
++  needsEmailConfirmation: boolean;
++};
++
++/**
++ * Create an account on the shared project.
++ *
++ * The requested role travels as `options.data.signup_role` metadata; the
++ * database trigger normalizes it and writes `profiles.platform_role`. The
++ * client cannot choose a role directly, and `admin` is never self-service.
++ */
++export async function signUpWithPassword(
++  client: SupabaseClient,
++  input: SignUpInput,
++): Promise<SignUpResult> {
++  const email = input.email.trim().toLowerCase();
++  const fullName = input.fullName.trim();
++  if (!email || !input.password) {
++    throw new NexoraAuthError("invalid_credentials", "Email and password are required.", { retryable: false });
++  }
++  if (input.password.length < 8) {
++    throw new NexoraAuthError("weak_password", "Password must be at least 8 characters.", { retryable: false });
++  }
++  if (!fullName) {
++    throw new NexoraAuthError("unknown", "Full name is required for new accounts.", { retryable: false });
++  }
++
++  const role = normalizeSignupRole(input.role);
++  const { data, error } = await client.auth.signUp({
++    email,
++    password: input.password,
++    options: {
++      emailRedirectTo: buildCallbackUrl({ returnTo: input.returnTo, role }),
++      data: {
++        full_name: fullName,
++        signup_role: role,
++        ...(input.phone ? { phone: input.phone } : {}),
++        ...(input.refCode ? { ref_code: input.refCode } : {}),
++      },
++    },
++  });
++  if (error) throw toAuthError(error, "unknown");
++
++  return {
++    session: data.session ?? null,
++    user: data.user ?? null,
++    needsEmailConfirmation: Boolean(data.user) && !data.session,
++  };
++}
++
++/** Send a PKCE password-recovery email. Never reveals whether the email exists. */
++export async function requestPasswordReset(client: SupabaseClient, email: string): Promise<void> {
++  const trimmed = email.trim().toLowerCase();
++  if (!trimmed) {
++    throw new NexoraAuthError("unknown", "Enter the email address you registered with.", { retryable: false });
++  }
++  const { error } = await client.auth.resetPasswordForEmail(trimmed, {
++    redirectTo: buildRecoveryUrl(),
++  });
++  if (error) throw toAuthError(error, "unknown");
++}
++
++/** Complete a recovery: requires the session created by the recovery link. */
++export async function updatePassword(client: SupabaseClient, password: string): Promise<void> {
++  if (password.length < 8) {
++    throw new NexoraAuthError("weak_password", "Password must be at least 8 characters.", { retryable: false });
++  }
++  const { error } = await client.auth.updateUser({ password });
++  if (error) throw toAuthError(error, "unknown");
++}
++
++/**
++ * Complete the PKCE code exchange on the current origin.
++ *
++ * supabase-js with `detectSessionInUrl` may already have consumed the code by
++ * the time this runs, so an "already used / invalid code" error is tolerated
++ * when a live session exists afterwards. Anything else is a real failure.
++ */
++export async function completeCodeExchange(
++  client: SupabaseClient,
++  href?: string,
++): Promise<Session> {
++  const target = href ?? (typeof window !== "undefined" ? window.location.href : "");
++  let code: string | null = null;
++  let providerError: string | null = null;
++  if (target) {
++    try {
++      const url = new URL(target);
++      code = url.searchParams.get("code");
++      providerError = url.searchParams.get("error_description") ?? url.searchParams.get("error");
++    } catch {
++      /* fall through to the session check */
++    }
++  }
++  if (providerError) throw toAuthError(new Error(providerError), "oauth_failed");
++
++  if (code) {
++    const { error } = await client.auth.exchangeCodeForSession(code);
++    if (error && !/invalid|expired|not found|already|code (challenge|verifier)/i.test(error.message)) {
++      throw toAuthError(error, "pkce_failed");
++    }
++  }
++
++  const { data, error: sessionError } = await client.auth.getSession();
++  if (sessionError) throw toAuthError(sessionError, "pkce_failed");
++  if (!data.session) {
++    throw new NexoraAuthError(
++      "pkce_failed",
++      "This sign-in link is invalid, already used, or was opened in a different browser. Request a new link.",
++      { retryable: false },
++    );
++  }
++  return data.session;
++}
++
++/** Start an OAuth (PKCE) sign-in that returns to the central callback. */
++export async function signInWithOAuth(
++  client: SupabaseClient,
++  provider: "google",
++  options: { returnTo?: string | null; role?: string } = {},
++): Promise<void> {
++  const { error } = await client.auth.signInWithOAuth({
++    provider,
++    options: {
++      redirectTo: buildCallbackUrl({ returnTo: options.returnTo, role: options.role }),
++    },
++  });
++  if (error) throw toAuthError(error, "oauth_failed");
++}
++
++export async function signOut(client: SupabaseClient): Promise<void> {
++  const { error } = await client.auth.signOut();
++  // A failed sign-out on an already-dead session must not block the UI.
++  if (error && !/session|not (logged|signed) in|missing/i.test(error.message)) {
++    throw toAuthError(error, "unknown");
++  }
++}
++
++/**
++ * Hand a signed-in user off to another Nexora origin.
++ *
++ * No tokens are transferred. The destination performs its own PKCE exchange
++ * (or already holds a session). Unlisted destinations are refused.
++ */
++export function handoffTo(destination: string, fallback = "/"): string {
++  return safeRedirectUrl(destination) ?? fallback;
++}
+diff --git a/tsconfig.json b/tsconfig.json
+index d88f175..f614994 100644
+--- a/tsconfig.json
++++ b/tsconfig.json
+@@ -18,6 +18,9 @@
+     "paths": {
+       "@/*": [
+         "./*"
++      ],
++      "@nexora/auth": [
++        "./src/vendor/nexora-auth/index.ts"
+       ]
+     },
+     "allowImportingTsExtensions": true,
+diff --git a/vite.config.ts b/vite.config.ts
+index 1a91c9c..ebcb03a 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -116,6 +116,7 @@ export default defineConfig(() => {
+     resolve: {
+       alias: {
+         '@': path.resolve(__dirname, '.'),
++        '@nexora/auth': path.resolve(__dirname, 'src/vendor/nexora-auth/index.ts'),
+       },
+     },
+     server: {
+-- 
+2.39.5
+

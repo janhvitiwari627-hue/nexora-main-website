@@ -1,26 +1,32 @@
-# Customer PWA — production cleanup and same-origin mount
+# Customer PWA — Phase 2 centralized auth integration
 
 **Target repo:** `freewebsite859-sudo/custmer-Fresh-app-` (branch `main`)
-**Patch:** `supabase-integration.patch`
-**Verified:** applies cleanly to the locked repository `main` (`4eff314` base), including the scoped manifest/service worker.
+**Base verified:** `ff93504467b0`
+**Patch:** `auth-integration.patch`
+**Build verified:** `npm run build` passes on the locked base after applying the patch.
 
-## Task coverage
+> This patch targets the current target-repository `main` listed below. It is
+> self-contained and can be applied directly. The older
+> `supabase-integration.patch` is retained as the historical Phase 1/data-layer
+> artifact but no longer applies cleanly after upstream `main` moved; do not
+> apply it on top of the current base unless you have first reset to its old
+> locked commit.
 
-The locked Customer PWA main branch already contains the real Supabase catalog,
-booking, profile, favorites, reviews, settings, payment-methods, support,
-notifications, and address repositories. This patch closes the remaining
-production-boundary gap:
+## What changes
 
-| Requirement | Delivered by |
+| Area | Change |
 |---|---|
-| No demo bypass | Removes the `?demo=true` account/session path and the seeded Demo Customer |
-| Customer PWA only | Removes Owner/Growth Partner dashboard imports and render branches; non-customer roles show the role-conflict flow and are signed out |
-| No copied role routes | Removes `owner-dashboard` and `gp-dashboard` screens from the Customer `Screen` contract and role helper |
-| Same-origin mount | Vite `base` reads `VITE_APP_BASE_PATH`; manifest/worker scope to `/app/customer/`; `.env.example` documents the mount |
-| Discovery handoff | Consumes public salon id/slug + optional service from Main Website query context and resolves it against the live catalog |
+| Shared auth package | Vendors `@nexora/auth` under `src/vendor/nexora-auth/` and aliases `@nexora/auth` to it in Vite/TypeScript. |
+| Supabase client | `src/lib/supabaseClient.ts` now re-exports the shared validated client (`qwaehqsmodekbgvnaavz`, anon/publishable key only, PKCE, namespaced storage). |
+| React auth state | Mounts `<AuthProvider>` in `src/main.tsx`; `App.tsx` consumes `useAuth()` instead of maintaining its own session listener. |
+| Customer role gate | A session is not enough: only an active `profiles.platform_role = 'customer'` can enter. Other active roles receive the role-conflict flow and are signed out of this PWA. |
+| Login / signup / reset | Auth actions now call shared helpers (`signIn`, `signUp`, `signInWithGoogle`, `sendPasswordReset`, `setPassword`) with the package's mapped errors and PKCE-safe redirects. |
+| Demo bypass | The `?demo=true` fake account/session path is removed so no customer production screen can bypass Supabase. |
+| Recovery | PKCE password recovery is handled through the shared provider; the reset surface is shown on `PASSWORD_RECOVERY`. |
 
-The patch intentionally keeps device-only UX storage (location/install flags and
-the one-time legacy migration). It does not treat that as business data.
+The existing app-specific customer profile loader remains responsible for the
+customer-only columns (`preferred_city`, rewards, wallet, etc.). Shared auth
+owns identity, session, profile existence, and basic role normalization.
 
 ## Apply
 
@@ -28,25 +34,23 @@ the one-time legacy migration). It does not treat that as business data.
 git clone https://github.com/freewebsite859-sudo/custmer-Fresh-app-.git
 cd custmer-Fresh-app-
 git checkout main
-git am /path/to/integration-packages/customer-pwa/supabase-integration.patch
+git am /path/to/integration-packages/customer-pwa/auth-integration.patch
 cp .env.example .env
-# For the unified main website deployment set VITE_APP_BASE_PATH=/app/customer/
-# Optionally set VITE_CANONICAL_ORIGIN for raw-deployment diagnostics.
-npm install && npx tsc --noEmit && npm run build
+npm install
+npm run build
 ```
 
-## Deploy checklist
+The old `supabase-integration.patch` is historical only on the current target
+base; `auth-integration.patch` is sufficient.
 
-1. The app must use the locked Supabase project:
-   `https://qwaehqsmodekbgvnaavz.supabase.co`.
-2. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` with the host's
-   publishable/anon key. Never add a service-role key to the browser build.
-3. Set `VITE_APP_BASE_PATH=/app/customer/` when the main website proxies this
-   app through `/app/customer/*`. The manifest and service worker use the same
-   base and scope, so this worker cannot intercept `/app/owner/*`,
-   `/app/partner/*`, or the public site.
-4. Apply and verify the shared customer schema migrations:
-   `select * from public.verify_customer_phase1_backend();`.
+## Deployment checklist
 
-The customer app's own `profiles.platform_role` check remains authoritative; a
-Customer PWA URL cannot grant access to Owner or Growth Partner functionality.
+1. Set `VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co`.
+2. Set `VITE_SUPABASE_ANON_KEY` to the shared project's anon/publishable key.
+   Never use a service-role key in the browser.
+3. When proxied behind the main site, keep `VITE_APP_BASE_PATH=/app/customer/`.
+4. Ensure the main-website auth origin and this PWA origin are in the Supabase
+   Redirect URLs list. For local/preview origins beyond the defaults, set
+   `VITE_NEXORA_ALLOWED_AUTH_ORIGINS=https://this-pwa.example,https://main-site.example`.
+5. Apply and verify PR #48's database migration before rollout:
+   `select * from public.verify_phase1_auth();` must return all passed.
