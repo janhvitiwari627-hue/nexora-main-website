@@ -85,11 +85,10 @@ test("Main Website booking CTA hands off to Customer PWA", () => {
   assert.doesNotMatch(mainApp, /razorpay-create-order/);
 });
 
-test("Portal Gateway shows role mismatch and offers sign-out", () => {
-  // PortalGateway handles role mismatch
+test("Portal Gateway mounts any authenticated shell and offers sign-out", () => {
   assert.match(mainApp, /function PortalGateway/);
-  assert.match(mainApp, /requestedRole && requestedRole !== profileRole/);
-  assert.match(mainApp, /navigate\(portalPathForRole\(profileRole\)\)/);
+  assert.match(mainApp, /no role-home redirects/);
+  assert.doesNotMatch(mainApp, /requestedRole && requestedRole !== profileRole/);
 
   // Sign-out available
   assert.match(mainApp, /signOut/);

@@ -102,9 +102,9 @@ test("legacy salon coordinate columns are removed from browser grants", () => {
 
 // Role security ------------------------------------------------------------------
 
-test("Customer cannot access Owner or Partner routes", () => {
-  assert.match(app, /requestedRole && requestedRole !== profileRole/);
-  assert.match(app, /navigate\(portalPathForRole\(profileRole\)\)/);
+test("Customer cannot read Owner or Partner data — RLS and access gates stay server-backed", () => {
+  assert.match(app, /no role-home redirects/);
+  assert.doesNotMatch(app, /requestedRole && requestedRole !== profileRole/);
   assert.match(access, /requireRole\("business_user"\)/);
   assert.match(access, /requireRole\("growth_partner"\)/);
   assert.match(access, /requireRole\("customer"\)/);

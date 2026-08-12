@@ -63,7 +63,7 @@ test("canonical continuation waits for provider state and routes by verified rol
   assert.match(continuation, /if \(loading/);
   assert.match(continuation, /!isAuthenticated \|\| !role/);
   assert.match(continuation, /navigate\(`\/auth\/login/);
-  assert.match(continuation, /homePathForRole\(role\)/);
-  assert.match(continuation, /role === "customer" && requestedReturnTo/);
+  assert.match(continuation, /destinationForVerifiedRole\(role, requestedReturnTo/);
+  assert.doesNotMatch(continuation, /role === "customer" && requestedReturnTo/);
   assert.doesNotMatch(continuation, /localStorage|platform_role\s*=|role\s*=\s*params/);
 });

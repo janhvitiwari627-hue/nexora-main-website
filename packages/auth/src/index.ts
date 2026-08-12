@@ -64,6 +64,7 @@ export {
   allowedAuthOrigins,
   safeReturnPath,
   safeRedirectUrl,
+  destinationForVerifiedRole,
   buildCallbackUrl,
   buildRecoveryUrl,
   buildLoginUrl,

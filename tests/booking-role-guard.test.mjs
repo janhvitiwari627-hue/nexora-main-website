@@ -19,14 +19,14 @@ test("Main Website does not duplicate the customer booking/payment implementatio
   assert.match(app, /LegacyBookingHandoff/);
 });
 
-test("portal access is role-gated by the permanent profile and app membership", () => {
+test("portal access requires an active profile; data stays RLS-gated", () => {
   assert.match(app, /requireAuth\(\)/);
   assert.match(app, /requireOwnerWorkspace\(client\)/);
   assert.match(app, /requirePartnerMembership\(client\)/);
   assert.match(app, /requireCustomerAccount\(client\)/);
   assert.match(app, /profile\.is_active !== true/);
-  assert.match(app, /requestedRole && requestedRole !== profileRole/);
-  assert.match(app, /navigate\(portalPathForRole\(profileRole\)\)/);
+  assert.match(app, /no role-home redirects/);
+  assert.doesNotMatch(app, /requestedRole && requestedRole !== profileRole/);
 });
 
 test("portal links carry safe return paths only", () => {

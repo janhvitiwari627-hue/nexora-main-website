@@ -17,7 +17,7 @@ import {
   requireOwnerWorkspace,
   requirePartnerMembership,
   safeRedirectUrl,
-  safeReturnPath,
+  destinationForVerifiedRole,
   supabaseConfigErrorMessage,
   useAuth,
   type PlatformRole,
@@ -26,7 +26,6 @@ import {
   PORTAL_PATHS,
   TEMPLATE_PATH,
   isPortalPath,
-  isTemplatePath,
   legacyDashboardRoleFromPath,
   portalMountKeyFromPath,
   portalPathForMountKey,
@@ -2230,24 +2229,9 @@ function mapRequestedRoleToPlatformRole(requested: string | null): Role {
   return "customer";
 }
 
-function destinationForVerifiedRole(role: PlatformRole, requestedReturnTo: string | null): string {
-  const home = homePathForRole(role);
-  // Customers may resume only a validated local path. Every other role —
-  // including Delivery Partner and Admin — continues to its server-profile home
-  // unless the return path is that role's own same-origin portal.
-  if (role !== "customer") {
-    const safe = safeReturnPath(requestedReturnTo, home);
-    const path = safe.split("?", 1)[0];
-    if (role === "business_user" && (path === PORTAL_PATHS.business_user || path.startsWith(`${PORTAL_PATHS.business_user}/`) || isTemplatePath(path))) {
-      return safe;
-    }
-    if (role === "growth_partner" && (path === PORTAL_PATHS.growth_partner || path.startsWith(`${PORTAL_PATHS.growth_partner}/`))) {
-      return safe;
-    }
-    return home;
-  }
-  return safeReturnPath(requestedReturnTo, home);
-}
+// destinationForVerifiedRole lives in @nexora/auth (packages/auth/src/redirects.ts).
+// Every verified role may resume any safe same-origin shell; role-home is only
+// the fallback when returnTo is missing or unsafe. RLS still authorizes data.
 
 function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navigate: (path: string) => void; refCode: string }) {
   // Keep the first render identical on server and client (hydration-safe);
@@ -2579,8 +2563,8 @@ function AuthLogoutPage({ navigate }: { navigate: (path: string) => void }) {
 
 /**
  * Resume an auth handoff from the provider's authoritative profile state.
- * Customers may resume a validated local deep link; every other role lands on
- * its own canonical portal, including the delivery/admin mount fallbacks.
+ * Any verified role may resume a validated local path (including every
+ * mounted shell). Role-home is only the fallback when returnTo is absent.
  */
 function AuthContinuePage({ navigate }: { navigate: (path: string) => void }) {
   const { status, loading, isAuthenticated, role, configError, error } = useAuth();
@@ -2599,11 +2583,7 @@ function AuthContinuePage({ navigate }: { navigate: (path: string) => void }) {
         return;
       }
 
-      const roleHome = homePathForRole(role);
-      const destination = role === "customer" && requestedReturnTo
-        ? requestedReturnTo
-        : roleHome;
-      navigate(destination);
+      navigate(destinationForVerifiedRole(role, requestedReturnTo || null));
     }, 0);
     return () => window.clearTimeout(timer);
   }, [configError, isAuthenticated, loading, navigate, role, status]);
@@ -2885,28 +2865,34 @@ function PortalGateway({
         return;
       }
       const profileRole = profile.platform_role;
-      if (!isMountedPortalRole(profileRole)) {
-        navigate(homePathForRole(profileRole));
-        return;
-      }
-      if (requestedRole && requestedRole !== profileRole) {
-        navigate(portalPathForRole(profileRole));
-        return;
-      }
+      // Phase 2 — no role-home redirects. Every authenticated active profile
+      // may open any mounted shell. RLS and the PWA's own gates authorize data.
+      // Workspace checks stay best-effort so Template can list salon ids.
 
-      // Role alone does not grant an app workspace. Verify the app-specific
-      // server membership before handing the browser to the mounted PWA.
-      // These gates re-verify auth.getUser() and never accept client-side ids.
       if (!client) throw new Error(missingSupabaseConfigMessage);
       let salonIds: string[] = [];
-      if (profileRole === "business_user") {
-        const workspace = await requireOwnerWorkspace(client);
-        salonIds = workspace.salonIds;
-      } else if (profileRole === "growth_partner") await requirePartnerMembership(client);
-      else await requireCustomerAccount(client);
+      const mountKey = portalMountKeyFromPath(currentPath)
+        ?? (requestedRole === "business_user" ? "owner"
+          : requestedRole === "growth_partner" ? "partner"
+          : "customer");
+      try {
+        if (mountKey === "owner" || mountKey === "template") {
+          const workspace = await requireOwnerWorkspace(client);
+          salonIds = workspace.salonIds;
+        } else if (mountKey === "partner") {
+          await requirePartnerMembership(client);
+        } else {
+          await requireCustomerAccount(client);
+        }
+      } catch {
+        // Shell still mounts. PWA + RLS decide what the caller can see.
+      }
 
       if (!isPortalPath(currentPath)) {
-        navigate(portalPathForRole(profileRole));
+        const dest = requestedRole ? portalPathForRole(requestedRole) : portalPathForRole(
+          isMountedPortalRole(profileRole) ? profileRole : "customer",
+        );
+        navigate(dest);
         return;
       }
       setState({ loading: false, role: profileRole });
