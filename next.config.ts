@@ -1,4 +1,9 @@
 import type { NextConfig } from "next";
+import {
+  DEFAULT_CUSTOMER_PWA_ORIGIN,
+  DEFAULT_OWNER_PWA_ORIGIN,
+  DEFAULT_PARTNER_PWA_ORIGIN,
+} from "./app/lib/portalOrigins";
 
 const EXPECTED_SUPABASE_URL = "https://qwaehqsmodekbgvnaavz.supabase.co";
 const JOB_PORTAL_BASE = "/job-portal";
@@ -29,46 +34,61 @@ function safePortalOrigin(value: string | undefined): string | null {
   }
 }
 
-// Growth Partner PWA deployed URL — used as fallback when Vercel env var is not set
-const GROWTH_PARTNER_APP_ORIGIN = safePortalOrigin(
-  process.env.GROWTH_PARTNER_APP_ORIGIN ?? 
-  process.env.NEXORA_PARTNER_PWA_ORIGIN ??
-  "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app",
+/**
+ * Phase 1 — hardcoded production fallbacks for Customer, Owner and Partner.
+ * Template stays env-var-only: it has no known deployment URL.
+ *
+ * Destinations preserve the `/app/{role}` path so Vite PWAs built with
+ * `base: "/app/customer/"` (etc.) receive the path they expect. Rewriting
+ * `/app/partner` to `origin/` was the Phase 1 HTTP 500.
+ */
+const CUSTOMER_APP_ORIGIN = safePortalOrigin(
+  process.env.NEXORA_CUSTOMER_PWA_ORIGIN ?? DEFAULT_CUSTOMER_PWA_ORIGIN,
 );
+const OWNER_APP_ORIGIN = safePortalOrigin(
+  process.env.NEXORA_OWNER_PWA_ORIGIN ?? DEFAULT_OWNER_PWA_ORIGIN,
+);
+const PARTNER_APP_ORIGIN = safePortalOrigin(
+  process.env.GROWTH_PARTNER_APP_ORIGIN ??
+    process.env.NEXORA_PARTNER_PWA_ORIGIN ??
+    DEFAULT_PARTNER_PWA_ORIGIN,
+);
+const TEMPLATE_APP_ORIGIN = safePortalOrigin(process.env.NEXORA_TEMPLATE_PWA_ORIGIN);
+
+type PortalRewrite = { source: string; destination: string };
+
+function pathPreservingMounts(path: string, origin: string): PortalRewrite[] {
+  return [
+    { source: path, destination: `${origin}${path}` },
+    { source: `${path}/`, destination: `${origin}${path}/` },
+    { source: `${path}/:path*`, destination: `${origin}${path}/:path*` },
+  ];
+}
 
 const nextConfig: NextConfig = {
   // The PWA deployments are mounted behind the apex domain. If a mount is not
   // configured, the application shows an explicit unavailable state; it does
   // not render a copied Owner/Partner/Customer dashboard implementation.
   async rewrites() {
-    // Portal proxy origins are explicit deployment configuration. There are no
-    // hardcoded cross-origin fallbacks; an unconfigured mount fails closed in
-    // PortalGateway instead of forwarding browser credentials unexpectedly.
-    // GROWTH_PARTNER_APP_ORIGIN is the canonical env var for the Growth Partner
-    // PWA; NEXORA_PARTNER_PWA_ORIGIN is accepted as a legacy alias.
-    const partnerOrigin = GROWTH_PARTNER_APP_ORIGIN;
+    // 12 portal rewrites when all three role PWAs resolve (3 paths × 3 rules
+    // + /growth-partner × 3). Template adds 3 more only when its env is set.
     const portals = [
-      { path: "/app/customer", origin: safePortalOrigin(process.env.NEXORA_CUSTOMER_PWA_ORIGIN) },
-      { path: "/app/owner", origin: safePortalOrigin(process.env.NEXORA_OWNER_PWA_ORIGIN) },
-      { path: "/app/partner", origin: partnerOrigin },
-      { path: "/app/template", origin: safePortalOrigin(process.env.NEXORA_TEMPLATE_PWA_ORIGIN) },
+      { path: "/app/customer", origin: CUSTOMER_APP_ORIGIN },
+      { path: "/app/owner", origin: OWNER_APP_ORIGIN },
+      { path: "/app/partner", origin: PARTNER_APP_ORIGIN },
+      { path: "/app/template", origin: TEMPLATE_APP_ORIGIN },
     ];
     const portalMounts = portals
       .filter((portal): portal is { path: string; origin: string } => Boolean(portal.origin))
-      .flatMap(({ path, origin }) => [
-        { source: path, destination: `${origin}/` },
-        { source: `${path}/`, destination: `${origin}/` },
-        { source: `${path}/:path*`, destination: `${origin}/:path*` },
-      ]);
-    // Growth Partner edge rewrite: /growth-partner proxies to the dedicated
-    // PWA before the Next.js catch-all route. All nested paths, assets, and
-    // query parameters are preserved. This replaces the client-side placeholder
-    // and avoids an iframe — the PWA renders directly at this URL.
-    const growthPartnerRewrites: Array<{ source: string; destination: string }> = partnerOrigin
+      .flatMap(({ path, origin }) => pathPreservingMounts(path, origin));
+    // Growth Partner raw-origin mount: /growth-partner proxies to the PWA
+    // root (no /app/partner prefix). Nested paths, assets, and query
+    // parameters are preserved.
+    const growthPartnerRewrites: PortalRewrite[] = PARTNER_APP_ORIGIN
       ? [
-          { source: "/growth-partner", destination: `${partnerOrigin}/` },
-          { source: "/growth-partner/", destination: `${partnerOrigin}/` },
-          { source: "/growth-partner/:path*", destination: `${partnerOrigin}/:path*` },
+          { source: "/growth-partner", destination: `${PARTNER_APP_ORIGIN}/` },
+          { source: "/growth-partner/", destination: `${PARTNER_APP_ORIGIN}/` },
+          { source: "/growth-partner/:path*", destination: `${PARTNER_APP_ORIGIN}/:path*` },
         ]
       : [];
     const jobPortalRoutes = [
@@ -79,10 +99,9 @@ const nextConfig: NextConfig = {
       ]),
     ];
     // Nested `/app/*/` assets and all /growth-partner/* routes load before the
-    // catch-all page. The Growth Partner PWA renders directly at
-    // /growth-partner via edge rewrites — no iframe, no copied dashboard.
-    // Exact `/app/customer`, `/app/owner`, `/app/template` stay on the Next.js
-    // app (portalExactMounts run as afterFiles).
+    // catch-all page. Exact `/app/customer`, `/app/owner`, `/app/partner`,
+    // `/app/template` stay on the Next.js app (portalExactMounts run as
+    // afterFiles) so PortalGateway can authenticate before the iframe loads.
     const portalAssetMounts = portalMounts.filter((rule) => rule.source.endsWith("/") || rule.source.includes(":path*"));
     const portalExactMounts = portalMounts.filter((rule) => !rule.source.endsWith("/") && !rule.source.includes(":path*"));
     return {
@@ -124,10 +143,10 @@ const nextConfig: NextConfig = {
     // Do not bake empty NEXT_PUBLIC_SUPABASE_* strings. Next already inlines
     // real NEXT_PUBLIC_* values from the deployment environment; forcing ""
     // here would hide a runtime key behind a build-time miss.
-    NEXT_PUBLIC_NEXORA_CUSTOMER_PORTAL_MOUNTED: process.env.NEXORA_CUSTOMER_PWA_ORIGIN ? "true" : "false",
-    NEXT_PUBLIC_NEXORA_OWNER_PORTAL_MOUNTED: process.env.NEXORA_OWNER_PWA_ORIGIN ? "true" : "false",
-    NEXT_PUBLIC_NEXORA_PARTNER_PORTAL_MOUNTED: GROWTH_PARTNER_APP_ORIGIN ? "true" : "false",
-    NEXT_PUBLIC_NEXORA_TEMPLATE_PORTAL_MOUNTED: process.env.NEXORA_TEMPLATE_PWA_ORIGIN ? "true" : "false",
+    NEXT_PUBLIC_NEXORA_CUSTOMER_PORTAL_MOUNTED: CUSTOMER_APP_ORIGIN ? "true" : "false",
+    NEXT_PUBLIC_NEXORA_OWNER_PORTAL_MOUNTED: OWNER_APP_ORIGIN ? "true" : "false",
+    NEXT_PUBLIC_NEXORA_PARTNER_PORTAL_MOUNTED: PARTNER_APP_ORIGIN ? "true" : "false",
+    NEXT_PUBLIC_NEXORA_TEMPLATE_PORTAL_MOUNTED: TEMPLATE_APP_ORIGIN ? "true" : "false",
     NEXT_PUBLIC_EXPECTED_SUPABASE_URL: EXPECTED_SUPABASE_URL,
     // Phase 1 — origins allowed to receive an authenticated PKCE redirect.
     // Must mirror the Supabase Redirect URL allowlist. Empty falls back to the
