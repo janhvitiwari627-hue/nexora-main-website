@@ -3,28 +3,16 @@
   "framework": "nextjs",
   "rewrites": [
     {
-      "source": "/app/customer",
-      "destination": "https://custmer-fresh-app.vercel.app/app/customer"
-    },
-    {
       "source": "/app/customer/:path*",
-      "destination": "https://custmer-fresh-app.vercel.app/app/customer/:path*"
-    },
-    {
-      "source": "/app/owner",
-      "destination": "https://shop-onwer-pink-nexora-aap.vercel.app/app/owner"
+      "destination": "https://custmer-fresh-app.vercel.app/:path*"
     },
     {
       "source": "/app/owner/:path*",
-      "destination": "https://shop-onwer-pink-nexora-aap.vercel.app/app/owner/:path*"
-    },
-    {
-      "source": "/app/partner",
-      "destination": "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app/app/partner"
+      "destination": "https://shop-onwer-pink-nexora-aap.vercel.app/:path*"
     },
     {
       "source": "/app/partner/:path*",
-      "destination": "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app/app/partner/:path*"
+      "destination": "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app/:path*"
     }
   ]
 }

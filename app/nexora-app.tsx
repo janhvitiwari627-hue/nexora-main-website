@@ -24,11 +24,16 @@ import {
 } from "./lib/auth";
 import {
   PORTAL_PATHS,
+  TEMPLATE_PATH,
   isPortalPath,
+  isTemplatePath,
   legacyDashboardRoleFromPath,
+  portalMountKeyFromPath,
+  portalPathForMountKey,
   portalPathForRole,
   portalRoleFromPath,
   roleQueryForPortalRole,
+  type PortalKey,
 } from "./lib/portalRoutes";
 // GPS location system — browser-native geolocation only. No Google
 // Geolocation/Maps Geocoding, no Mapbox, no Nominatim, no API keys.
@@ -440,7 +445,7 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   else content = <HomePage navigate={navigate} online={online} authState={authState} refCode={refCode} />;
 
   return (
-    <div className="site-shell">
+    <div className={`site-shell${isPortalPath(path) ? " portal-open" : ""}`}>
       {!online && <div className="offline-banner">Offline — live salon and account data may be unavailable.</div>}
       {!getClient() && <div className="offline-banner" style={{ background: "#7b244a" }}>Supabase not configured: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY for project {SUPABASE_PROJECT_REF}.</div>}
       <Header navigate={navigate} authState={authState} location={location} />
@@ -494,6 +499,7 @@ function Header({
         <button onClick={() => { setMobileMenuOpen(false); navigate(PORTAL_PATHS.customer); }}>Customer</button>
         <button onClick={() => { setMobileMenuOpen(false); navigate(PORTAL_PATHS.business_user); }}>Shop Owner</button>
         <button onClick={() => { setMobileMenuOpen(false); navigate(PORTAL_PATHS.growth_partner); }}>Growth Partner</button>
+        <button onClick={() => { setMobileMenuOpen(false); navigate(TEMPLATE_PATH); }}>Template</button>
         <button className="job-portal-link" onClick={openJobPortal}>Job Portal</button>
         {authState.session ? (
           <>
@@ -741,6 +747,7 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
           <RoleCard title="For Customers" text="Find published salons, book services, and follow payment or refund status." path={PORTAL_PATHS.customer} navigate={navigate} />
           <RoleCard title="For Shop Owners" text="Review website proposals, publish your storefront, manage bookings, services, staff, offers, wallet and earnings under RLS own only." path={PORTAL_PATHS.business_user} navigate={navigate} />
           <RoleCard title="For Growth Partners" text="Prepare salon websites, track attribution, and view commission hold status – 10% of platform fee, held 7 days." path={PORTAL_PATHS.growth_partner} navigate={navigate} />
+          <RoleCard title="For Website Templates" text="Open the Owner website builder after the same Shop Owner identity and salon workspace are verified." path={TEMPLATE_PATH} navigate={navigate} />
         </div>
       </section>
     </main>
@@ -2068,8 +2075,19 @@ function mapRequestedRoleToPlatformRole(requested: string | null): Role {
 function destinationForVerifiedRole(role: PlatformRole, requestedReturnTo: string | null): string {
   const home = homePathForRole(role);
   // Customers may resume only a validated local path. Every other role —
-  // including Delivery Partner and Admin — continues to its server-profile home.
-  if (role !== "customer") return home;
+  // including Delivery Partner and Admin — continues to its server-profile home
+  // unless the return path is that role's own same-origin portal.
+  if (role !== "customer") {
+    const safe = safeReturnPath(requestedReturnTo, home);
+    const path = safe.split("?", 1)[0];
+    if (role === "business_user" && (path === PORTAL_PATHS.business_user || path.startsWith(`${PORTAL_PATHS.business_user}/`) || isTemplatePath(path))) {
+      return safe;
+    }
+    if (role === "growth_partner" && (path === PORTAL_PATHS.growth_partner || path.startsWith(`${PORTAL_PATHS.growth_partner}/`))) {
+      return safe;
+    }
+    return home;
+  }
   return safeReturnPath(requestedReturnTo, home);
 }
 
@@ -2653,11 +2671,33 @@ function getDetailedConfigError(): string {
   return supabaseConfigErrorMessage({ url: supabaseUrl, anonKey: supabaseKey });
 }
 
-function isPortalMounted(role: Role): boolean {
-  if (role === "customer") return process.env.NEXT_PUBLIC_NEXORA_CUSTOMER_PORTAL_MOUNTED === "true";
-  if (role === "business_user") return process.env.NEXT_PUBLIC_NEXORA_OWNER_PORTAL_MOUNTED === "true";
-  if (role === "growth_partner") return process.env.NEXT_PUBLIC_NEXORA_PARTNER_PORTAL_MOUNTED === "true";
+function isPortalMounted(key: PortalKey): boolean {
+  if (key === "customer") return process.env.NEXT_PUBLIC_NEXORA_CUSTOMER_PORTAL_MOUNTED === "true";
+  if (key === "owner") return process.env.NEXT_PUBLIC_NEXORA_OWNER_PORTAL_MOUNTED === "true";
+  if (key === "partner") return process.env.NEXT_PUBLIC_NEXORA_PARTNER_PORTAL_MOUNTED === "true";
+  if (key === "template") return process.env.NEXT_PUBLIC_NEXORA_TEMPLATE_PORTAL_MOUNTED === "true";
   return false;
+}
+
+function portalLabel(key: PortalKey): string {
+  if (key === "owner") return "Shop Owner";
+  if (key === "partner") return "Growth Partner";
+  if (key === "template") return "Template";
+  return "Customer";
+}
+
+function MountedPortalFrame({ mountKey }: { mountKey: PortalKey }) {
+  const src = `${portalPathForMountKey(mountKey)}/`;
+  return (
+    <main className="portal-mount">
+      <iframe
+        title={`${portalLabel(mountKey)} app`}
+        src={src}
+        className="portal-frame"
+        allow="geolocation; clipboard-write"
+      />
+    </main>
+  );
 }
 
 function PortalGateway({
@@ -2671,6 +2711,7 @@ function PortalGateway({
 }) {
   const { requireAuth, client } = useAuth();
   const [state, setState] = useState<{ loading: boolean; error?: string; role?: Role }>({ loading: true });
+  const [workspace, setWorkspace] = useState<{ userId?: string; salonIds: string[] }>({ salonIds: [] });
   const load = useCallback(async () => {
     const currentPath = window.location.pathname;
     const requestedRole = expectedRole ?? portalRoleFromPath(currentPath) ?? legacyDashboardRoleFromPath(currentPath);
@@ -2699,8 +2740,11 @@ function PortalGateway({
       // server membership before handing the browser to the mounted PWA.
       // These gates re-verify auth.getUser() and never accept client-side ids.
       if (!client) throw new Error(missingSupabaseConfigMessage);
-      if (profileRole === "business_user") await requireOwnerWorkspace(client);
-      else if (profileRole === "growth_partner") await requirePartnerMembership(client);
+      let salonIds: string[] = [];
+      if (profileRole === "business_user") {
+        const workspace = await requireOwnerWorkspace(client);
+        salonIds = workspace.salonIds;
+      } else if (profileRole === "growth_partner") await requirePartnerMembership(client);
       else await requireCustomerAccount(client);
 
       if (!isPortalPath(currentPath)) {
@@ -2708,6 +2752,7 @@ function PortalGateway({
         return;
       }
       setState({ loading: false, role: profileRole });
+      setWorkspace({ userId: access.user.id, salonIds });
     } catch (cause) {
       const code = cause && typeof cause === "object" && "code" in cause ? String((cause as { code: unknown }).code) : "";
       if (code === "session_expired" || code === "profile_inactive" || code === "not_configured") {
@@ -2724,9 +2769,54 @@ function PortalGateway({
   useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
   if (state.loading) return <main className="center-page"><div className="loader" aria-label="Loading portal gateway" /></main>;
   if (state.error) return <main className="center-page"><StateCard title="Portal unavailable" text={state.error} action="Retry" onAction={load} /></main>;
-  const role = state.role ?? expectedRole ?? "customer";
-  if (!isPortalMounted(role)) return <main className="center-page"><section className="entry-card"><span className="eyebrow">Nexora portal gateway</span><h1>{role === "business_user" ? "Shop Owner" : role === "growth_partner" ? "Growth Partner" : "Customer"} app is not mounted</h1><p>This path is reserved for the separately deployed PWA. Configure its reverse-proxy origin before enabling production traffic. The Main Website does not render a duplicate dashboard here.</p></section></main>;
-  return <main className="center-page"><section className="entry-card"><span className="eyebrow">Nexora portal gateway</span><h1>Opening your app…</h1><p>This portal is owned by its dedicated PWA deployment. If it does not open, check the reverse-proxy and path-base configuration.</p></section></main>;
+  const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
+  const mountKey = portalMountKeyFromPath(currentPath) ?? (expectedRole === "business_user" ? "owner" : expectedRole === "growth_partner" ? "partner" : "customer");
+  if (mountKey === "template" && !isPortalMounted("template")) {
+    return (
+      <TemplateWorkspaceHost
+        userId={workspace.userId}
+        salonIds={workspace.salonIds}
+        navigate={navigate}
+        signOut={signOut}
+      />
+    );
+  }
+  if (!isPortalMounted(mountKey)) return <main className="center-page"><section className="entry-card"><span className="eyebrow">Nexora portal gateway</span><h1>{portalLabel(mountKey)} app is not mounted</h1><p>This path is reserved for the separately deployed PWA. Configure its reverse-proxy origin before enabling production traffic. The Main Website does not render a duplicate dashboard here.</p></section></main>;
+  return <MountedPortalFrame mountKey={mountKey} />;
+}
+
+function TemplateWorkspaceHost({
+  userId,
+  salonIds,
+  navigate,
+  signOut,
+}: {
+  userId?: string;
+  salonIds: string[];
+  navigate: (path: string) => void;
+  signOut: (destination?: string) => Promise<void>;
+}) {
+  return (
+    <main className="center-page">
+      <section className="entry-card">
+        <span className="eyebrow">Template App</span>
+        <h1>Website builder connected</h1>
+        <p>
+          This surface uses the same Nexora account as the Shop Owner app. Identity comes from
+          Supabase Auth project {SUPABASE_PROJECT_REF}; salon access comes from owner_salon_ids().
+          No local or fake login is used here.
+        </p>
+        <p className="preview-note">Signed-in user: {userId || "unknown"}</p>
+        <p className="preview-note">
+          Authorized salon{salonIds.length === 1 ? "" : "s"}: {salonIds.length ? salonIds.join(", ") : "none"}
+        </p>
+        <div className="button-row">
+          <button className="primary" onClick={() => navigate(PORTAL_PATHS.business_user)}>Open Shop Owner app</button>
+          <button className="secondary" onClick={() => void signOut("/")}>Sign out</button>
+        </div>
+      </section>
+    </main>
+  );
 }
 
 function UnavailableAuthenticatedPortal({ path, navigate }: { path: string; navigate: (path: string) => void }) {

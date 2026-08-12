@@ -30,11 +30,13 @@ const nextConfig: NextConfig = {
       { path: "/app/customer", origin: safePortalOrigin(process.env.NEXORA_CUSTOMER_PWA_ORIGIN ?? "https://custmer-fresh-app.vercel.app") },
       { path: "/app/owner", origin: safePortalOrigin(process.env.NEXORA_OWNER_PWA_ORIGIN ?? "https://shop-onwer-pink-nexora-aap.vercel.app") },
       { path: "/app/partner", origin: safePortalOrigin(process.env.NEXORA_PARTNER_PWA_ORIGIN ?? "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app") },
+      { path: "/app/template", origin: safePortalOrigin(process.env.NEXORA_TEMPLATE_PWA_ORIGIN) },
     ];
     const portalMounts = portals
       .filter((portal): portal is { path: string; origin: string } => Boolean(portal.origin))
       .flatMap(({ path, origin }) => [
         { source: path, destination: `${origin}/` },
+        { source: `${path}/`, destination: `${origin}/` },
         { source: `${path}/:path*`, destination: `${origin}/:path*` },
       ]);
     const jobPortalRoutes = [
@@ -44,7 +46,13 @@ const nextConfig: NextConfig = {
         { source: `${JOB_PORTAL_BASE}/${route}/:path*`, destination: `${JOB_PORTAL_BASE}/index.html` },
       ]),
     ];
-    return { beforeFiles: jobPortalRoutes, afterFiles: portalMounts, fallback: [] };
+    // Nested `/app/*/` assets load before the catch-all page so a same-origin
+    // iframe can mount the dedicated PWA after PortalGateway authorizes.
+    // Exact `/app/customer`, `/app/owner`, `/app/partner`, `/app/template`
+    // stay on the Next.js app.
+    const portalAssetMounts = portalMounts.filter((rule) => rule.source.endsWith("/") || rule.source.includes(":path*"));
+    const portalExactMounts = portalMounts.filter((rule) => !rule.source.endsWith("/") && !rule.source.includes(":path*"));
+    return { beforeFiles: [...jobPortalRoutes, ...portalAssetMounts], afterFiles: portalExactMounts, fallback: [] };
   },
   async redirects() {
     return [
@@ -82,6 +90,7 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_NEXORA_CUSTOMER_PORTAL_MOUNTED: process.env.NEXORA_CUSTOMER_PWA_ORIGIN ?? "https://custmer-fresh-app.vercel.app" ? "true" : "false",
     NEXT_PUBLIC_NEXORA_OWNER_PORTAL_MOUNTED: process.env.NEXORA_OWNER_PWA_ORIGIN ?? "https://shop-onwer-pink-nexora-aap.vercel.app" ? "true" : "false",
     NEXT_PUBLIC_NEXORA_PARTNER_PORTAL_MOUNTED: process.env.NEXORA_PARTNER_PWA_ORIGIN ?? "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app" ? "true" : "false",
+    NEXT_PUBLIC_NEXORA_TEMPLATE_PORTAL_MOUNTED: process.env.NEXORA_TEMPLATE_PWA_ORIGIN ? "true" : "false",
     NEXT_PUBLIC_EXPECTED_SUPABASE_URL: EXPECTED_SUPABASE_URL,
     // Phase 1 — origins allowed to receive an authenticated PKCE redirect.
     // Must mirror the Supabase Redirect URL allowlist. Empty falls back to the
