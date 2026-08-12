@@ -6,6 +6,7 @@ import {
   EXPECTED_SUPABASE_HOSTNAME,
   SUPABASE_PROJECT_REF,
   getSupabaseClient,
+  homePathForRole,
   useAuth,
   safeRedirectUrl,
   supabaseConfigErrorMessage,
@@ -411,11 +412,13 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   else if (path === "/terms") content = <LegalPage type="terms" />;
   else if (path === "/privacy") content = <LegalPage type="privacy" />;
   else if (path === "/cancellation-refund") content = <LegalPage type="refund" />;
-  else if (path === "/login" || path === "/signup")
-    content = <AuthPage mode={path === "/login" ? "login" : "signup"} navigate={navigate} refCode={refCode} />;
-  else if (path === "/forgot-password") content = <ForgotPasswordPage navigate={navigate} />;
-  else if (path === "/reset-password") content = <ResetPasswordPage navigate={navigate} />;
-  else if (path === "/auth/callback") content = <AuthCallbackPage navigate={navigate} />;
+  else if (path === "/auth/login" || path === "/login" || path === "/auth/signup" || path === "/signup")
+    content = <AuthPage mode={path === "/auth/signup" || path === "/signup" ? "signup" : "login"} navigate={navigate} refCode={refCode} />;
+  else if (path === "/auth/forgot-password" || path === "/forgot-password") content = <ForgotPasswordPage navigate={navigate} />;
+  else if (path === "/auth/reset-password" || path === "/reset-password") content = <ResetPasswordPage navigate={navigate} />;
+  else if (path === "/auth/callback" || path === "/auth/verify") content = <AuthCallbackPage navigate={navigate} />;
+  else if (path === "/auth/logout") content = <AuthLogoutPage navigate={navigate} />;
+  else if (path === "/auth/continue") content = <AuthContinuePage navigate={navigate} />;
   else if (path === "/auth/expired") content = <SessionExpiredPage navigate={navigate} />;
   else if (path === "/admin" || path.startsWith("/admin/") || path === "/app/admin" || path.startsWith("/app/admin/") || path === "/app/delivery" || path.startsWith("/app/delivery/"))
     content = <UnavailableAuthenticatedPortal path={path} navigate={navigate} />;
@@ -431,7 +434,7 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
     <div className="site-shell">
       {!online && <div className="offline-banner">Offline — live salon and account data may be unavailable.</div>}
       {!getClient() && <div className="offline-banner" style={{ background: "#7b244a" }}>Supabase not configured: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY for project {SUPABASE_PROJECT_REF}.</div>}
-      <Header navigate={navigate} authState={authState} signOut={signOut} location={location} />
+      <Header navigate={navigate} authState={authState} location={location} />
       {content}
       <Footer navigate={navigate} />
     </div>
@@ -441,12 +444,10 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
 function Header({
   navigate,
   authState,
-  signOut,
   location,
 }: {
   navigate: (path: string) => void;
   authState: AuthState;
-  signOut: (destination?: string) => Promise<void>;
   location: UseLocationResult;
 }) {
   const dashboardLabel =
@@ -492,10 +493,10 @@ function Header({
         {authState.session ? (
           <>
             <button className="nav-cta" onClick={() => go(dashboardPath)}>{dashboardLabel}</button>
-            <button onClick={() => { setMobileMenuOpen(false); void signOut(); }}>Sign out</button>
+            <button onClick={() => go("/auth/logout")}>Sign out</button>
           </>
         ) : (
-          !authState.loading && <button className="nav-cta" onClick={() => go("/login")}>Log in</button>
+          !authState.loading && <button className="nav-cta" onClick={() => go("/auth/login")}>Log in</button>
         )}
       </nav>
     </header>
@@ -560,7 +561,7 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
               <option value="">📍 All Jaipur</option>
               {JAIPUR_ZONES.map((z) => <optgroup key={z.zone} label={z.zone}>{z.areas.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>)}
             </select>
-            <button className="secondary" onClick={() => navigate("/signup")}>Create account</button>
+            <button className="secondary" onClick={() => navigate("/auth/signup")}>Create account</button>
           </div>
           <div className="trust-row">
             <span>✓ Published salons only</span><span>✓ Secure role access</span><span>✓ Clear payment status</span><span>✓ Phase 1 Connected</span>{refCode && <span style={{ borderColor: "var(--primary)" }}>✦ Partner referral active</span>}
@@ -757,8 +758,8 @@ function RoleEntry({ path, navigate }: { path: string; navigate: (path: string) 
         <h1>{label} portal</h1>
         <p>Use your permanent {label.toLowerCase()} account. Accounts automatically return to their assigned same-origin portal.</p>
         <div className="button-row">
-          <button className="primary" onClick={() => navigate(`/login?role=${role}&returnTo=${encodeURIComponent(portalPath)}`)}>Log in</button>
-          <button className="secondary" onClick={() => navigate(`/signup?role=${role}&returnTo=${encodeURIComponent(portalPath)}`)}>Sign up</button>
+          <button className="primary" onClick={() => navigate(`/auth/login?role=${role}&returnTo=${encodeURIComponent(portalPath)}`)}>Log in</button>
+          <button className="secondary" onClick={() => navigate(`/auth/signup?role=${role}&returnTo=${encodeURIComponent(portalPath)}`)}>Sign up</button>
         </div>
       </section>
     </main>
@@ -1943,7 +1944,7 @@ function SalonPage({
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${item.address} ${item.city}`)}`;
   const toggleFavourite = async () => {
     const client = getClient();
-    if (!client || !mySession?.user) { navigate("/login"); return; }
+    if (!client || !mySession?.user) { navigate("/auth/login"); return; }
     if (isFavourite) {
       const { error } = await client.from("favorite_salons").delete().eq("user_id", mySession.user.id).eq("salon_id", item.id);
       if (!error) setIsFavourite(false);
@@ -2290,16 +2291,16 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
           <p className="preview-note">Google sign-in is temporarily unavailable. Please use email and password.</p>
         )}
         <div className="button-row" style={{ justifyContent: "space-between", marginTop: 6 }}>
-          <button type="button" className="text-button" onClick={() => navigate(mode === "login" ? "/signup" : "/login")}>
+          <button type="button" className="text-button" onClick={() => navigate(mode === "login" ? "/auth/signup" : "/auth/login")}>
             {mode === "login" ? "Need an account? Sign up" : "Already registered? Log in"}
           </button>
           {mode === "login" && (
-            <button type="button" className="text-button" onClick={() => navigate("/forgot-password")}>
+            <button type="button" className="text-button" onClick={() => navigate("/auth/forgot-password")}>
               Forgot password?
             </button>
           )}
           {messageType === "success" && mode === "signup" && (
-            <button type="button" className="secondary compact" onClick={() => navigate(`/login?role=${role === "business_user" ? "owner" : role === "growth_partner" ? "growth-partner" : "customer"}`)}>
+            <button type="button" className="secondary compact" onClick={() => navigate(`/auth/login?role=${role === "business_user" ? "owner" : role === "growth_partner" ? "growth-partner" : "customer"}`)}>
               Go to login →
             </button>
           )}
@@ -2313,8 +2314,8 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
 }
 
 // ---------------------------------------------------------------------------
-// Section 10.1 — Real Supabase auth routes: /auth/callback, /forgot-password,
-// /reset-password, /auth/expired. No mock auth anywhere: every flow goes
+// Section 10.1 — Real Supabase auth routes: /auth/callback,
+// /auth/forgot-password, /auth/reset-password, /auth/expired. No mock auth anywhere: every flow goes
 // through supabase-js against the shared project, PKCE only.
 // ---------------------------------------------------------------------------
 
@@ -2411,7 +2412,84 @@ function AuthCallbackPage({ navigate }: { navigate: (path: string) => void }) {
   }
   return (
     <main className="center-page">
-      <StateCard title="Sign-in could not be completed" text={state.message} action="Back to login" onAction={() => navigate("/login")} />
+      <StateCard title="Sign-in could not be completed" text={state.message} action="Back to login" onAction={() => navigate("/auth/login")} />
+    </main>
+  );
+}
+
+/** End the shared-provider session, then continue only to a local safe path. */
+function AuthLogoutPage({ navigate }: { navigate: (path: string) => void }) {
+  const { signOut } = useAuth();
+
+  useEffect(() => {
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      const params = new URLSearchParams(window.location.search);
+      const returnTo = safeSameOriginPath(params.get("returnTo"), "/");
+      await signOut();
+      if (active) navigate(returnTo);
+    }, 0);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [navigate, signOut]);
+
+  return (
+    <main className="center-page">
+      <section className="entry-card">
+        <span className="eyebrow">Nexora account</span>
+        <h1>Signing you out…</h1>
+        <div className="loader" aria-label="Signing out" />
+      </section>
+    </main>
+  );
+}
+
+/**
+ * Resume an auth handoff from the provider's authoritative profile state.
+ * Customers may resume a validated local deep link; every other role lands on
+ * its own canonical portal, including the delivery/admin mount fallbacks.
+ */
+function AuthContinuePage({ navigate }: { navigate: (path: string) => void }) {
+  const { status, loading, isAuthenticated, role, configError, error } = useAuth();
+
+  useEffect(() => {
+    if (loading || configError || (status === "authenticated" && !role)) return;
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const requestedReturnTo = safeSameOriginPath(params.get("returnTo"), "");
+
+      if (!isAuthenticated || !role) {
+        const query = requestedReturnTo
+          ? `?returnTo=${encodeURIComponent(requestedReturnTo)}`
+          : "";
+        navigate(`/auth/login${query}`);
+        return;
+      }
+
+      const roleHome = homePathForRole(role);
+      const destination = role === "customer" && requestedReturnTo
+        ? requestedReturnTo
+        : roleHome;
+      navigate(destination);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [configError, isAuthenticated, loading, navigate, role, status]);
+
+  if (configError) {
+    return <main className="center-page"><StateCard title="Authentication unavailable" text={configError} /></main>;
+  }
+  if (status === "authenticated" && !role) {
+    return <main className="center-page"><StateCard title="Account could not be verified" text={error?.message ?? "Nexora could not verify an active profile for this session."} /></main>;
+  }
+  return (
+    <main className="center-page">
+      <section className="entry-card">
+        <span className="eyebrow">Nexora account</span>
+        <h1>Opening your portal…</h1>
+        <div className="loader" aria-label="Continuing authentication" />
+      </section>
     </main>
   );
 }
@@ -2436,10 +2514,10 @@ function ForgotPasswordPage({ navigate }: { navigate: (path: string) => void }) 
       const client = getClient();
       if (!client) throw new Error(missingSupabaseConfigMessage);
       // Real Supabase reset flow: email contains a PKCE recovery link to
-      // /reset-password, which must be whitelisted in Supabase Auth.
+      // /auth/reset-password, which must be whitelisted in Supabase Auth.
       const { error } = await client.auth.resetPasswordForEmail(
         trimmedEmail,
-        { redirectTo: `${window.location.origin}/reset-password` },
+        { redirectTo: `${window.location.origin}/auth/reset-password` },
       );
       if (error) throw error;
       setMessage(`If an account exists for ${trimmedEmail}, a password reset link has been sent. Check your inbox and spam folder.`);
@@ -2471,8 +2549,8 @@ function ForgotPasswordPage({ navigate }: { navigate: (path: string) => void }) 
         )}
         <button className="primary" disabled={busy}>{busy ? "Sending…" : "Email me a reset link"}</button>
         <div className="button-row" style={{ justifyContent: "space-between", marginTop: 6 }}>
-          <button type="button" className="text-button" onClick={() => navigate("/login")}>Back to login</button>
-          <button type="button" className="text-button" onClick={() => navigate("/signup")}>Need an account? Sign up</button>
+          <button type="button" className="text-button" onClick={() => navigate("/auth/login")}>Back to login</button>
+          <button type="button" className="text-button" onClick={() => navigate("/auth/signup")}>Need an account? Sign up</button>
         </div>
       </form>
     </main>
@@ -2568,7 +2646,7 @@ function ResetPasswordPage({ navigate }: { navigate: (path: string) => void }) {
   if (ready === "failed") {
     return (
       <main className="center-page">
-        <StateCard title="Reset link unavailable" text={message || "Request a new password reset link."} action="Request new link" onAction={() => navigate("/forgot-password")} />
+        <StateCard title="Reset link unavailable" text={message || "Request a new password reset link."} action="Request new link" onAction={() => navigate("/auth/forgot-password")} />
       </main>
     );
   }
@@ -2598,7 +2676,7 @@ function SessionExpiredPage({ navigate }: { navigate: (path: string) => void }) 
     if (client) void client.auth.signOut();
   }, []);
   const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
-  const returnTo = safeSameOriginPath(params.get("returnTo"), "/login");
+  const returnTo = safeSameOriginPath(params.get("returnTo"), "/auth/login");
   return (
     <main className="center-page">
       <section className="entry-card">
@@ -2652,7 +2730,7 @@ function PortalGateway({
     try {
       const { data: { user } } = await client.auth.getUser();
       if (!user) {
-        navigate(`/login?role=${roleQueryForPortalRole(loginRole)}&returnTo=${encodeURIComponent(returnTo)}`);
+        navigate(`/auth/login?role=${roleQueryForPortalRole(loginRole)}&returnTo=${encodeURIComponent(returnTo)}`);
         return;
       }
       const { data: profile, error: profileError } = await client
@@ -2661,7 +2739,7 @@ function PortalGateway({
         .eq("id", user.id)
         .maybeSingle();
       if (profileError || !profile || profile.is_active !== true || !["customer", "business_user", "growth_partner"].includes(profile.platform_role)) {
-        await signOut(`/login?role=${roleQueryForPortalRole(loginRole)}&returnTo=${encodeURIComponent(returnTo)}`);
+        await signOut(`/auth/login?role=${roleQueryForPortalRole(loginRole)}&returnTo=${encodeURIComponent(returnTo)}`);
         return;
       }
       const profileRole = profile.platform_role as Role;
@@ -2693,7 +2771,7 @@ function UnavailableAuthenticatedPortal({ path, navigate }: { path: string; navi
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      navigate(`/login?role=${isAdmin ? "admin" : "delivery"}&returnTo=${encodeURIComponent(path)}`);
+      navigate(`/auth/login?role=${isAdmin ? "admin" : "delivery"}&returnTo=${encodeURIComponent(path)}`);
     }
   }, [isAdmin, isAuthenticated, loading, navigate, path]);
 
@@ -2730,5 +2808,5 @@ function SalonSkeletons({ count }: { count: number }) {
 }
 
 function Footer({ navigate }: { navigate: (path: string) => void }) {
-  return <footer><div><div className="brand"><span className="brand-mark">N</span><span>Nexora</span></div><p>One connected platform for salons, customers, owners, growth partners, and beauty careers.</p></div><div><b>Explore</b><button onClick={() => navigate("/salons")}>Published salons</button><button onClick={() => window.location.assign("/job-portal")}>Job Portal</button><button onClick={() => navigate("/login")}>Log in</button></div><div><b>Legal</b><button onClick={() => navigate("/terms")}>Terms & Conditions</button><button onClick={() => navigate("/privacy")}>Privacy Policy</button><button onClick={() => navigate("/cancellation-refund")}>Cancellation & Refund</button></div></footer>;
+  return <footer><div><div className="brand"><span className="brand-mark">N</span><span>Nexora</span></div><p>One connected platform for salons, customers, owners, growth partners, and beauty careers.</p></div><div><b>Explore</b><button onClick={() => navigate("/salons")}>Published salons</button><button onClick={() => window.location.assign("/job-portal")}>Job Portal</button><button onClick={() => navigate("/auth/login")}>Log in</button></div><div><b>Legal</b><button onClick={() => navigate("/terms")}>Terms & Conditions</button><button onClick={() => navigate("/privacy")}>Privacy Policy</button><button onClick={() => navigate("/cancellation-refund")}>Cancellation & Refund</button></div></footer>;
 }

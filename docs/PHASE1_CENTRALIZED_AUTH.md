@@ -251,13 +251,37 @@ to the Supabase Redirect URL list — both, or the handoff will be refused.
 
 The main website mounts the shared `AuthProvider` exactly once in
 `app/NexoraRoot.tsx`. Both `app/page.tsx` and the catch-all route render that
-root, so the central `/login`, `/signup`, `/auth/callback`,
-`/forgot-password`, and `/reset-password` paths observe the same PKCE session
-and profile state as every portal route. `NexoraApp` consumes `useAuth()` and
-no longer owns a second inline Supabase session/profile subscription.
+root, so every central auth page observes the same PKCE session and profile
+state as every portal route. `NexoraApp` consumes `useAuth()` and no longer owns
+a second inline Supabase session/profile subscription.
 
 Customer, Owner, and Growth Partner portals remain role-gated same-origin
 paths (`/app/customer`, `/app/owner`, `/app/partner`). Delivery Partner and
 Administrator accounts are authenticated and role-verified before receiving an
 explicit "not mounted" fallback; no unimplemented portal dashboard is copied
 into the main website.
+
+## Main Website canonical auth hub (Phase 4)
+
+The Main Website is the canonical auth surface for the Nexora ecosystem:
+
+| Route | Responsibility |
+| --- | --- |
+| `/auth/login` | Password and optional Google PKCE login |
+| `/auth/signup` | Self-service account creation with a server-authoritative role |
+| `/auth/forgot-password` | Neutral password-recovery request |
+| `/auth/reset-password` | PKCE recovery-session validation and password update |
+| `/auth/verify` | Email verification through the same secure PKCE flow as the callback |
+| `/auth/callback` | PKCE exchange, active-profile verification, and role routing |
+| `/auth/logout` | Shared-provider sign-out followed by a validated same-origin path |
+| `/auth/continue` | Wait for provider restoration, then resume login or the verified role portal |
+
+Existing links to `/login`, `/signup`, `/forgot-password`, and
+`/reset-password` remain compatibility routes; newly rendered links use the
+canonical `/auth/*` paths. Redirect parameters cannot supply an absolute,
+protocol-relative, backslash-smuggled, query-bearing, or fragment-bearing
+logout/continuation path. Customer deep links are resumed only after that
+same-origin validation. Other authenticated roles always continue to their
+server-profile role home, so URL parameters cannot select another portal.
+Delivery Partner and Administrator role homes intentionally resolve to their
+authenticated "portal not mounted" fallbacks until those apps are deployed.
