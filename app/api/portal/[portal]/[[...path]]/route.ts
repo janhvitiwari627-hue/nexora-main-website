@@ -5,15 +5,13 @@ import {
   DEFAULT_PARTNER_PWA_ORIGIN,
   PORTAL_MOUNT_PATHS,
   type MountedPortalKey,
-} from "../../../lib/portalOrigins";
+} from "../../../../lib/portalOrigins";
 
 /**
- * Same-origin PWA proxy.
+ * Same-origin PWA proxy used by middleware for /app/{role}/* .
  *
- * Vercel edge rewrites to a foreign Vercel deployment return HTTP 500
- * (see /growth-partner history). Fetching the PWA from a Route Handler and
- * streaming the response keeps /app/{role} on nexora.app so the shared
- * Supabase session stays on one origin.
+ * Foreign Vercel edge rewrites return HTTP 500. Fetching the upstream here
+ * and streaming the body keeps the browser on nexora.app.
  */
 
 const PORTAL_ORIGINS: Record<MountedPortalKey, string> = {
@@ -74,8 +72,9 @@ async function proxy(
     upstream.headers.forEach((value, key) => {
       if (!HOP_BY_HOP.has(key.toLowerCase())) headers.set(key, value);
     });
+    headers.delete("x-frame-options");
+    headers.delete("content-security-policy");
     headers.set("x-nexora-portal", portal);
-    headers.set("x-nexora-upstream", target.origin);
 
     return new NextResponse(upstream.body, {
       status: upstream.status,
