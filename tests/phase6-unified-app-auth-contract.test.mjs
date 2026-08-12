@@ -49,6 +49,9 @@ test("Main Website runs an app-specific gate before mounting each PWA", () => {
   assert.match(gateway, /await requireOwnerWorkspace\(client\)/);
   assert.match(gateway, /await requirePartnerMembership\(client\)/);
   assert.match(gateway, /await requireCustomerAccount\(client\)/);
+  assert.match(app, /TEMPLATE_PATH/);
+  assert.match(app, /MountedPortalFrame/);
+  assert.match(app, /TemplateWorkspaceHost/);
   assert.ok(
     gateway.indexOf("await requireOwnerWorkspace(client)") < gateway.indexOf("setState({ loading: false, role: profileRole })"),
     "Owner authorization must settle before the gateway mounts the PWA",
