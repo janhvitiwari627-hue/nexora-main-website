@@ -8,7 +8,7 @@ const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8")
 const catchAll = await readFile(new URL("../app/[...path]/page.tsx", import.meta.url), "utf8");
 
 test("Phase 3 mounts one shared AuthProvider for every main website route", () => {
-  assert.match(root, /<AuthProvider>/);
+  assert.match(root, /<AuthProvider(?:\s|>)/);
   assert.match(root, /<NexoraApp initialPath=\{initialPath\}/);
   assert.match(page, /NexoraRoot/);
   assert.match(catchAll, /NexoraRoot/);

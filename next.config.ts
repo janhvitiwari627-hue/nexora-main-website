@@ -2,6 +2,16 @@ import type { NextConfig } from "next";
 
 const EXPECTED_SUPABASE_URL = "https://qwaehqsmodekbgvnaavz.supabase.co";
 const JOB_PORTAL_BASE = "/job-portal";
+
+// Validate when present. Do not assign `?? ""` into `env` — that would bake an
+// empty NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY into the
+// client bundle and break AuthProvider on a build-time miss.
+if (
+  process.env.NEXT_PUBLIC_SUPABASE_URL &&
+  process.env.NEXT_PUBLIC_SUPABASE_URL.replace(/\/$/, "") !== EXPECTED_SUPABASE_URL
+) {
+  throw new Error("NEXT_PUBLIC_SUPABASE_URL must use shared project qwaehqsmodekbgvnaavz.");
+}
 const JOB_PORTAL_ROUTE_ROOTS = [
   "jobs", "login", "signup", "verify", "forgot-password", "reset-password",
   "dashboard", "profile", "applications", "interviews", "offers", "messages", "saved",
@@ -85,9 +95,9 @@ const nextConfig: NextConfig = {
     ];
   },
   env: {
-    // Main Website is Next/vinext: only NEXT_PUBLIC_* is exposed here.
-    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+    // Do not bake empty NEXT_PUBLIC_SUPABASE_* strings. Next already inlines
+    // real NEXT_PUBLIC_* values from the deployment environment; forcing ""
+    // here would hide a runtime key behind a build-time miss.
     NEXT_PUBLIC_NEXORA_CUSTOMER_PORTAL_MOUNTED: process.env.NEXORA_CUSTOMER_PWA_ORIGIN ? "true" : "false",
     NEXT_PUBLIC_NEXORA_OWNER_PORTAL_MOUNTED: process.env.NEXORA_OWNER_PWA_ORIGIN ? "true" : "false",
     NEXT_PUBLIC_NEXORA_PARTNER_PORTAL_MOUNTED: process.env.NEXORA_PARTNER_PWA_ORIGIN ? "true" : "false",

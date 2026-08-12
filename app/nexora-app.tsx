@@ -792,10 +792,31 @@ function RoleEntry({ path, navigate }: { path: string; navigate: (path: string) 
   );
 }
 
-// Public catalog contract: verified=true, is_active=true, is_published=true, deleted_at null.
-async function fetchCatalog(): Promise<CatalogItem[]> {
-  const client = getClient();
-  if (!client) throw new Error(missingSupabaseConfigMessage);
+function isCatalogPrivilegeError(cause: unknown): boolean {
+  const message = cause instanceof Error ? cause.message : String(cause ?? "");
+  return /permission denied|42501|schema cache|not find the table/i.test(message);
+}
+
+async function attachApprovedBusinessLocations(
+  client: SupabaseClient,
+  salonIds: string[],
+): Promise<Map<string, { salon_id: string; latitude: number; longitude: number; approval_status: string }>> {
+  if (!salonIds.length) return new Map();
+  const { data: businessLocations, error: businessLocationError } = await client
+    .from("business_locations")
+    .select("salon_id,latitude,longitude,approval_status")
+    .in("salon_id", salonIds)
+    .eq("approval_status", "approved");
+  // A missing/unavailable location table must never cause fallback to legacy or
+  // invented coordinates. The catalog remains usable without distances.
+  if (businessLocationError) {
+    console.warn("Approved business locations are unavailable; distance sorting is disabled.");
+    return new Map();
+  }
+  return new Map((businessLocations ?? []).map((location) => [location.salon_id, location]));
+}
+
+async function fetchCatalogFromTables(client: SupabaseClient): Promise<CatalogItem[]> {
   const { data: websites, error: websiteError } = await client
     .from("salon_public_websites")
     .select("salon_id,slug,template_key,config,published_at")
@@ -815,19 +836,7 @@ async function fetchCatalog(): Promise<CatalogItem[]> {
     .is("deleted_at", null);
   if (salonError) throw salonError;
 
-  const { data: businessLocations, error: businessLocationError } = await client
-    .from("business_locations")
-    .select("salon_id,latitude,longitude,approval_status")
-    .in("salon_id", salonIds)
-    .eq("approval_status", "approved");
-  // A missing/unavailable location table must never cause fallback to legacy or
-  // invented coordinates. The catalog remains usable without distances.
-  if (businessLocationError) {
-    console.warn("Approved business locations are unavailable; distance sorting is disabled.");
-  }
-  const approvedLocationBySalon = new Map(
-    (businessLocations ?? []).map((location) => [location.salon_id, location]),
-  );
+  const approvedLocationBySalon = await attachApprovedBusinessLocations(client, salonIds);
   const bySalon = new Map(websites.map((website) => [website.salon_id, website as Website]));
   return (salons ?? []).filter((salon) => bySalon.has(salon.id)).map((salon) => {
     const approvedLocation = approvedLocationBySalon.get(salon.id);
@@ -842,6 +851,68 @@ async function fetchCatalog(): Promise<CatalogItem[]> {
       website: bySalon.get(salon.id)!,
     };
   });
+}
+
+/**
+ * Security-definer marketplace_search already works when PostgREST cannot see
+ * column-only GRANTs on salon_public_websites. Used only after a privilege error.
+ */
+async function fetchCatalogFromMarketplaceRpc(client: SupabaseClient): Promise<CatalogItem[]> {
+  const { data, error } = await client.rpc("marketplace_search", {
+    p_query: "",
+    p_category: null,
+    p_area: null,
+    p_min_rating: 0,
+    p_max_price_paise: null,
+    p_has_offer: false,
+    p_gender: null,
+    p_sort: "name",
+    p_limit: 60,
+    p_offset: 0,
+  });
+  if (error) throw error;
+  const rows = (data ?? []) as SearchRow[];
+  if (!rows.length) return [];
+  const approvedLocationBySalon = await attachApprovedBusinessLocations(client, rows.map((row) => row.id));
+  return rows.map((row) => {
+    const approvedLocation = approvedLocationBySalon.get(row.id);
+    return {
+      id: row.id,
+      slug: row.slug,
+      name: row.name,
+      description: null,
+      address: [row.area, row.city].filter(Boolean).join(", "),
+      area: row.area,
+      city: row.city ?? "",
+      rating_average: Number(row.rating_avg ?? 0),
+      review_count: Number(row.review_count ?? 0),
+      starting_price_paise: row.starting_price_paise,
+      cover_image_path: row.cover_image_path,
+      business_category: row.business_category,
+      latitude: approvedLocation ? Number(approvedLocation.latitude) : null,
+      longitude: approvedLocation ? Number(approvedLocation.longitude) : null,
+      approval_status: approvedLocation?.approval_status === "approved" ? "approved" as const : null,
+      website: {
+        salon_id: row.id,
+        slug: row.slug,
+        template_key: "",
+        config: {},
+        published_at: null,
+      },
+    };
+  });
+}
+
+// Public catalog contract: verified=true, is_active=true, is_published=true, deleted_at null.
+async function fetchCatalog(): Promise<CatalogItem[]> {
+  const client = getClient();
+  if (!client) throw new Error(missingSupabaseConfigMessage);
+  try {
+    return await fetchCatalogFromTables(client);
+  } catch (cause) {
+    if (!isCatalogPrivilegeError(cause)) throw cause;
+    return fetchCatalogFromMarketplaceRpc(client);
+  }
 }
 
 function useCatalog(online: boolean) {

@@ -36,14 +36,30 @@ export type SupabaseEnvOverrides = {
   anonKey?: string;
 };
 
-/** Read `process.env` without exploding in browser bundles that lack it. */
-function processEnv(): Record<string, string | undefined> {
+/**
+ * Read Next/vinext public env.
+ *
+ * Each key MUST be a complete static member expression
+ * (`process.env.NEXT_PUBLIC_SUPABASE_URL`). Next/webpack only inlines those
+ * literals into the browser bundle. Copying `process.env` and reading
+ * `env[name]` (or `env?.NEXT_PUBLIC_*`) leaves the client empty, which made
+ * AuthProvider report "not configured" while table/RPC calls that received
+ * explicit inlined overrides still reached Supabase.
+ */
+function nextPublicEnv(): { url: string; anonKey: string } {
+  let url = "";
+  let anonKey = "";
   try {
-    if (typeof process === "undefined" || !process || typeof process.env !== "object") return {};
-    return process.env as Record<string, string | undefined>;
+    url = clean(typeof process !== "undefined" ? process.env.NEXT_PUBLIC_SUPABASE_URL : "");
   } catch {
-    return {};
+    url = "";
   }
+  try {
+    anonKey = clean(typeof process !== "undefined" ? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY : "");
+  } catch {
+    anonKey = "";
+  }
+  return { url, anonKey };
 }
 
 /**
@@ -91,9 +107,7 @@ export function resolveSupabaseEnv(overrides: SupabaseEnvOverrides = {}): Supaba
     return { url: explicitUrl, anonKey: explicitKey, source: "explicit" };
   }
 
-  const nodeEnv = processEnv();
-  const nextUrl = clean(nodeEnv.NEXT_PUBLIC_SUPABASE_URL);
-  const nextKey = clean(nodeEnv.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  const { url: nextUrl, anonKey: nextKey } = nextPublicEnv();
   if (nextUrl && nextKey) {
     return { url: nextUrl, anonKey: nextKey, source: "next-public" };
   }

@@ -1,18 +1,4 @@
 {
   "buildCommand": "npm run build:next",
-  "framework": "nextjs",
-  "rewrites": [
-    {
-      "source": "/app/customer/:path*",
-      "destination": "https://custmer-fresh-app.vercel.app/:path*"
-    },
-    {
-      "source": "/app/owner/:path*",
-      "destination": "https://shop-onwer-pink-nexora-aap.vercel.app/:path*"
-    },
-    {
-      "source": "/app/partner/:path*",
-      "destination": "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app/:path*"
-    }
-  ]
+  "framework": "nextjs"
 }

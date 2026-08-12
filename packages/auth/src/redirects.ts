@@ -67,9 +67,10 @@ function readCsvEnv(raw: string | undefined | null): string[] {
 function envAllowedOrigins(): string[] {
   const origins: string[] = [];
   try {
+    // Static member access so Next/webpack inlines the allowlist in the browser.
     origins.push(
       ...readCsvEnv(
-        typeof process !== "undefined" ? process.env?.NEXT_PUBLIC_NEXORA_ALLOWED_AUTH_ORIGINS : "",
+        typeof process !== "undefined" ? process.env.NEXT_PUBLIC_NEXORA_ALLOWED_AUTH_ORIGINS : "",
       ),
     );
   } catch {

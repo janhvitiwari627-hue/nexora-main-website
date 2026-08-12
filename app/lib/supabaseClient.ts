@@ -38,7 +38,9 @@ export { SUPABASE_PROJECT_REF };
 const NEXT_PUBLIC_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const NEXT_PUBLIC_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
-const clientOptions = { url: NEXT_PUBLIC_URL, anonKey: NEXT_PUBLIC_ANON_KEY } as const;
+/** Shared by AuthProvider and data fetches so both see the inlined Next env. */
+export const websiteClientOptions = { url: NEXT_PUBLIC_URL, anonKey: NEXT_PUBLIC_ANON_KEY } as const;
+const clientOptions = websiteClientOptions;
 
 /** Operator-facing configuration error. Empty string when healthy. */
 export const missingSupabaseConfigMessage =
