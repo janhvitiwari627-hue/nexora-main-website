@@ -2809,14 +2809,6 @@ function getDetailedConfigError(): string {
   return supabaseConfigErrorMessage({ url: supabaseUrl, anonKey: supabaseKey });
 }
 
-function isPortalMounted(key: PortalKey): boolean {
-  if (key === "customer") return process.env.NEXT_PUBLIC_NEXORA_CUSTOMER_PORTAL_MOUNTED === "true";
-  if (key === "owner") return process.env.NEXT_PUBLIC_NEXORA_OWNER_PORTAL_MOUNTED === "true";
-  if (key === "partner") return process.env.NEXT_PUBLIC_NEXORA_PARTNER_PORTAL_MOUNTED === "true";
-  if (key === "template") return process.env.NEXT_PUBLIC_NEXORA_TEMPLATE_PORTAL_MOUNTED === "true";
-  return false;
-}
-
 function portalLabel(key: PortalKey): string {
   if (key === "owner") return "Shop Owner";
   if (key === "partner") return "Growth Partner";
@@ -2824,16 +2816,20 @@ function portalLabel(key: PortalKey): string {
   return "Customer";
 }
 
-function MountedPortalFrame({ mountKey }: { mountKey: PortalKey }) {
-  const src = `${portalPathForMountKey(mountKey)}/`;
+/**
+ * Hand the browser over to the same-origin portal mount. The external PWA is
+ * served by a `beforeFiles` rewrite to the `/api/portal/{role}` proxy (see
+ * `next.config.ts`), so we perform a full navigation instead of embedding the
+ * PWA in the page. No mount blocker and no NEXT_PUBLIC mounted flag holds
+ * routing authority.
+ */
+function PortalHandoff({ mountKey }: { mountKey: PortalKey }) {
+  useEffect(() => {
+    window.location.replace(`${portalPathForMountKey(mountKey)}/`);
+  }, [mountKey]);
   return (
-    <main className="portal-mount">
-      <iframe
-        title={`${portalLabel(mountKey)} app`}
-        src={src}
-        className="portal-frame"
-        allow="geolocation; clipboard-write"
-      />
+    <main className="center-page">
+      <div className="loader" aria-label={`Opening ${portalLabel(mountKey)} app`} />
     </main>
   );
 }
@@ -2915,7 +2911,7 @@ function PortalGateway({
   if (state.error) return <main className="center-page"><StateCard title="Portal unavailable" text={state.error} action="Retry" onAction={load} /></main>;
   const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
   const mountKey = portalMountKeyFromPath(currentPath) ?? (expectedRole === "business_user" ? "owner" : expectedRole === "growth_partner" ? "partner" : "customer");
-  if (mountKey === "template" && !isPortalMounted("template")) {
+  if (mountKey === "template") {
     return (
       <TemplateWorkspaceHost
         userId={workspace.userId}
@@ -2925,8 +2921,7 @@ function PortalGateway({
       />
     );
   }
-  if (!isPortalMounted(mountKey)) return <main className="center-page"><section className="entry-card"><span className="eyebrow">Nexora portal gateway</span><h1>{portalLabel(mountKey)} app is not mounted</h1><p>This path is reserved for the separately deployed PWA. Configure its reverse-proxy origin before enabling production traffic. The Main Website does not render a duplicate dashboard here.</p></section></main>;
-  return <MountedPortalFrame mountKey={mountKey} />;
+  return <PortalHandoff mountKey={mountKey} />;
 }
 
 function TemplateWorkspaceHost({

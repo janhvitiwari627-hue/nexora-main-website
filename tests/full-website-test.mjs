@@ -33,8 +33,10 @@ test("Main Website is a portal gateway, not a copied PWA", () => {
   assert.match(app, /AdminUnavailable/);
   assert.match(app, /no public admin signup/);
   assert.match(app, /PortalGateway/);
-  assert.match(app, /NEXT_PUBLIC_NEXORA_CUSTOMER_PORTAL_MOUNTED/);
-  assert.match(app, /does not render a duplicate dashboard/);
+  // No client-side iframe and no NEXT_PUBLIC mounted flag holds routing authority.
+  assert.doesNotMatch(app, /MountedPortalFrame/);
+  assert.doesNotMatch(app, /isPortalMounted/);
+  assert.doesNotMatch(app, /NEXT_PUBLIC_NEXORA_CUSTOMER_PORTAL_MOUNTED/);
   assert.doesNotMatch(app, /RoleWorkspace|GrowthPartnerProposalForm|OwnerBusinessSetup/);
   assert.doesNotMatch(app, /create_customer_booking|razorpay-create-order|review_salon_setup|save_growth_partner_salon_setup/);
 });
@@ -52,11 +54,14 @@ test("published marketplace filters remain server-backed", () => {
   assert.match(app, /deleted_at.*null/);
 });
 
-test("all portal deployments are reverse-proxy configurable", () => {
-  for (const variable of ["NEXORA_CUSTOMER_PWA_ORIGIN", "NEXORA_OWNER_PWA_ORIGIN", "NEXORA_PARTNER_PWA_ORIGIN"]) {
-    assert.match(nextConfig, new RegExp(variable));
-  }
-  assert.match(nextConfig, /source: `\$\{path\}\/\:path\*`/);
+test("all portal deployments are reverse-proxied via beforeFiles rewrites", () => {
+  // External role PWAs are mounted as beforeFiles rewrites to the same-origin
+  // /api/portal proxy (foreign-origin edge rewrites returned HTTP 500).
+  assert.match(nextConfig, /beforeFiles:/);
+  assert.match(nextConfig, /"customer", "owner", "partner"/);
+  assert.match(nextConfig, /api\/portal/);
+  assert.match(nextConfig, /:path\*/);
+  assert.doesNotMatch(nextConfig, /destination: `https?:\/\//);
 });
 
 test("offline and configuration failures are visible", () => {

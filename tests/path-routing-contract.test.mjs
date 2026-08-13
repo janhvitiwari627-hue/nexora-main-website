@@ -34,17 +34,19 @@ test("main app routes every canonical portal through the gateway", () => {
 test("legacy dashboard URLs canonicalize instead of becoming a second portal", () => {
   assert.match(app, /legacyDashboardRoleFromPath\(path\)/);
   assert.match(app, /if \(!isPortalPath\(currentPath\)\)/);
-  assert.match(app, /does not render a duplicate dashboard/);
+  assert.match(app, /portalPathForRole\(/);
 });
 
 test("role links and reverse proxy mounts use canonical portal paths", () => {
   assert.match(app, /navigate\(PORTAL_PATHS\.customer\)/);
   assert.match(app, /navigate\(PORTAL_PATHS\.business_user\)/);
   assert.match(app, /navigate\(PORTAL_PATHS\.growth_partner\)/);
-  for (const variable of ["NEXORA_CUSTOMER_PWA_ORIGIN", "NEXORA_OWNER_PWA_ORIGIN", "NEXORA_PARTNER_PWA_ORIGIN"]) {
-    assert.match(nextConfig, new RegExp(variable));
-  }
-  assert.match(nextConfig, /source: `\$\{path\}\/\:path\*`, destination: `\$\{origin\}\$\{path\}\/\:path\*`/);
+  // Canonical mounts are beforeFiles rewrites to the same-origin proxy.
+  assert.match(nextConfig, /beforeFiles:/);
+  assert.match(nextConfig, /"customer", "owner", "partner"/);
+  assert.match(nextConfig, /api\/portal/);
+  assert.match(nextConfig, /:path\*/);
+  assert.doesNotMatch(nextConfig, /destination: `https?:\/\//);
 });
 
 test("each PWA package declares its own path base and scoped worker", () => {

@@ -151,21 +151,21 @@ test("15. allowlisted PWA origins may receive a cross-origin handoff; unknown or
   assert.match(redirects, /custmer-fresh-app\.vercel\.app/);
 });
 
-test("16. PortalGateway has no role-home redirect; 12 path-preserving rewrites are configured", () => {
+test("16. PortalGateway has no role-home redirect; role mounts use same-origin beforeFiles rewrites", () => {
   assert.doesNotMatch(app, /requestedRole && requestedRole !== profileRole/);
   assert.match(app, /no role-home redirects/);
   assert.match(app, /destinationForVerifiedRole\(role, requestedReturnTo/);
-  assert.match(nextConfig, /pathPreservingMounts/);
-  assert.match(nextConfig, /DEFAULT_CUSTOMER_PWA_ORIGIN/);
-  assert.match(nextConfig, /DEFAULT_OWNER_PWA_ORIGIN/);
-  assert.match(nextConfig, /DEFAULT_PARTNER_PWA_ORIGIN/);
-  assert.match(nextConfig, /NEXORA_TEMPLATE_PWA_ORIGIN/);
-  assert.doesNotMatch(nextConfig, /NEXORA_TEMPLATE_PWA_ORIGIN \?\? "https:/);
-  assert.match(middleware, /\/api\/portal\//);
-  assert.match(middleware, /pathname === base/);
+  // No client-side iframe and no mounted-flag gating for the role shells.
+  assert.doesNotMatch(app, /MountedPortalFrame/);
+  assert.doesNotMatch(app, /isPortalMounted/);
+  // Role mounts are beforeFiles rewrites to the same-origin /api/portal proxy,
+  // not foreign-origin edge rewrites and not middleware.
+  assert.match(nextConfig, /beforeFiles:/);
+  assert.match(nextConfig, /"customer", "owner", "partner"/);
+  assert.match(nextConfig, /api\/portal/);
+  assert.match(nextConfig, /:path\*/);
+  assert.doesNotMatch(nextConfig, /destination: `https?:\/\//);
+  assert.doesNotMatch(middleware, /api\/portal/);
   assert.match(portalProxy, /PORTAL_ORIGINS/);
   assert.match(portalProxy, /Nexora-Proxy/);
-  for (const path of ["/app/customer", "/app/owner", "/app/partner"]) {
-    assert.match(nextConfig, new RegExp(`path: "${path}"`));
-  }
 });
