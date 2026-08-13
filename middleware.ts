@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { DEFAULT_PARTNER_PWA_ORIGIN } from "./app/lib/portalOrigins";
+import { resolvePortalOrigin } from "./config/portalOrigins";
+
+const partnerPortalOrigin = resolvePortalOrigin("partner")!;
 
 /**
  * `/growth-partner` remains a 308 to the raw Partner origin for the legacy
@@ -14,10 +16,8 @@ export function middleware(request: NextRequest) {
 
   if (pathname === "/growth-partner" || pathname.startsWith("/growth-partner/")) {
     const targetPath = pathname.replace(/^\/growth-partner/, "") || "/";
-    const url = new URL(targetPath, DEFAULT_PARTNER_PWA_ORIGIN);
-    request.nextUrl.searchParams.forEach((value, key) => {
-      url.searchParams.set(key, value);
-    });
+    const url = new URL(targetPath, partnerPortalOrigin);
+    url.search = request.nextUrl.search;
     return NextResponse.redirect(url, 308);
   }
 

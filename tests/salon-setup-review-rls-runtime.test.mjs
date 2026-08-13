@@ -152,7 +152,8 @@ async function setupDatabase() {
 }
 
 async function withinRolledBackTransaction(db, userId, callback) {
-  await db.exec(`set "request.jwt.claim.sub" = '${userId}'`);
+  if (userId) await db.exec(`set "request.jwt.claim.sub" = '${userId}'`);
+  else await db.exec(`set "request.jwt.claim.sub" = ''`);
   await db.exec("begin");
   try {
     return await callback();
@@ -184,11 +185,12 @@ test("review_salon_setup permits only an active owner of the proposal salon to p
   }
 });
 
-for (const [label, userId] of [
-  ["customer", CUSTOMER],
-  ["growth partner", PARTNER],
-  ["unrelated owner", UNRELATED_OWNER],
-  ["inactive owner membership", INACTIVE_OWNER],
+for (const [label, userId, expectedError] of [
+  ["customer", CUSTOMER, /Shop Owner permission required/i],
+  ["growth partner", PARTNER, /Shop Owner permission required/i],
+  ["unrelated owner", UNRELATED_OWNER, /Shop Owner permission required/i],
+  ["inactive owner membership", INACTIVE_OWNER, /Shop Owner permission required/i],
+  ["anonymous caller", null, /authentication required/i],
 ]) {
   test(`review_salon_setup denies ${label} publish`, async () => {
     const db = await setupDatabase();
@@ -197,7 +199,7 @@ for (const [label, userId] of [
         () => withinRolledBackTransaction(db, userId, () =>
           db.query("select public.review_salon_setup($1, 'publish')", [PROPOSAL]),
         ),
-        /Shop Owner permission required/i,
+        expectedError,
       );
     } finally {
       await db.close();

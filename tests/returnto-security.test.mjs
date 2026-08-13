@@ -13,6 +13,7 @@ const roles = await readFile(new URL("../packages/auth/src/roles.ts", import.met
 const app = await readFile(new URL("../app/nexora-app.tsx", import.meta.url), "utf8");
 const nextConfig = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
 const middleware = await readFile(new URL("../middleware.ts", import.meta.url), "utf8");
+const originConfig = await readFile(new URL("../config/portalOrigins.ts", import.meta.url), "utf8");
 
 const ROLE_HOME = {
   customer: "/app/customer",
@@ -48,13 +49,7 @@ function safeRedirectUrl(candidate, currentOrigin) {
     return null;
   }
   if (parsed.protocol !== "https:") return null;
-  const allowed = [
-    "https://nexora-main-website.vercel.app",
-    "https://custmer-fresh-app.vercel.app",
-    "https://shop-onwer-pink-nexora-aap.vercel.app",
-    "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app",
-  ];
-  if (!allowed.includes(parsed.origin)) return null;
+  if (parsed.origin !== currentOrigin) return null;
   parsed.hash = "";
   return parsed.toString();
 }
@@ -125,6 +120,7 @@ test("12. query strings are preserved for PWA deep links", () => {
     destinationForVerifiedRole("customer", "/app/customer/?salon=abc&ref=NX1"),
     "/app/customer/?salon=abc&ref=NX1",
   );
+  assert.match(app, /`\$\{currentPath\}\$\{window\.location\.search\}`/);
 });
 
 test("13. fragments are stripped so tokens cannot ride in the hash", () => {
@@ -137,17 +133,17 @@ test("14. public marketplace paths remain valid returnTo for every role", () => 
   assert.equal(destinationForVerifiedRole("growth_partner", "/"), "/");
 });
 
-test("15. allowlisted PWA origins may receive a cross-origin handoff; unknown origins may not", () => {
+test("15. external PWA and unknown origins are rejected", () => {
   const origin = "https://nexora-main-website.vercel.app";
   assert.equal(
     safeRedirectUrl("https://custmer-fresh-app.vercel.app/app/customer", origin),
-    "https://custmer-fresh-app.vercel.app/app/customer",
+    null,
   );
   assert.equal(safeRedirectUrl("https://not-nexora.example/app/customer", origin), null);
-  assert.match(redirects, /custmer-fresh-app\.vercel\.app/);
+  assert.match(redirects, /parsed\.origin !== normalizedCurrentOrigin/);
 });
 
-test("16. PortalGateway has no role-home redirect; role mounts are cross-origin redirects", () => {
+test("16. PortalGateway has no role-home redirect; server config owns external redirects", () => {
   assert.doesNotMatch(app, /requestedRole && requestedRole !== profileRole/);
   assert.match(app, /no role-home redirects/);
   assert.match(app, /destinationForVerifiedRole\(role, requestedReturnTo/);
@@ -157,9 +153,10 @@ test("16. PortalGateway has no role-home redirect; role mounts are cross-origin 
   // Role mounts are cross-origin 307 redirects (Vercel returns 500 when a
   // serverless fetch or edge rewrite targets a foreign .vercel.app deployment).
   assert.match(nextConfig, /externalPortalRedirects/);
-  assert.match(nextConfig, /DEFAULT_CUSTOMER_PWA_ORIGIN/);
-  assert.match(nextConfig, /DEFAULT_OWNER_PWA_ORIGIN/);
-  assert.match(nextConfig, /DEFAULT_PARTNER_PWA_ORIGIN/);
+  assert.match(nextConfig, /configuredPortalOrigins/);
+  assert.match(originConfig, /NEXORA_CUSTOMER_PWA_ORIGIN/);
+  assert.match(originConfig, /NEXORA_OWNER_PWA_ORIGIN/);
+  assert.match(originConfig, /NEXORA_PARTNER_PWA_ORIGIN/);
   assert.match(nextConfig, /permanent: false/);
   assert.doesNotMatch(nextConfig, /api\/portal/);
   assert.doesNotMatch(middleware, /api\/portal/);

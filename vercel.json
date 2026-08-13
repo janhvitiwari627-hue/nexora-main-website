@@ -1,14 +1,4 @@
 {
   "buildCommand": "npm run build:next",
-  "framework": "nextjs",
-  "rewrites": [
-    {
-      "source": "/growth-partner",
-      "destination": "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app/"
-    },
-    {
-      "source": "/growth-partner/:path*",
-      "destination": "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app/:path*"
-    }
-  ]
+  "framework": "nextjs"
 }

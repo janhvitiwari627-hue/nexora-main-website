@@ -194,12 +194,12 @@ test("3.1 open-redirect attempts are rejected", () => {
   }
 });
 
-test("3.2 allowlisted Nexora origins are accepted for cross-origin handoff", () => {
+test("3.2 external Nexora origins are rejected as ReturnTo destinations", () => {
   const { safeRedirectUrl } = mods.redirects;
   const target = "https://custmer-fresh-app.vercel.app/bookings";
   assert.equal(
     safeRedirectUrl(target, { currentOrigin: "https://nexora-main-website.vercel.app" }),
-    target,
+    null,
   );
 });
 
@@ -239,7 +239,7 @@ test("3.5 a hostile returnTo is stripped from the callback URL", () => {
 });
 
 test("3.6 the Supabase redirect allowlist covers callback and recovery per origin", () => {
-  const allowlist = mods.redirects.supabaseRedirectAllowlist();
+  const allowlist = mods.redirects.supabaseRedirectAllowlist("https://nexora-main-website.vercel.app");
   assert.ok(allowlist.every((entry) => entry.startsWith("https://")));
   assert.ok(allowlist.some((entry) => entry.endsWith("/auth/callback")));
   assert.ok(allowlist.some((entry) => entry.endsWith("/reset-password")));
@@ -519,8 +519,9 @@ test("8.2 the website still reads only NEXT_PUBLIC_* env names", () => {
   assert.doesNotMatch(appSrc, /VITE_PUBLIC_SUPABASE|VITE_SUPABASE_URL|VITE_SUPABASE_ANON_KEY/);
 });
 
-test("8.3 the auth callback validates cross-origin returns before handing off", () => {
-  assert.match(appSrc, /safeRedirectUrl/);
+test("8.3 the auth callback accepts only internal return paths", () => {
+  assert.match(appSrc, /destinationForVerifiedRole/);
+  assert.doesNotMatch(appSrc, /window\.location\.assign\(crossOrigin\)/);
   assert.match(appSrc, /handleAuthCallback/);
   assert.doesNotMatch(appSrc, /access_token|refresh_token/i);
 });

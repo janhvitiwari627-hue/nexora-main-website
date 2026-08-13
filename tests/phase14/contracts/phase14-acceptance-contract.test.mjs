@@ -21,6 +21,7 @@ async function readAllMigrations() {
 const m = await readAllMigrations();
 const app = await readFile(join(projectRoot, 'app/nexora-app.tsx'), 'utf8');
 const nc = await readFile(join(projectRoot, 'next.config.ts'), 'utf8');
+const portalOrigins = await readFile(join(projectRoot, 'config/portalOrigins.ts'), 'utf8');
 
 test('P14-C001: Role isolation via RLS', () => {
   assert.match(m, /profiles.*RLS|safe_enable_rls/i);
@@ -88,7 +89,12 @@ test('P14-C011: Offline honesty', () => {
 test('P14-C012: Deployment routing', () => {
   assert.match(app, /\/app\/customer/i);
   assert.match(app, /AdminUnavailable/i);
-  assert.match(nc, /NEXORA_.*_PWA_ORIGIN/i);
+  assert.match(nc, /configuredPortalOrigins/i);
+  for (const key of ['CUSTOMER', 'OWNER', 'PARTNER', 'TEMPLATE']) {
+    assert.match(portalOrigins, new RegExp(`NEXORA_${key}_PWA_ORIGIN`));
+  }
+  assert.match(portalOrigins, /absolute HTTPS URL/);
+  assert.doesNotMatch(portalOrigins, /\.vercel\.app/);
 });
 
 test('P14-C013: Input validation', () => {

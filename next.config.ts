@@ -1,9 +1,5 @@
 import type { NextConfig } from "next";
-import {
-  DEFAULT_CUSTOMER_PWA_ORIGIN,
-  DEFAULT_OWNER_PWA_ORIGIN,
-  DEFAULT_PARTNER_PWA_ORIGIN,
-} from "./app/lib/portalOrigins";
+import { configuredPortalOrigins } from "./config/portalOrigins";
 
 const EXPECTED_SUPABASE_URL = "https://qwaehqsmodekbgvnaavz.supabase.co";
 const JOB_PORTAL_BASE = "/job-portal";
@@ -36,16 +32,22 @@ const JOB_PORTAL_ROUTE_ROOTS = [
  * root) — with no iframe, no "app is not mounted" blocker, and no
  * `NEXT_PUBLIC_*_PORTAL_MOUNTED` flag deciding routing.
  *
- * Template has no production origin and stays a same-origin workspace surface
- * rendered by the app shell (`/app/template`).
+ * Origins come only from validated server-side configuration. Customer, Owner
+ * and Partner are required; Template remains same-origin unless its optional
+ * external origin is configured.
  */
+const portalOrigins = configuredPortalOrigins();
 const externalPortalRedirects = [
-  { source: "/app/customer", destination: `${DEFAULT_CUSTOMER_PWA_ORIGIN}/`, permanent: false },
-  { source: "/app/customer/:path*", destination: `${DEFAULT_CUSTOMER_PWA_ORIGIN}/:path*`, permanent: false },
-  { source: "/app/owner", destination: `${DEFAULT_OWNER_PWA_ORIGIN}/`, permanent: false },
-  { source: "/app/owner/:path*", destination: `${DEFAULT_OWNER_PWA_ORIGIN}/:path*`, permanent: false },
-  { source: "/app/partner", destination: `${DEFAULT_PARTNER_PWA_ORIGIN}/`, permanent: false },
-  { source: "/app/partner/:path*", destination: `${DEFAULT_PARTNER_PWA_ORIGIN}/:path*`, permanent: false },
+  { source: "/app/customer", destination: `${portalOrigins.customer}/`, permanent: false },
+  { source: "/app/customer/:path*", destination: `${portalOrigins.customer}/:path*`, permanent: false },
+  { source: "/app/owner", destination: `${portalOrigins.owner}/`, permanent: false },
+  { source: "/app/owner/:path*", destination: `${portalOrigins.owner}/:path*`, permanent: false },
+  { source: "/app/partner", destination: `${portalOrigins.partner}/`, permanent: false },
+  { source: "/app/partner/:path*", destination: `${portalOrigins.partner}/:path*`, permanent: false },
+  ...(portalOrigins.template ? [
+    { source: "/app/template", destination: `${portalOrigins.template}/`, permanent: false },
+    { source: "/app/template/:path*", destination: `${portalOrigins.template}/:path*`, permanent: false },
+  ] : []),
 ];
 
 const nextConfig: NextConfig = {

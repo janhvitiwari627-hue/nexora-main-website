@@ -4,6 +4,7 @@ import test from "node:test";
 
 const app = await readFile(new URL("../app/nexora-app.tsx", import.meta.url), "utf8");
 const nextConfig = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
+const originConfig = await readFile(new URL("../config/portalOrigins.ts", import.meta.url), "utf8");
 const supabaseClient = await readFile(new URL("../app/lib/supabaseClient.ts", import.meta.url), "utf8");
 const migration = await readFile(new URL("../supabase/migrations/20260803_profiles_auto_create_fix.sql", import.meta.url), "utf8");
 
@@ -58,9 +59,10 @@ test("external role PWAs are cross-origin redirects (Vercel cannot proxy .vercel
   // Vercel returns HTTP 500 for both a serverless fetch and a cross-origin edge
   // rewrite to a foreign .vercel.app deployment. The mounts are 307 redirects.
   assert.match(nextConfig, /externalPortalRedirects/);
-  assert.match(nextConfig, /DEFAULT_CUSTOMER_PWA_ORIGIN/);
-  assert.match(nextConfig, /DEFAULT_OWNER_PWA_ORIGIN/);
-  assert.match(nextConfig, /DEFAULT_PARTNER_PWA_ORIGIN/);
+  assert.match(nextConfig, /configuredPortalOrigins/);
+  assert.match(originConfig, /NEXORA_CUSTOMER_PWA_ORIGIN/);
+  assert.match(originConfig, /NEXORA_OWNER_PWA_ORIGIN/);
+  assert.match(originConfig, /NEXORA_PARTNER_PWA_ORIGIN/);
   for (const route of ["/app/customer", "/app/owner", "/app/partner"]) {
     assert.match(nextConfig, new RegExp(route));
   }
