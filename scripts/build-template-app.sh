@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
-npm run build --workspace=@nexora/template-app
+npm --prefix template-app ci --ignore-scripts
+npm --prefix template-app run build
 rm -rf public/template-app
 mkdir -p public/template-app
 cp -R template-app/dist/. public/template-app/
