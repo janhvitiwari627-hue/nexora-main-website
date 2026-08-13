@@ -88,7 +88,7 @@ jobs:
       - name: Validate updated Template App
         run: |
           npm --prefix template-app run test:phase-10
-          node template-app/verify-22-screens.js
+          (cd template-app && node verify-22-screens.js)
           npm --prefix template-app run build
           grep -q "@nexora/auth" template-app/src/lib/supabaseClient.ts
           grep -q "qwaehqsmodekbgvnaavz" template-app/vendor/auth/src/env.ts
