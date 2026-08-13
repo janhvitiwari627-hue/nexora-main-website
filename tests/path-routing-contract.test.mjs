@@ -50,7 +50,12 @@ test("role links and external portal mounts use canonical portal paths", () => {
   assert.match(originConfig, /NEXORA_PARTNER_PWA_ORIGIN/);
   assert.match(originConfig, /GROWTH_PARTNER_APP_ORIGIN/);
   assert.match(originConfig, /protocol !== "https:"/);
-  assert.doesNotMatch(originConfig, /\.vercel\.app/);
+  // Customer / Owner / Partner origins must stay environment-only. The single
+  // exception is the built-in Template App default, so /app/template keeps
+  // working on a deployment that never set NEXORA_TEMPLATE_PWA_ORIGIN.
+  const hardcodedOrigins = [...originConfig.matchAll(/"(https?:\/\/[^"]+)"/g)].map(([, origin]) => origin);
+  assert.deepEqual(hardcodedOrigins, ["https://new-tamplete-app.vercel.app"]);
+  assert.match(originConfig, /DEFAULT_PORTAL_ORIGINS/);
   assert.match(nextConfig, /permanent: false/);
   assert.doesNotMatch(nextConfig, /api\/portal/);
 });

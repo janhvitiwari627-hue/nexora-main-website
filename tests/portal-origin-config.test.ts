@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolvePortalOrigin } from "../config/portalOrigins";
+import { DEFAULT_TEMPLATE_ORIGIN, resolvePortalOrigin } from "../config/portalOrigins";
 
 const managedVariables = [
   "NEXORA_CUSTOMER_PWA_ORIGIN",
@@ -58,9 +58,22 @@ test("self-referential deployment origins are rejected to prevent loops", () => 
   }, () => assert.throws(() => resolvePortalOrigin("owner"), /must not point back/));
 });
 
-test("Template origin is optional and validated when configured", () => {
-  withEnvironment({}, () => assert.equal(resolvePortalOrigin("template"), undefined));
+test("Template falls back to the Template App origin and the env var overrides it", () => {
+  assert.equal(DEFAULT_TEMPLATE_ORIGIN, "https://new-tamplete-app.vercel.app");
+  withEnvironment({}, () => assert.equal(resolvePortalOrigin("template"), DEFAULT_TEMPLATE_ORIGIN));
   withEnvironment({ NEXORA_TEMPLATE_PWA_ORIGIN: "https://template.example.com" }, () => {
     assert.equal(resolvePortalOrigin("template"), "https://template.example.com");
+  });
+});
+
+test("Template default is dropped when it would point back at this deployment", () => {
+  withEnvironment({ VERCEL_URL: "new-tamplete-app.vercel.app" }, () => {
+    assert.equal(resolvePortalOrigin("template"), undefined);
+  });
+});
+
+test("a configured Template origin is still validated", () => {
+  withEnvironment({ NEXORA_TEMPLATE_PWA_ORIGIN: "http://template.example.com" }, () => {
+    assert.throws(() => resolvePortalOrigin("template"), /absolute HTTPS|origin-only/);
   });
 });

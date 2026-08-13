@@ -57,6 +57,8 @@ export const DEFAULT_ALLOWED_AUTH_ORIGINS: readonly string[] = [
   "https://custmer-fresh-app.vercel.app",
   "https://shop-onwer-pink-nexora-aap.vercel.app",
   "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app",
+  // Template App (website builder) reached through /app/template.
+  "https://new-tamplete-app.vercel.app",
 ];
 
 function readCsvEnv(raw: string | undefined | null): string[] {
