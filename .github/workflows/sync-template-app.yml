@@ -44,21 +44,20 @@ jobs:
             .template-source/ template-app/
           rm -rf .template-source
 
-      - name: Preserve Nexora central auth adapters
+      - name: Use canonical Nexora Supabase client
         shell: bash
         run: |
           set -euo pipefail
           cp integration-packages/template-app/files/src/lib/supabaseClient.ts template-app/src/lib/supabaseClient.ts
-          cp integration-packages/template-app/files/src/lib/useAuth.ts template-app/src/lib/useAuth.ts
 
-      - name: Configure Template App as a main-repo workspace
+      - name: Configure isolated embedded Template App
         shell: node {0}
         run: |
           const fs = require('fs');
 
           const rootPath = 'package.json';
           const root = JSON.parse(fs.readFileSync(rootPath, 'utf8'));
-          root.workspaces = Array.from(new Set([...(root.workspaces || []), 'template-app']));
+          root.workspaces = (root.workspaces || []).filter((item) => item !== 'template-app');
           root.scripts['build:template-app'] = 'sh scripts/build-template-app.sh';
           root.scripts.prebuild = 'npm run build:job-portal && npm run build:template-app';
           root.scripts['prebuild:next'] = 'npm run build:job-portal && npm run build:template-app';
@@ -71,30 +70,28 @@ jobs:
           app.dependencies['@nexora/auth'] = 'file:../packages/auth';
           fs.writeFileSync(appPath, JSON.stringify(app, null, 2) + '\n');
 
-      - name: Configure same-origin Template App asset base
-        shell: node {0}
-        run: |
-          const fs = require('fs');
-          const path = 'template-app/vite.config.ts';
-          let text = fs.readFileSync(path, 'utf8');
-          if (!text.includes("base: '/template-app/'")) {
-            text = text.replace('return {\n    plugins:', "return {\n    base: '/template-app/',\n    plugins:");
+          const vitePath = 'template-app/vite.config.ts';
+          let vite = fs.readFileSync(vitePath, 'utf8');
+          if (!vite.includes("base: '/template-app/'")) {
+            vite = vite.replace('return {\n    plugins:', "return {\n    base: '/template-app/',\n    plugins:");
           }
-          fs.writeFileSync(path, text);
+          fs.writeFileSync(vitePath, vite);
 
-      - name: Install and refresh root lockfile
-        run: npm install --package-lock-only --ignore-scripts
+      - name: Refresh Template App lockfile
+        run: npm --prefix template-app install --package-lock-only --ignore-scripts
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install Template App dependencies
+        run: npm --prefix template-app ci --ignore-scripts
 
-      - name: Validate Template App
+      - name: Validate updated Template App
         run: |
-          npm run lint --workspace=@nexora/template-app
-          npm run test:auth --workspace=@nexora/template-app
-          npm run test:phase-10 --workspace=@nexora/template-app
+          npm --prefix template-app run test:auth
+          npm --prefix template-app run test:phase-10
           node template-app/verify-22-screens.js
-          npm run build:template-app
+          npm --prefix template-app run build
+
+      - name: Install Main Website dependencies
+        run: npm ci
 
       - name: Validate Main Website
         run: |
@@ -108,7 +105,7 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add template-app package.json package-lock.json scripts/build-template-app.sh .github/workflows/sync-template-app.yml
+          git add template-app package.json scripts/build-template-app.sh .github/workflows/sync-template-app.yml
           if git diff --cached --quiet; then
             echo 'No sync changes to commit.'
             exit 0
