@@ -16,6 +16,7 @@ import {
   requireCustomerAccount,
   requireOwnerWorkspace,
   requirePartnerMembership,
+  safeRedirectUrl,
   destinationForVerifiedRole,
   supabaseConfigErrorMessage,
   useAuth,
@@ -2472,13 +2473,8 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
 /** Same-origin-only redirect target; blocks protocol-relative and absolute URLs. */
 function safeSameOriginPath(candidate: string | null, fallback: string): string {
   if (!candidate || !candidate.startsWith("/") || candidate.startsWith("//") || candidate.includes("\\")) return fallback;
-  try {
-    const parsed = new URL(candidate, "https://nexora.internal");
-    if (parsed.origin !== "https://nexora.internal") return fallback;
-    return `${parsed.pathname}${parsed.search}`;
-  } catch {
-    return fallback;
-  }
+  if (/[?#]/.test(candidate)) return fallback;
+  return candidate;
 }
 
 function AuthCallbackPage({ navigate }: { navigate: (path: string) => void }) {
@@ -2495,9 +2491,21 @@ function AuthCallbackPage({ navigate }: { navigate: (path: string) => void }) {
         // Canonical PKCE + active-profile verification. Roles never come from
         // the URL or localStorage — handleAuthCallback fails closed.
         const profile = await handleAuthCallback(url.toString());
+        // Cross-origin handoff: a PWA on another origin may have started this
+        // login. `safeRedirectUrl` accepts ONLY allowlisted Nexora origins, so
+        // an attacker-supplied returnTo cannot capture the authenticated user.
+        // No tokens travel in the URL — the destination origin runs its own
+        // PKCE exchange against the shared project.
         const rawReturnTo = url.searchParams.get("returnTo");
+        const crossOrigin = rawReturnTo && /^https?:\/\//i.test(rawReturnTo.trim())
+          ? safeRedirectUrl(rawReturnTo)
+          : null;
         // Strip the one-time code from the URL before continuing.
         window.history.replaceState({}, "", AUTH_ROUTES.callback);
+        if (crossOrigin) {
+          window.location.assign(crossOrigin);
+          return;
+        }
         navigate(destinationForVerifiedRole(profile.role, rawReturnTo));
       } catch (cause) {
         setState({ status: "error", message: authErrorMessage(cause) });

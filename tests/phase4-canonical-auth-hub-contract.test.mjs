@@ -54,10 +54,7 @@ test("canonical logout uses shared sign-out and accepts only safe local paths", 
   assert.match(helper, /!candidate\.startsWith\("\/"\)/);
   assert.match(helper, /candidate\.startsWith\("\/\/"\)/);
   assert.match(helper, /candidate\.includes/);
-  assert.match(helper, /parsed\.origin !== "https:\/\/nexora\.internal"/);
-  assert.match(helper, /parsed\.pathname/);
-  assert.match(helper, /parsed\.search/);
-  assert.doesNotMatch(helper, /parsed\.hash/);
+  assert.match(helper, /\/\[\?#\]\//);
 });
 
 test("canonical continuation waits for provider state and routes by verified role", () => {
