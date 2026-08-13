@@ -3,13 +3,19 @@ import { configuredPortalOrigins } from "./config/portalOrigins";
 
 const EXPECTED_SUPABASE_URL = "https://qwaehqsmodekbgvnaavz.supabase.co";
 const JOB_PORTAL_BASE = "/job-portal";
+const publicSupabaseUrl =
+  process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
+const publicSupabaseAnonKey =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+  process.env.VITE_SUPABASE_ANON_KEY ??
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 // Validate when present. Do not assign `?? ""` into `env` — that would bake an
 // empty NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY into the
 // client bundle and break AuthProvider on a build-time miss.
 if (
-  process.env.NEXT_PUBLIC_SUPABASE_URL &&
-  process.env.NEXT_PUBLIC_SUPABASE_URL.replace(/\/$/, "") !== EXPECTED_SUPABASE_URL
+  publicSupabaseUrl &&
+  publicSupabaseUrl.replace(/\/$/, "") !== EXPECTED_SUPABASE_URL
 ) {
   throw new Error("NEXT_PUBLIC_SUPABASE_URL must use shared project qwaehqsmodekbgvnaavz.");
 }
@@ -100,11 +106,11 @@ const nextConfig: NextConfig = {
     // into the client bundle from direct process.env reads alone. Forward only
     // values that are actually present so a missing deployment variable still
     // fails closed instead of being replaced with an empty string.
-    ...(process.env.NEXT_PUBLIC_SUPABASE_URL
-      ? { NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL }
+    ...(publicSupabaseUrl
+      ? { NEXT_PUBLIC_SUPABASE_URL: publicSupabaseUrl }
       : {}),
-    ...(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-      ? { NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY }
+    ...(publicSupabaseAnonKey
+      ? { NEXT_PUBLIC_SUPABASE_ANON_KEY: publicSupabaseAnonKey }
       : {}),
     NEXT_PUBLIC_EXPECTED_SUPABASE_URL: EXPECTED_SUPABASE_URL,
     // Origins allowed to receive an authenticated PKCE redirect.
