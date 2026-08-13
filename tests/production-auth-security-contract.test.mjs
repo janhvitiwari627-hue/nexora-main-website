@@ -11,6 +11,7 @@ const session = await readFile(new URL("../packages/auth/src/session.ts", import
 const clientSrc = await readFile(new URL("../packages/auth/src/client.ts", import.meta.url), "utf8");
 const gates = await readFile(new URL("../supabase/migrations/20260808_production_gates_and_blockers.sql", import.meta.url), "utf8");
 const phase8 = await readFile(new URL("../supabase/migrations/20260807_phase8_security_and_isolation.sql", import.meta.url), "utf8");
+const reviewRpcGrants = await readFile(new URL("../supabase/migrations/20260813_review_salon_setup_grants.sql", import.meta.url), "utf8");
 
 // ---------------------------------------------------------------------------
 // 10.1 — Real Supabase auth flows and dedicated routes
@@ -101,6 +102,12 @@ test("10.5 partner data is isolated to auth.uid() via RLS, no client flags", () 
 // ---------------------------------------------------------------------------
 // 10.7 — Production blockers
 // ---------------------------------------------------------------------------
+
+test("proposal-review RPC has no PUBLIC or anonymous execute grant", () => {
+  assert.match(reviewRpcGrants, /revoke all on function public\.review_salon_setup\(uuid, text, text\) from public, anon;/);
+  assert.match(reviewRpcGrants, /grant execute on function public\.review_salon_setup\(uuid, text, text\) to authenticated;/);
+  assert.doesNotMatch(reviewRpcGrants, /grant execute[\s\S]*?to[\s\S]*?\b(anon|public)\b/i);
+});
 
 test("10.7 no privileged keys or secrets in app code", () => {
   assert.doesNotMatch(app, /SUPABASE_SERVICE_ROLE_KEY|service_role_key|sk_live|rzp_live|RAZORPAY_KEY_SECRET/i);
