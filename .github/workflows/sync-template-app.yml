@@ -1,0 +1,116 @@
+name: Sync Template App
+
+on:
+  push:
+    branches:
+      - agent/update-template-app
+    paths:
+      - .github/workflows/sync-template-app.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main website branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: agent/update-template-app
+
+      - name: Checkout latest approved Template App source
+        uses: actions/checkout@v4
+        with:
+          repository: templateapp67-oss/NEW-TAMPLETE-APP
+          ref: 082f2ff60d65803bbe991934946e73bfbd93f4a7
+          path: .template-source
+
+      - name: Replace embedded Template App source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf template-app
+          mkdir -p template-app
+          rsync -a --delete \
+            --exclude '.git/' \
+            --exclude '.env' \
+            --exclude '.env.local' \
+            .template-source/ template-app/
+          rm -rf .template-source
+
+      - name: Preserve Nexora central auth adapters
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp integration-packages/template-app/files/src/lib/supabaseClient.ts template-app/src/lib/supabaseClient.ts
+          cp integration-packages/template-app/files/src/lib/useAuth.ts template-app/src/lib/useAuth.ts
+
+      - name: Configure Template App as a main-repo workspace
+        shell: node {0}
+        run: |
+          const fs = require('fs');
+
+          const rootPath = 'package.json';
+          const root = JSON.parse(fs.readFileSync(rootPath, 'utf8'));
+          root.workspaces = Array.from(new Set([...(root.workspaces || []), 'template-app']));
+          root.scripts['build:template-app'] = 'bash scripts/build-template-app.sh';
+          root.scripts.prebuild = 'npm run build:job-portal && npm run build:template-app';
+          root.scripts['prebuild:next'] = 'npm run build:job-portal && npm run build:template-app';
+          fs.writeFileSync(rootPath, JSON.stringify(root, null, 2) + '\n');
+
+          const appPath = 'template-app/package.json';
+          const app = JSON.parse(fs.readFileSync(appPath, 'utf8'));
+          app.name = '@nexora/template-app';
+          app.dependencies = app.dependencies || {};
+          app.dependencies['@nexora/auth'] = 'workspace:*';
+          fs.writeFileSync(appPath, JSON.stringify(app, null, 2) + '\n');
+
+      - name: Configure same-origin Template App asset base
+        shell: node {0}
+        run: |
+          const fs = require('fs');
+          const path = 'template-app/vite.config.ts';
+          let text = fs.readFileSync(path, 'utf8');
+          if (!text.includes("base: '/template-app/'")) {
+            text = text.replace('return {\n    plugins:', "return {\n    base: '/template-app/',\n    plugins:");
+          }
+          fs.writeFileSync(path, text);
+
+      - name: Install and refresh root lockfile
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Template App
+        run: |
+          npm run lint --workspace=@nexora/template-app
+          npm run test:auth --workspace=@nexora/template-app
+          npm run test:phase-10 --workspace=@nexora/template-app
+          node template-app/verify-22-screens.js
+          npm run build:template-app
+
+      - name: Validate Main Website
+        run: |
+          npm run typecheck
+          npm run test:contracts
+          npm run build:next
+
+      - name: Commit synced app
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add template-app package.json package-lock.json scripts/build-template-app.sh .github/workflows/sync-template-app.yml
+          if git diff --cached --quiet; then
+            echo 'No sync changes to commit.'
+            exit 0
+          fi
+          git commit -m 'feat: replace Template App with latest five-theme build [template-sync]'
+          git push origin HEAD:agent/update-template-app
