@@ -37,16 +37,17 @@ test("legacy dashboard URLs canonicalize instead of becoming a second portal", (
   assert.match(app, /portalPathForRole\(/);
 });
 
-test("role links and reverse proxy mounts use canonical portal paths", () => {
+test("role links and external portal mounts use canonical portal paths", () => {
   assert.match(app, /navigate\(PORTAL_PATHS\.customer\)/);
   assert.match(app, /navigate\(PORTAL_PATHS\.business_user\)/);
   assert.match(app, /navigate\(PORTAL_PATHS\.growth_partner\)/);
-  // Canonical mounts are beforeFiles rewrites to the same-origin proxy.
-  assert.match(nextConfig, /beforeFiles:/);
-  assert.match(nextConfig, /"customer", "owner", "partner"/);
-  assert.match(nextConfig, /api\/portal/);
-  assert.match(nextConfig, /:path\*/);
-  assert.doesNotMatch(nextConfig, /destination: `https?:\/\//);
+  // Canonical mounts are cross-origin redirects (Vercel cannot proxy .vercel.app).
+  assert.match(nextConfig, /externalPortalRedirects/);
+  assert.match(nextConfig, /DEFAULT_CUSTOMER_PWA_ORIGIN/);
+  assert.match(nextConfig, /DEFAULT_OWNER_PWA_ORIGIN/);
+  assert.match(nextConfig, /DEFAULT_PARTNER_PWA_ORIGIN/);
+  assert.match(nextConfig, /permanent: false/);
+  assert.doesNotMatch(nextConfig, /api\/portal/);
 });
 
 test("each PWA package declares its own path base and scoped worker", () => {

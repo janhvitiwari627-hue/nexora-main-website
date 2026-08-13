@@ -34,6 +34,11 @@ import {
   roleQueryForPortalRole,
   type PortalKey,
 } from "./lib/portalRoutes";
+import {
+  DEFAULT_CUSTOMER_PWA_ORIGIN,
+  DEFAULT_OWNER_PWA_ORIGIN,
+  DEFAULT_PARTNER_PWA_ORIGIN,
+} from "./lib/portalOrigins";
 // GPS location system — browser-native geolocation only. No Google
 // Geolocation/Maps Geocoding, no Mapbox, no Nominatim, no API keys.
 import {
@@ -2817,16 +2822,32 @@ function portalLabel(key: PortalKey): string {
 }
 
 /**
- * Hand the browser over to the same-origin portal mount. The external PWA is
- * served by a `beforeFiles` rewrite to the `/api/portal/{role}` proxy (see
- * `next.config.ts`), so we perform a full navigation instead of embedding the
- * PWA in the page. No mount blocker and no NEXT_PUBLIC mounted flag holds
- * routing authority.
+ * External production origins for the three role PWAs. These must stay in sync
+ * with `DEFAULT_ALLOWED_AUTH_ORIGINS` in `packages/auth/src/redirects.ts` and
+ * the origins used by `next.config.ts` redirects.
  */
-function PortalHandoff({ mountKey }: { mountKey: PortalKey }) {
+const EXTERNAL_PORTAL_ORIGINS: Partial<Record<PortalKey, string>> = {
+  customer: DEFAULT_CUSTOMER_PWA_ORIGIN,
+  owner: DEFAULT_OWNER_PWA_ORIGIN,
+  partner: DEFAULT_PARTNER_PWA_ORIGIN,
+};
+
+/**
+ * Hand the browser over to the external PWA origin. Vercel cannot reverse-proxy
+ * another `.vercel.app` deployment (serverless fetch AND cross-origin rewrite
+ * both return HTTP 500), so the canonical `/app/{role}` mounts are cross-origin
+ * redirects (see `next.config.ts`). This fallback mirrors that redirect for any
+ * client-side navigation that reaches the app shell. No iframe, no mount blocker
+ * and no NEXT_PUBLIC mounted flag holds routing authority.
+ */
+function PortalHandoff({ mountKey, path }: { mountKey: PortalKey; path: string }) {
   useEffect(() => {
-    window.location.replace(`${portalPathForMountKey(mountKey)}/`);
-  }, [mountKey]);
+    const origin = EXTERNAL_PORTAL_ORIGINS[mountKey];
+    if (!origin) return;
+    const base = portalPathForMountKey(mountKey);
+    const suffix = path === base ? "" : path.startsWith(`${base}/`) ? path.slice(base.length) : "";
+    window.location.replace(`${origin}${suffix || "/"}`);
+  }, [mountKey, path]);
   return (
     <main className="center-page">
       <div className="loader" aria-label={`Opening ${portalLabel(mountKey)} app`} />
@@ -2921,7 +2942,7 @@ function PortalGateway({
       />
     );
   }
-  return <PortalHandoff mountKey={mountKey} />;
+  return <PortalHandoff mountKey={mountKey} path={currentPath} />;
 }
 
 function TemplateWorkspaceHost({

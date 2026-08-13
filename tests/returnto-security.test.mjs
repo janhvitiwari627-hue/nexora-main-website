@@ -13,10 +13,6 @@ const roles = await readFile(new URL("../packages/auth/src/roles.ts", import.met
 const app = await readFile(new URL("../app/nexora-app.tsx", import.meta.url), "utf8");
 const nextConfig = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
 const middleware = await readFile(new URL("../middleware.ts", import.meta.url), "utf8");
-const portalProxy = await readFile(
-  new URL("../app/api/portal/[portal]/[[...path]]/route.ts", import.meta.url),
-  "utf8",
-);
 
 const ROLE_HOME = {
   customer: "/app/customer",
@@ -151,21 +147,20 @@ test("15. allowlisted PWA origins may receive a cross-origin handoff; unknown or
   assert.match(redirects, /custmer-fresh-app\.vercel\.app/);
 });
 
-test("16. PortalGateway has no role-home redirect; role mounts use same-origin beforeFiles rewrites", () => {
+test("16. PortalGateway has no role-home redirect; role mounts are cross-origin redirects", () => {
   assert.doesNotMatch(app, /requestedRole && requestedRole !== profileRole/);
   assert.match(app, /no role-home redirects/);
   assert.match(app, /destinationForVerifiedRole\(role, requestedReturnTo/);
   // No client-side iframe and no mounted-flag gating for the role shells.
   assert.doesNotMatch(app, /MountedPortalFrame/);
   assert.doesNotMatch(app, /isPortalMounted/);
-  // Role mounts are beforeFiles rewrites to the same-origin /api/portal proxy,
-  // not foreign-origin edge rewrites and not middleware.
-  assert.match(nextConfig, /beforeFiles:/);
-  assert.match(nextConfig, /"customer", "owner", "partner"/);
-  assert.match(nextConfig, /api\/portal/);
-  assert.match(nextConfig, /:path\*/);
-  assert.doesNotMatch(nextConfig, /destination: `https?:\/\//);
+  // Role mounts are cross-origin 307 redirects (Vercel returns 500 when a
+  // serverless fetch or edge rewrite targets a foreign .vercel.app deployment).
+  assert.match(nextConfig, /externalPortalRedirects/);
+  assert.match(nextConfig, /DEFAULT_CUSTOMER_PWA_ORIGIN/);
+  assert.match(nextConfig, /DEFAULT_OWNER_PWA_ORIGIN/);
+  assert.match(nextConfig, /DEFAULT_PARTNER_PWA_ORIGIN/);
+  assert.match(nextConfig, /permanent: false/);
+  assert.doesNotMatch(nextConfig, /api\/portal/);
   assert.doesNotMatch(middleware, /api\/portal/);
-  assert.match(portalProxy, /PORTAL_ORIGINS/);
-  assert.match(portalProxy, /Nexora-Proxy/);
 });

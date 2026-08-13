@@ -1,4 +1,9 @@
 import type { NextConfig } from "next";
+import {
+  DEFAULT_CUSTOMER_PWA_ORIGIN,
+  DEFAULT_OWNER_PWA_ORIGIN,
+  DEFAULT_PARTNER_PWA_ORIGIN,
+} from "./app/lib/portalOrigins";
 
 const EXPECTED_SUPABASE_URL = "https://qwaehqsmodekbgvnaavz.supabase.co";
 const JOB_PORTAL_BASE = "/job-portal";
@@ -19,23 +24,29 @@ const JOB_PORTAL_ROUTE_ROOTS = [
 ];
 
 /**
- * External role PWAs (Customer, Owner, Partner) are served SAME-ORIGIN through
- * the Route Handler proxy in `app/api/portal/[portal]/[[...path]]/route.ts`.
+ * External role PWAs (Customer, Owner, Partner) are deployed on their OWN
+ * Vercel origins. Vercel cannot reverse-proxy another `.vercel.app` deployment:
+ * both a serverless `fetch()` (Route Handler) and a cross-origin edge rewrite
+ * return HTTP 500 — this is the exact root cause of the long-standing
+ * "Partner HTTP 500". The only mechanism that works is a client-side redirect
+ * (the same mechanism the legacy `/growth-partner` path already uses).
  *
- * Rewriting `/app/{role}` directly to a foreign Vercel deployment returns
- * HTTP 500, so the mounts are `beforeFiles` rewrites to the same-origin proxy —
- * exact, trailing-slash and nested — with no client-side iframe, no "app is not
- * mounted" blocker, and no `NEXT_PUBLIC_*_PORTAL_MOUNTED` flag deciding routing.
+ * So the canonical `/app/{role}` mounts are 307 redirects to the external
+ * origin — exact, trailing-slash and nested (deep links map onto the origin
+ * root) — with no iframe, no "app is not mounted" blocker, and no
+ * `NEXT_PUBLIC_*_PORTAL_MOUNTED` flag deciding routing.
  *
  * Template has no production origin and stays a same-origin workspace surface
  * rendered by the app shell (`/app/template`).
  */
-const PORTAL_PROXY_ROLES = ["customer", "owner", "partner"] as const;
-const portalProxyRoutes = PORTAL_PROXY_ROLES.flatMap((role) => [
-  { source: `/app/${role}`, destination: `/api/portal/${role}` },
-  { source: `/app/${role}/`, destination: `/api/portal/${role}/` },
-  { source: `/app/${role}/:path*`, destination: `/api/portal/${role}/:path*` },
-]);
+const externalPortalRedirects = [
+  { source: "/app/customer", destination: `${DEFAULT_CUSTOMER_PWA_ORIGIN}/`, permanent: false },
+  { source: "/app/customer/:path*", destination: `${DEFAULT_CUSTOMER_PWA_ORIGIN}/:path*`, permanent: false },
+  { source: "/app/owner", destination: `${DEFAULT_OWNER_PWA_ORIGIN}/`, permanent: false },
+  { source: "/app/owner/:path*", destination: `${DEFAULT_OWNER_PWA_ORIGIN}/:path*`, permanent: false },
+  { source: "/app/partner", destination: `${DEFAULT_PARTNER_PWA_ORIGIN}/`, permanent: false },
+  { source: "/app/partner/:path*", destination: `${DEFAULT_PARTNER_PWA_ORIGIN}/:path*`, permanent: false },
+];
 
 const nextConfig: NextConfig = {
   async rewrites() {
@@ -47,13 +58,14 @@ const nextConfig: NextConfig = {
       ]),
     ];
     return {
-      beforeFiles: [...portalProxyRoutes, ...jobPortalRoutes],
+      beforeFiles: jobPortalRoutes,
       afterFiles: [],
       fallback: [],
     };
   },
   async redirects() {
     return [
+      ...externalPortalRedirects,
       { source: "/dashboard/seeker", destination: "/job-portal/dashboard/seeker", permanent: false },
       { source: "/dashboard/employer", destination: "/job-portal/dashboard/employer", permanent: false },
     ];

@@ -54,14 +54,19 @@ test("published marketplace filters remain server-backed", () => {
   assert.match(app, /deleted_at.*null/);
 });
 
-test("all portal deployments are reverse-proxied via beforeFiles rewrites", () => {
-  // External role PWAs are mounted as beforeFiles rewrites to the same-origin
-  // /api/portal proxy (foreign-origin edge rewrites returned HTTP 500).
-  assert.match(nextConfig, /beforeFiles:/);
-  assert.match(nextConfig, /"customer", "owner", "partner"/);
-  assert.match(nextConfig, /api\/portal/);
-  assert.match(nextConfig, /:path\*/);
-  assert.doesNotMatch(nextConfig, /destination: `https?:\/\//);
+test("external role PWAs are cross-origin redirects (Vercel cannot proxy .vercel.app)", () => {
+  // Vercel returns HTTP 500 for both a serverless fetch and a cross-origin edge
+  // rewrite to a foreign .vercel.app deployment. The mounts are 307 redirects.
+  assert.match(nextConfig, /externalPortalRedirects/);
+  assert.match(nextConfig, /DEFAULT_CUSTOMER_PWA_ORIGIN/);
+  assert.match(nextConfig, /DEFAULT_OWNER_PWA_ORIGIN/);
+  assert.match(nextConfig, /DEFAULT_PARTNER_PWA_ORIGIN/);
+  for (const route of ["/app/customer", "/app/owner", "/app/partner"]) {
+    assert.match(nextConfig, new RegExp(route));
+  }
+  assert.match(nextConfig, /permanent: false/);
+  // No serverless proxy and no foreign-origin rewrite destination remain.
+  assert.doesNotMatch(nextConfig, /api\/portal/);
 });
 
 test("offline and configuration failures are visible", () => {
