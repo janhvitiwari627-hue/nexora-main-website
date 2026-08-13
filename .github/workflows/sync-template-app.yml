@@ -6,6 +6,7 @@ on:
       - agent/update-template-app
     paths:
       - .github/workflows/sync-template-app.yml
+      - scripts/build-template-app.sh
   workflow_dispatch:
 
 permissions:
