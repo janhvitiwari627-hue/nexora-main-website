@@ -96,9 +96,16 @@ const nextConfig: NextConfig = {
     ];
   },
   env: {
-    // Do not bake empty NEXT_PUBLIC_SUPABASE_* strings. Next already inlines
-    // real NEXT_PUBLIC_* values from the deployment environment; forcing ""
-    // here would hide a runtime key behind a build-time miss.
+    // Vercel's Next.js 16/Turbopack build did not inline these public values
+    // into the client bundle from direct process.env reads alone. Forward only
+    // values that are actually present so a missing deployment variable still
+    // fails closed instead of being replaced with an empty string.
+    ...(process.env.NEXT_PUBLIC_SUPABASE_URL
+      ? { NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL }
+      : {}),
+    ...(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      ? { NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY }
+      : {}),
     NEXT_PUBLIC_EXPECTED_SUPABASE_URL: EXPECTED_SUPABASE_URL,
     // Origins allowed to receive an authenticated PKCE redirect.
     // Must mirror the Supabase Redirect URL allowlist. Empty falls back to the
