@@ -34,11 +34,6 @@ import {
   roleQueryForPortalRole,
   type PortalKey,
 } from "./lib/portalRoutes";
-import {
-  DEFAULT_CUSTOMER_PWA_ORIGIN,
-  DEFAULT_OWNER_PWA_ORIGIN,
-  DEFAULT_PARTNER_PWA_ORIGIN,
-} from "./lib/portalOrigins";
 // GPS location system — browser-native geolocation only. No Google
 // Geolocation/Maps Geocoding, no Mapbox, no Nominatim, no API keys.
 import {
@@ -2822,32 +2817,32 @@ function portalLabel(key: PortalKey): string {
 }
 
 /**
- * External production origins for the three role PWAs. These must stay in sync
- * with `DEFAULT_ALLOWED_AUTH_ORIGINS` in `packages/auth/src/redirects.ts` and
- * the origins used by `next.config.ts` redirects.
- */
-const EXTERNAL_PORTAL_ORIGINS: Partial<Record<PortalKey, string>> = {
-  customer: DEFAULT_CUSTOMER_PWA_ORIGIN,
-  owner: DEFAULT_OWNER_PWA_ORIGIN,
-  partner: DEFAULT_PARTNER_PWA_ORIGIN,
-};
-
-/**
- * Hand the browser over to the external PWA origin. Vercel cannot reverse-proxy
- * another `.vercel.app` deployment (serverless fetch AND cross-origin rewrite
- * both return HTTP 500), so the canonical `/app/{role}` mounts are cross-origin
- * redirects (see `next.config.ts`). This fallback mirrors that redirect for any
- * client-side navigation that reaches the app shell. No iframe, no mount blocker
- * and no NEXT_PUBLIC mounted flag holds routing authority.
+ * Hand client-side navigation back to the canonical same-origin mount. The
+ * server owns the validated external origin, so client code cannot bypass a
+ * missing or invalid routing configuration.
  */
 function PortalHandoff({ mountKey, path }: { mountKey: PortalKey; path: string }) {
+  const [routingError, setRoutingError] = useState(false);
   useEffect(() => {
-    const origin = EXTERNAL_PORTAL_ORIGINS[mountKey];
-    if (!origin) return;
     const base = portalPathForMountKey(mountKey);
     const suffix = path === base ? "" : path.startsWith(`${base}/`) ? path.slice(base.length) : "";
-    window.location.replace(`${origin}${suffix || "/"}`);
+    const target = `${base}${suffix}${window.location.search}`;
+    const guardKey = `nexora:portal-handoff:${target}`;
+    const previousAttempt = Number(window.sessionStorage.getItem(guardKey) ?? "0");
+    if (Date.now() - previousAttempt < 10_000) {
+      const timer = window.setTimeout(() => setRoutingError(true), 0);
+      return () => window.clearTimeout(timer);
+    }
+    window.sessionStorage.setItem(guardKey, String(Date.now()));
+    window.location.replace(target);
   }, [mountKey, path]);
+  if (routingError) {
+    return (
+      <main className="center-page">
+        <StateCard title="Portal unavailable" text="The portal routing configuration did not hand off this request." />
+      </main>
+    );
+  }
   return (
     <main className="center-page">
       <div className="loader" aria-label={`Opening ${portalLabel(mountKey)} app`} />
@@ -2871,7 +2866,9 @@ function PortalGateway({
     const currentPath = window.location.pathname;
     const requestedRole = expectedRole ?? portalRoleFromPath(currentPath) ?? legacyDashboardRoleFromPath(currentPath);
     const loginRole = requestedRole ?? "customer";
-    const returnTo = isPortalPath(currentPath) ? currentPath : portalPathForRole(loginRole);
+    const returnTo = isPortalPath(currentPath)
+      ? `${currentPath}${window.location.search}`
+      : portalPathForRole(loginRole);
     try {
       // requireAuth verifies the user AND the active profile. A raw session
       // is not enough; missing/inactive profiles are signed out.

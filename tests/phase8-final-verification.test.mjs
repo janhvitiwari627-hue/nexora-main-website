@@ -121,8 +121,8 @@ test("vercel.json does not hijack exact /app/* portal entry points", () => {
     assert.equal(hijack, undefined, `${route} must stay on next.config beforeFiles rewrites, not vercel.json`);
   }
   assert.equal(parsed.framework, "nextjs");
-  // Template has no production origin and is not wired into the proxy config.
-  assert.doesNotMatch(nextConfig, /NEXORA_TEMPLATE_PWA_ORIGIN/);
+  // Template stays same-origin unless its optional validated origin is configured.
+  assert.match(nextConfig, /portalOrigins\.template/);
 });
 
 test("next.config does not bake empty Supabase secrets and locks the shared project", () => {

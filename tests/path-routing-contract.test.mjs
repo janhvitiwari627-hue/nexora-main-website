@@ -5,6 +5,7 @@ import test from "node:test";
 const app = await readFile(new URL("../app/nexora-app.tsx", import.meta.url), "utf8");
 const nextConfig = await readFile(new URL("../next.config.ts", import.meta.url), "utf8");
 const routes = await readFile(new URL("../app/lib/portalRoutes.ts", import.meta.url), "utf8");
+const originConfig = await readFile(new URL("../config/portalOrigins.ts", import.meta.url), "utf8");
 const roleGuard = await readFile(new URL("../supabase/migrations/20260805_permanent_profile_role_guard.sql", import.meta.url), "utf8");
 const ownerPatch = await readFile(new URL("../integration-packages/owner-pwa/supabase-integration.patch", import.meta.url), "utf8");
 const customerPatch = await readFile(new URL("../integration-packages/customer-pwa/supabase-integration.patch", import.meta.url), "utf8");
@@ -43,9 +44,13 @@ test("role links and external portal mounts use canonical portal paths", () => {
   assert.match(app, /navigate\(PORTAL_PATHS\.growth_partner\)/);
   // Canonical mounts are cross-origin redirects (Vercel cannot proxy .vercel.app).
   assert.match(nextConfig, /externalPortalRedirects/);
-  assert.match(nextConfig, /DEFAULT_CUSTOMER_PWA_ORIGIN/);
-  assert.match(nextConfig, /DEFAULT_OWNER_PWA_ORIGIN/);
-  assert.match(nextConfig, /DEFAULT_PARTNER_PWA_ORIGIN/);
+  assert.match(nextConfig, /configuredPortalOrigins/);
+  assert.match(originConfig, /NEXORA_CUSTOMER_PWA_ORIGIN/);
+  assert.match(originConfig, /NEXORA_OWNER_PWA_ORIGIN/);
+  assert.match(originConfig, /NEXORA_PARTNER_PWA_ORIGIN/);
+  assert.match(originConfig, /GROWTH_PARTNER_APP_ORIGIN/);
+  assert.match(originConfig, /protocol !== "https:"/);
+  assert.doesNotMatch(originConfig, /\.vercel\.app/);
   assert.match(nextConfig, /permanent: false/);
   assert.doesNotMatch(nextConfig, /api\/portal/);
 });
