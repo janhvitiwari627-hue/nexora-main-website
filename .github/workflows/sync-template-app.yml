@@ -59,7 +59,7 @@ jobs:
           const rootPath = 'package.json';
           const root = JSON.parse(fs.readFileSync(rootPath, 'utf8'));
           root.workspaces = Array.from(new Set([...(root.workspaces || []), 'template-app']));
-          root.scripts['build:template-app'] = 'bash scripts/build-template-app.sh';
+          root.scripts['build:template-app'] = 'sh scripts/build-template-app.sh';
           root.scripts.prebuild = 'npm run build:job-portal && npm run build:template-app';
           root.scripts['prebuild:next'] = 'npm run build:job-portal && npm run build:template-app';
           fs.writeFileSync(rootPath, JSON.stringify(root, null, 2) + '\n');
@@ -68,7 +68,7 @@ jobs:
           const app = JSON.parse(fs.readFileSync(appPath, 'utf8'));
           app.name = '@nexora/template-app';
           app.dependencies = app.dependencies || {};
-          app.dependencies['@nexora/auth'] = 'workspace:*';
+          app.dependencies['@nexora/auth'] = 'file:../packages/auth';
           fs.writeFileSync(appPath, JSON.stringify(app, null, 2) + '\n');
 
       - name: Configure same-origin Template App asset base
