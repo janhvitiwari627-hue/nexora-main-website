@@ -152,40 +152,81 @@ comment on function public.publish_salon_website(uuid, text) is
 
 -- ---------------------------------------------------------------------------
 -- 5. Customer / Owner / Partner RLS — belt-and-braces if earlier migrations
---    were not applied. Policies are created only when missing.
+--    were not applied. Policies are created only when missing AND only when
+--    the column they depend on actually exists in the live schema. This makes
+--    the block safe against schema drift (e.g. bookings without customer_id)
+--    so it can never abort the helper functions above.
 -- ---------------------------------------------------------------------------
 do $x$
+declare
+  booking_user_col text;
+  fav_user_col text;
 begin
-  -- Customer: own bookings only
   if to_regclass('public.bookings') is not null then
-    if not exists (
-      select 1 from pg_policies
-      where schemaname = 'public' and tablename = 'bookings' and policyname = 'customer_own_bookings_select'
-    ) then
-      create policy customer_own_bookings_select
-        on public.bookings for select to authenticated
-        using (customer_id = auth.uid());
+    select c.column_name into booking_user_col
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'bookings'
+      and c.column_name in ('customer_id', 'user_id', 'booked_by', 'client_id', 'created_by')
+    order by array_position(
+      array['customer_id','user_id','booked_by','client_id','created_by'],
+      c.column_name
+    )
+    limit 1;
+
+    if booking_user_col is not null
+       and not exists (
+         select 1 from pg_policies
+         where schemaname = 'public' and tablename = 'bookings'
+           and policyname = 'customer_own_bookings_select'
+       )
+    then
+      execute format(
+        'create policy customer_own_bookings_select
+           on public.bookings for select to authenticated
+           using (%I = auth.uid())',
+        booking_user_col
+      );
     end if;
   end if;
 
-  -- Customer: own favourite salons
   if to_regclass('public.favorite_salons') is not null then
-    if not exists (
-      select 1 from pg_policies
-      where schemaname = 'public' and tablename = 'favorite_salons' and policyname = 'customer_own_favorites'
-    ) then
-      create policy customer_own_favorites
-        on public.favorite_salons for all to authenticated
-        using (user_id = auth.uid())
-        with check (user_id = auth.uid());
+    select c.column_name into fav_user_col
+    from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.table_name = 'favorite_salons'
+      and c.column_name in ('user_id', 'customer_id')
+    order by array_position(array['user_id','customer_id'], c.column_name)
+    limit 1;
+
+    if fav_user_col is not null
+       and not exists (
+         select 1 from pg_policies
+         where schemaname = 'public' and tablename = 'favorite_salons'
+           and policyname = 'customer_own_favorites'
+       )
+    then
+      execute format(
+        'create policy customer_own_favorites
+           on public.favorite_salons for all to authenticated
+           using (%I = auth.uid())
+           with check (%I = auth.uid())',
+        fav_user_col, fav_user_col
+      );
     end if;
   end if;
 
-  -- Owner: proposals for owned salons (read)
-  if to_regclass('public.salon_setup_proposals') is not null then
+  if to_regclass('public.salon_setup_proposals') is not null
+     and exists (
+       select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = 'salon_setup_proposals'
+         and column_name = 'salon_id'
+     )
+  then
     if not exists (
       select 1 from pg_policies
-      where schemaname = 'public' and tablename = 'salon_setup_proposals' and policyname = 'owner_proposals_select'
+      where schemaname = 'public' and tablename = 'salon_setup_proposals'
+        and policyname = 'owner_proposals_select'
     ) then
       create policy owner_proposals_select
         on public.salon_setup_proposals for select to authenticated
@@ -193,7 +234,8 @@ begin
     end if;
     if not exists (
       select 1 from pg_policies
-      where schemaname = 'public' and tablename = 'salon_setup_proposals' and policyname = 'partner_proposals_select'
+      where schemaname = 'public' and tablename = 'salon_setup_proposals'
+        and policyname = 'partner_proposals_select'
     ) then
       create policy partner_proposals_select
         on public.salon_setup_proposals for select to authenticated
