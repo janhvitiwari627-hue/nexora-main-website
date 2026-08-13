@@ -33,8 +33,10 @@ test("Main Website is a portal gateway, not a copied PWA", () => {
   assert.match(app, /AdminUnavailable/);
   assert.match(app, /no public admin signup/);
   assert.match(app, /PortalGateway/);
-  assert.match(app, /NEXT_PUBLIC_NEXORA_CUSTOMER_PORTAL_MOUNTED/);
-  assert.match(app, /does not render a duplicate dashboard/);
+  // No client-side iframe and no NEXT_PUBLIC mounted flag holds routing authority.
+  assert.doesNotMatch(app, /MountedPortalFrame/);
+  assert.doesNotMatch(app, /isPortalMounted/);
+  assert.doesNotMatch(app, /NEXT_PUBLIC_NEXORA_CUSTOMER_PORTAL_MOUNTED/);
   assert.doesNotMatch(app, /RoleWorkspace|GrowthPartnerProposalForm|OwnerBusinessSetup/);
   assert.doesNotMatch(app, /create_customer_booking|razorpay-create-order|review_salon_setup|save_growth_partner_salon_setup/);
 });
@@ -52,11 +54,19 @@ test("published marketplace filters remain server-backed", () => {
   assert.match(app, /deleted_at.*null/);
 });
 
-test("all portal deployments are reverse-proxy configurable", () => {
-  for (const variable of ["NEXORA_CUSTOMER_PWA_ORIGIN", "NEXORA_OWNER_PWA_ORIGIN", "NEXORA_PARTNER_PWA_ORIGIN"]) {
-    assert.match(nextConfig, new RegExp(variable));
+test("external role PWAs are cross-origin redirects (Vercel cannot proxy .vercel.app)", () => {
+  // Vercel returns HTTP 500 for both a serverless fetch and a cross-origin edge
+  // rewrite to a foreign .vercel.app deployment. The mounts are 307 redirects.
+  assert.match(nextConfig, /externalPortalRedirects/);
+  assert.match(nextConfig, /DEFAULT_CUSTOMER_PWA_ORIGIN/);
+  assert.match(nextConfig, /DEFAULT_OWNER_PWA_ORIGIN/);
+  assert.match(nextConfig, /DEFAULT_PARTNER_PWA_ORIGIN/);
+  for (const route of ["/app/customer", "/app/owner", "/app/partner"]) {
+    assert.match(nextConfig, new RegExp(route));
   }
-  assert.match(nextConfig, /source: `\$\{path\}\/\:path\*`/);
+  assert.match(nextConfig, /permanent: false/);
+  // No serverless proxy and no foreign-origin rewrite destination remain.
+  assert.doesNotMatch(nextConfig, /api\/portal/);
 });
 
 test("offline and configuration failures are visible", () => {

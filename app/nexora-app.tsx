@@ -34,6 +34,11 @@ import {
   roleQueryForPortalRole,
   type PortalKey,
 } from "./lib/portalRoutes";
+import {
+  DEFAULT_CUSTOMER_PWA_ORIGIN,
+  DEFAULT_OWNER_PWA_ORIGIN,
+  DEFAULT_PARTNER_PWA_ORIGIN,
+} from "./lib/portalOrigins";
 // GPS location system — browser-native geolocation only. No Google
 // Geolocation/Maps Geocoding, no Mapbox, no Nominatim, no API keys.
 import {
@@ -2809,14 +2814,6 @@ function getDetailedConfigError(): string {
   return supabaseConfigErrorMessage({ url: supabaseUrl, anonKey: supabaseKey });
 }
 
-function isPortalMounted(key: PortalKey): boolean {
-  if (key === "customer") return process.env.NEXT_PUBLIC_NEXORA_CUSTOMER_PORTAL_MOUNTED === "true";
-  if (key === "owner") return process.env.NEXT_PUBLIC_NEXORA_OWNER_PORTAL_MOUNTED === "true";
-  if (key === "partner") return process.env.NEXT_PUBLIC_NEXORA_PARTNER_PORTAL_MOUNTED === "true";
-  if (key === "template") return process.env.NEXT_PUBLIC_NEXORA_TEMPLATE_PORTAL_MOUNTED === "true";
-  return false;
-}
-
 function portalLabel(key: PortalKey): string {
   if (key === "owner") return "Shop Owner";
   if (key === "partner") return "Growth Partner";
@@ -2824,16 +2821,36 @@ function portalLabel(key: PortalKey): string {
   return "Customer";
 }
 
-function MountedPortalFrame({ mountKey }: { mountKey: PortalKey }) {
-  const src = `${portalPathForMountKey(mountKey)}/`;
+/**
+ * External production origins for the three role PWAs. These must stay in sync
+ * with `DEFAULT_ALLOWED_AUTH_ORIGINS` in `packages/auth/src/redirects.ts` and
+ * the origins used by `next.config.ts` redirects.
+ */
+const EXTERNAL_PORTAL_ORIGINS: Partial<Record<PortalKey, string>> = {
+  customer: DEFAULT_CUSTOMER_PWA_ORIGIN,
+  owner: DEFAULT_OWNER_PWA_ORIGIN,
+  partner: DEFAULT_PARTNER_PWA_ORIGIN,
+};
+
+/**
+ * Hand the browser over to the external PWA origin. Vercel cannot reverse-proxy
+ * another `.vercel.app` deployment (serverless fetch AND cross-origin rewrite
+ * both return HTTP 500), so the canonical `/app/{role}` mounts are cross-origin
+ * redirects (see `next.config.ts`). This fallback mirrors that redirect for any
+ * client-side navigation that reaches the app shell. No iframe, no mount blocker
+ * and no NEXT_PUBLIC mounted flag holds routing authority.
+ */
+function PortalHandoff({ mountKey, path }: { mountKey: PortalKey; path: string }) {
+  useEffect(() => {
+    const origin = EXTERNAL_PORTAL_ORIGINS[mountKey];
+    if (!origin) return;
+    const base = portalPathForMountKey(mountKey);
+    const suffix = path === base ? "" : path.startsWith(`${base}/`) ? path.slice(base.length) : "";
+    window.location.replace(`${origin}${suffix || "/"}`);
+  }, [mountKey, path]);
   return (
-    <main className="portal-mount">
-      <iframe
-        title={`${portalLabel(mountKey)} app`}
-        src={src}
-        className="portal-frame"
-        allow="geolocation; clipboard-write"
-      />
+    <main className="center-page">
+      <div className="loader" aria-label={`Opening ${portalLabel(mountKey)} app`} />
     </main>
   );
 }
@@ -2915,7 +2932,7 @@ function PortalGateway({
   if (state.error) return <main className="center-page"><StateCard title="Portal unavailable" text={state.error} action="Retry" onAction={load} /></main>;
   const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
   const mountKey = portalMountKeyFromPath(currentPath) ?? (expectedRole === "business_user" ? "owner" : expectedRole === "growth_partner" ? "partner" : "customer");
-  if (mountKey === "template" && !isPortalMounted("template")) {
+  if (mountKey === "template") {
     return (
       <TemplateWorkspaceHost
         userId={workspace.userId}
@@ -2925,8 +2942,7 @@ function PortalGateway({
       />
     );
   }
-  if (!isPortalMounted(mountKey)) return <main className="center-page"><section className="entry-card"><span className="eyebrow">Nexora portal gateway</span><h1>{portalLabel(mountKey)} app is not mounted</h1><p>This path is reserved for the separately deployed PWA. Configure its reverse-proxy origin before enabling production traffic. The Main Website does not render a duplicate dashboard here.</p></section></main>;
-  return <MountedPortalFrame mountKey={mountKey} />;
+  return <PortalHandoff mountKey={mountKey} path={currentPath} />;
 }
 
 function TemplateWorkspaceHost({

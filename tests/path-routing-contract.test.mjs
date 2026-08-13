@@ -34,17 +34,20 @@ test("main app routes every canonical portal through the gateway", () => {
 test("legacy dashboard URLs canonicalize instead of becoming a second portal", () => {
   assert.match(app, /legacyDashboardRoleFromPath\(path\)/);
   assert.match(app, /if \(!isPortalPath\(currentPath\)\)/);
-  assert.match(app, /does not render a duplicate dashboard/);
+  assert.match(app, /portalPathForRole\(/);
 });
 
-test("role links and reverse proxy mounts use canonical portal paths", () => {
+test("role links and external portal mounts use canonical portal paths", () => {
   assert.match(app, /navigate\(PORTAL_PATHS\.customer\)/);
   assert.match(app, /navigate\(PORTAL_PATHS\.business_user\)/);
   assert.match(app, /navigate\(PORTAL_PATHS\.growth_partner\)/);
-  for (const variable of ["NEXORA_CUSTOMER_PWA_ORIGIN", "NEXORA_OWNER_PWA_ORIGIN", "NEXORA_PARTNER_PWA_ORIGIN"]) {
-    assert.match(nextConfig, new RegExp(variable));
-  }
-  assert.match(nextConfig, /source: `\$\{path\}\/\:path\*`, destination: `\$\{origin\}\$\{path\}\/\:path\*`/);
+  // Canonical mounts are cross-origin redirects (Vercel cannot proxy .vercel.app).
+  assert.match(nextConfig, /externalPortalRedirects/);
+  assert.match(nextConfig, /DEFAULT_CUSTOMER_PWA_ORIGIN/);
+  assert.match(nextConfig, /DEFAULT_OWNER_PWA_ORIGIN/);
+  assert.match(nextConfig, /DEFAULT_PARTNER_PWA_ORIGIN/);
+  assert.match(nextConfig, /permanent: false/);
+  assert.doesNotMatch(nextConfig, /api\/portal/);
 });
 
 test("each PWA package declares its own path base and scoped worker", () => {
