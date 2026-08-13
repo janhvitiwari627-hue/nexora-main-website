@@ -12,13 +12,18 @@ test("Main Website uses only Next public Supabase variables", () => {
   assert.match(app, /process\.env\.NEXT_PUBLIC_SUPABASE_ANON_KEY/);
   assert.match(
     nextConfig,
-    /NEXT_PUBLIC_SUPABASE_URL:\\s*process\\.env\\.NEXT_PUBLIC_SUPABASE_URL/,
+    /NEXT_PUBLIC_SUPABASE_URL:\\s*publicSupabaseUrl/,
     "Next config must explicitly forward the public URL into the Turbopack client bundle",
   );
   assert.match(
     nextConfig,
-    /NEXT_PUBLIC_SUPABASE_ANON_KEY:\\s*process\\.env\\.NEXT_PUBLIC_SUPABASE_ANON_KEY/,
+    /NEXT_PUBLIC_SUPABASE_ANON_KEY:\\s*publicSupabaseAnonKey/,
     "Next config must explicitly forward the public anon key into the Turbopack client bundle",
+  );
+  assert.match(
+    nextConfig,
+    /process\\.env\\.NEXT_PUBLIC_SUPABASE_ANON_KEY[\\s\\S]*process\\.env\\.VITE_SUPABASE_ANON_KEY[\\s\\S]*process\\.env\\.VITE_SUPABASE_PUBLISHABLE_KEY/,
+    "Vercel may reuse the approved Vite anon or publishable key as a build-only alias",
   );
   assert.doesNotMatch(nextConfig, /NEXT_PUBLIC_SUPABASE_(?:URL|ANON_KEY):\\s*["']["']/);
   assert.doesNotMatch(app, /VITE_PUBLIC_SUPABASE|VITE_SUPABASE_URL|VITE_SUPABASE_ANON_KEY/);
