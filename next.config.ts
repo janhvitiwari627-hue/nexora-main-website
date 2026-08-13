@@ -39,8 +39,10 @@ const JOB_PORTAL_ROUTE_ROOTS = [
  * `NEXT_PUBLIC_*_PORTAL_MOUNTED` flag deciding routing.
  *
  * Origins come only from validated server-side configuration. Customer, Owner
- * and Partner are required; Template remains same-origin unless its optional
- * external origin is configured.
+ * and Partner are required and fail closed when unset. Template resolves to
+ * its built-in Template App origin (new-tamplete-app.vercel.app) so
+ * `/app/template` always reaches the builder, and `NEXORA_TEMPLATE_PWA_ORIGIN`
+ * overrides that default whenever it is configured.
  */
 const portalOrigins = configuredPortalOrigins();
 const externalPortalRedirects = [
