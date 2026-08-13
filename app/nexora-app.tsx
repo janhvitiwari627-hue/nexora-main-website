@@ -2929,51 +2929,12 @@ function PortalGateway({
   if (state.error) return <main className="center-page"><StateCard title="Portal unavailable" text={state.error} action="Retry" onAction={load} /></main>;
   const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
   const mountKey = portalMountKeyFromPath(currentPath) ?? (expectedRole === "business_user" ? "owner" : expectedRole === "growth_partner" ? "partner" : "customer");
-  if (mountKey === "template") {
-    return (
-      <TemplateWorkspaceHost
-        userId={workspace.userId}
-        salonIds={workspace.salonIds}
-        navigate={navigate}
-        signOut={signOut}
-      />
-    );
-  }
+  // Template App is an external PWA on its own Vercel origin
+  // (https://new-tamplete-app.vercel.app). Use PortalHandoff to trigger the
+  // server-side 307 redirect — same mechanism used by Customer, Owner and
+  // Partner portals. This fixes the bug where clicking "Template" in the nav
+  // rendered an inline status page instead of redirecting to the builder.
   return <PortalHandoff mountKey={mountKey} path={currentPath} />;
-}
-
-function TemplateWorkspaceHost({
-  userId,
-  salonIds,
-  navigate,
-  signOut,
-}: {
-  userId?: string;
-  salonIds: string[];
-  navigate: (path: string) => void;
-  signOut: (destination?: string) => Promise<void>;
-}) {
-  return (
-    <main className="center-page">
-      <section className="entry-card">
-        <span className="eyebrow">Template App</span>
-        <h1>Website builder connected</h1>
-        <p>
-          This surface uses the same Nexora account as the Shop Owner app. Identity comes from
-          Supabase Auth project {SUPABASE_PROJECT_REF}; salon access comes from owner_salon_ids().
-          No local or fake login is used here.
-        </p>
-        <p className="preview-note">Signed-in user: {userId || "unknown"}</p>
-        <p className="preview-note">
-          Authorized salon{salonIds.length === 1 ? "" : "s"}: {salonIds.length ? salonIds.join(", ") : "none"}
-        </p>
-        <div className="button-row">
-          <button className="primary" onClick={() => navigate(PORTAL_PATHS.business_user)}>Open Shop Owner app</button>
-          <button className="secondary" onClick={() => void signOut("/")}>Sign out</button>
-        </div>
-      </section>
-    </main>
-  );
 }
 
 function UnavailableAuthenticatedPortal({ path, navigate }: { path: string; navigate: (path: string) => void }) {
