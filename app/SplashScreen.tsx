@@ -6,8 +6,9 @@ import { useEffect, useState } from "react";
  * Nexora SalonoS splash screen — pure presentation.
  *
  * Renders the animated brand splash. It has no routing or auth logic of its
- * own: the parent (<HomeEntry>) decides when to fade it out and what to show
- * next. When `showFallback` is true the loading dots are replaced by a manual
+ * own: the parent overlay (<SplashOverlay>) decides when to fade it out; the
+ * Main Website Dashboard renders underneath the whole time. When
+ * `showFallback` is true the loading dots are replaced by a manual
  * "Continue" button so the user is never trapped on the splash.
  */
 export function SplashScreen({
