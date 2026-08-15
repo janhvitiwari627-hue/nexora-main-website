@@ -47,7 +47,6 @@ import {
   type RankedItem,
   type UseLocationResult,
 } from "./lib/location";
-import { LocationBadge } from "./lib/location/LocationBadge";
 
 type Role = PlatformRole;
 type Salon = {
@@ -391,8 +390,10 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
 
   // One location system for Owner, Partner, Customer and Template routes.
   // The shell owns the only GPS watcher and binds it to the current global
-  // auth.users.id. Nested screens only observe this same singleton.
-  const location = useLocation({
+  // auth.users.id. Nested screens only observe this same singleton. The shell
+  // itself no longer renders location UI, so the result is intentionally
+  // unused here — the hook is kept for its watcher/sync side effects.
+  useLocation({
     client: authClient,
     userId: session?.user?.id ?? null,
     syncPrivateLocation: true,
@@ -462,87 +463,9 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
     <div className={`site-shell${isPortalPath(path) ? " portal-open" : ""}`}>
       {!online && <div className="offline-banner">Offline — live salon and account data may be unavailable.</div>}
       {!getClient() && <div className="offline-banner" style={{ background: "#7b244a" }}>Supabase not configured: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY for project {SUPABASE_PROJECT_REF}.</div>}
-      {!isAuthPage && <Header navigate={navigate} authState={authState} location={location} />}
       {content}
       {!isAuthPage && <Footer navigate={navigate} />}
     </div>
-  );
-}
-
-function Header({
-  navigate,
-  authState,
-  location,
-}: {
-  navigate: (path: string) => void;
-  authState: AuthState;
-  location: UseLocationResult;
-}) {
-  const dashboardLabel = authState.role ? `${ROLE_LABELS[authState.role]} app` : "Account";
-  const dashboardPath = authState.role ? homePathForRole(authState.role) : "/dashboard";
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const go = (target: string) => { setMobileMenuOpen(false); navigate(target); };
-  const openJobPortal = () => { setMobileMenuOpen(false); window.location.assign("/job-portal"); };
-
-  return (
-    <header className="fixed top-0 w-full z-50 bg-[#fff8f8]/85 backdrop-blur-xl border-b border-[#f6dce2]/70 shadow-[0_1px_12px_rgba(0,0,0,0.04)]">
-      <div className="h-16 max-w-[1280px] mx-auto px-5 lg:px-6 flex items-center justify-between">
-        {/* Brand */}
-        <button onClick={() => go("/")} className="flex items-center gap-2.5 group">
-          <div className="w-9 h-9 rounded-[12px] bg-gradient-to-br from-[#e2007c] to-[#b90064] grid place-items-center text-white font-bold text-[16px] shadow-[0_8px_20px_rgba(185,0,100,0.25)] group-hover:shadow-[0_12px_28px_rgba(185,0,100,0.35)] transition-all">N</div>
-          <span className="font-[500] text-[17px] tracking-tight text-[#8e004b]">Nexora SalonoS</span>
-        </button>
-
-        {/* Desktop nav */}
-        <nav className="hidden lg:flex items-center gap-1">
-          <div className="mr-2 scale-90"><LocationBadge location={location} /></div>
-          <button onClick={() => go("/salons")} className="px-3.5 py-2 rounded-full text-[11px] font-semibold tracking-[0.07em] uppercase text-[#594047] hover:text-[#26181c] hover:bg-[#fff0f2] transition-colors">Explore</button>
-          <button onClick={() => { navigate(PORTAL_PATHS.customer); }} className="px-3.5 py-2 rounded-full text-[11px] font-semibold tracking-[0.07em] uppercase text-[#594047] hover:text-[#26181c] hover:bg-[#fff0f2] transition-colors">Customer</button>
-          <button onClick={() => { navigate(PORTAL_PATHS.business_user); }} className="px-3.5 py-2 rounded-full text-[11px] font-semibold tracking-[0.07em] uppercase text-[#594047] hover:text-[#26181c] hover:bg-[#fff0f2] transition-colors">Shop Owner</button>
-          <button onClick={() => { navigate(PORTAL_PATHS.growth_partner); }} className="px-3.5 py-2 rounded-full text-[11px] font-semibold tracking-[0.07em] uppercase text-[#594047] hover:text-[#26181c] hover:bg-[#fff0f2] transition-colors">Growth Partner</button>
-          <button onClick={openJobPortal} className="px-3.5 py-2 rounded-full text-[11px] font-bold tracking-[0.07em] uppercase text-[#8e004b] bg-[#fff0f2] border border-[#ffd9e2] hover:bg-[#ffe8ed] transition-colors">Job Portal</button>
-          {authState.session ? (
-            <>
-              <button onClick={() => go(dashboardPath)} className="ml-2 px-5 h-9 bg-[#26181c] text-white rounded-full text-[11px] font-bold tracking-[0.06em] uppercase hover:bg-[#3c2c31] transition-colors">{dashboardLabel}</button>
-              <button onClick={() => go("/auth/logout")} className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#8c7077] hover:text-[#26181c]">Sign out</button>
-            </>
-          ) : (
-            !authState.loading && <button onClick={() => go("/auth/login")} className="ml-2 px-5 h-9 bg-[#8e004b] text-white rounded-full text-[11px] font-bold tracking-[0.06em] uppercase shadow-[0_4px_14px_rgba(185,0,100,0.25)] hover:bg-[#b90064] hover:shadow-[0_8px_24px_rgba(185,0,100,0.35)] transition-all flex items-center gap-1.5"><span>Log in</span><span className="w-5 h-5 rounded-full bg-white/20 grid place-items-center text-[12px]">→</span></button>
-          )}
-        </nav>
-
-        {/* Mobile toggle */}
-        <div className="flex lg:hidden items-center gap-2">
-          <div className="scale-90"><LocationBadge location={location} /></div>
-          <button onClick={() => setMobileMenuOpen(o=>!o)} className="w-9 h-9 rounded-full bg-white border border-[#f6dce2] grid place-items-center text-[#26181c] shadow-sm">
-            <span className="text-[18px]">{mobileMenuOpen ? "✕" : "☰"}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Mobile drawer */}
-      {mobileMenuOpen && (
-        <div className="lg:hidden absolute top-full left-0 right-0 bg-white/95 backdrop-blur-xl border-b border-[#f6dce2] shadow-[0_16px_40px_rgba(60,20,40,0.12)] p-4 mx-3 rounded-[20px] mt-2">
-          <div className="grid gap-2">
-            <button onClick={() => go("/salons")} className="text-left px-4 py-3 rounded-[12px] bg-[#fff8f8] border border-[#f6dce2] text-[13px] font-semibold text-[#26181c]">Find salons</button>
-            <div className="grid grid-cols-3 gap-2">
-              <button onClick={() => { setMobileMenuOpen(false); navigate(PORTAL_PATHS.customer); }} className="px-3 py-3 rounded-[12px] bg-white border border-[#f6dce2] text-[11px] font-bold uppercase text-[#594047]">Customer</button>
-              <button onClick={() => { setMobileMenuOpen(false); navigate(PORTAL_PATHS.business_user); }} className="px-3 py-3 rounded-[12px] bg-white border border-[#f6dce2] text-[11px] font-bold uppercase text-[#594047]">Owner</button>
-              <button onClick={() => { setMobileMenuOpen(false); navigate(PORTAL_PATHS.growth_partner); }} className="px-3 py-3 rounded-[12px] bg-white border border-[#f6dce2] text-[11px] font-bold uppercase text-[#594047]">Partner</button>
-            </div>
-            <button onClick={openJobPortal} className="text-left px-4 py-3 rounded-[12px] bg-[#fff0f2] border border-[#ffd9e2] text-[13px] font-bold text-[#8e004b]">Job Portal →</button>
-            {authState.session ? (
-              <>
-                <button onClick={() => go(dashboardPath)} className="w-full h-11 bg-[#26181c] text-white rounded-[12px] text-[12px] font-bold uppercase">{dashboardLabel}</button>
-                <button onClick={() => go("/auth/logout")} className="w-full h-11 bg-white border border-[#f6dce2] text-[#26181c] rounded-[12px] text-[12px] font-bold uppercase">Sign out</button>
-              </>
-            ) : (
-              <button onClick={() => go("/auth/login")} className="w-full h-11 bg-[#8e004b] text-white rounded-[12px] text-[12px] font-bold uppercase">Log in</button>
-            )}
-          </div>
-        </div>
-      )}
-    </header>
   );
 }
 

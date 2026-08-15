@@ -39,9 +39,13 @@ test("legacy dashboard URLs canonicalize instead of becoming a second portal", (
 });
 
 test("role links and external portal mounts use canonical portal paths", () => {
+  // Role links still resolve through the canonical PORTAL_PATHS map. Since the
+  // top navigation header was removed, the Owner and Growth Partner links now
+  // reach it as RoleCard `path` props rather than inline navigate() calls.
   assert.match(app, /navigate\(PORTAL_PATHS\.customer\)/);
-  assert.match(app, /navigate\(PORTAL_PATHS\.business_user\)/);
-  assert.match(app, /navigate\(PORTAL_PATHS\.growth_partner\)/);
+  assert.match(app, /PORTAL_PATHS\.business_user/);
+  assert.match(app, /PORTAL_PATHS\.growth_partner/);
+  assert.doesNotMatch(app, /<Header\b/);
   // Canonical mounts are cross-origin redirects (Vercel cannot proxy .vercel.app).
   assert.match(nextConfig, /externalPortalRedirects/);
   assert.match(nextConfig, /configuredPortalOrigins/);

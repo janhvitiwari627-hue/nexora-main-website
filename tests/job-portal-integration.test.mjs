@@ -9,7 +9,6 @@ const portalVite = await readFile(new URL('../job-portal/vite.config.ts', import
 const portalBackend = await readFile(new URL('../job-portal/src/services/backend.ts', import.meta.url), 'utf8');
 const portalRouting = await readFile(new URL('../job-portal/src/routing.ts', import.meta.url), 'utf8');
 const mainApp = await readFile(new URL('../app/nexora-app.tsx', import.meta.url), 'utf8');
-const mainCss = await readFile(new URL('../app/globals.css', import.meta.url), 'utf8');
 const migrations = await readdir(new URL('../job-portal/supabase/migrations/', import.meta.url));
 
 const requiredJobTables = [
@@ -46,13 +45,13 @@ test('direct Job Portal routes map to the SPA without taking root Nexora routes'
   assert.doesNotMatch(nextConfig, /job-portal-nexora\.vercel\.app/);
 });
 
-test('main desktop and mobile navigation expose the same-origin Job Portal', () => {
+test('main navigation exposes the same-origin Job Portal', () => {
+  // The top navigation header (brand, role links, action buttons) was removed
+  // from the shell, so the Job Portal entry point is now reached from the
+  // footer. It must stay same-origin rather than a cross-origin deployment.
   assert.match(mainApp, />Job Portal<\/button>/);
   assert.match(mainApp, /window\.location\.assign\("\/job-portal"\)/);
-  assert.match(mainApp, /mobile-menu-toggle/);
-  assert.match(mainApp, /mobileMenuOpen/);
-  assert.match(mainCss, /\.mobile-menu-toggle/);
-  assert.match(mainCss, /nav\.mobile-open/);
+  assert.doesNotMatch(mainApp, /<Header\b/);
 });
 
 test('existing jobs database migrations and security model remain vendored unchanged', async () => {

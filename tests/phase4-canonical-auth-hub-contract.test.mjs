@@ -31,7 +31,9 @@ test("Phase 4 exposes canonical auth routes while preserving legacy links", () =
 
   // Newly rendered links use the auth hub, including recovery redirects.
   assert.doesNotMatch(app, /(?:navigate|go)\((?:"|`)\/(?:login|signup|forgot-password|reset-password)(?:[?"`])/);
-  assert.match(app, /go\("\/auth\/login"\)/);
+  // The header-local `go()` helper disappeared with the top navigation, but
+  // rendered links must still point at the canonical auth hub.
+  assert.match(app, /(?:navigate|go)\("\/auth\/login"\)/);
   assert.match(app, /navigate\("\/auth\/signup"\)/);
   assert.match(app, /sendPasswordReset|AUTH_ROUTES\.resetPassword/);
 

@@ -34,9 +34,12 @@ test("one canonical package serves Owner, Partner, Customer and Template", () =>
   for (const surface of ["Owner", "Partner", "Customer", "Template"]) {
     assert.match(entry, new RegExp(surface));
   }
-  assert.match(app, /const location = useLocation\(\{/);
+  // The shell still owns the single GPS watcher and private-location sync.
+  // The top navigation header was removed, so the shell no longer renders a
+  // location badge and therefore no longer binds the hook result to a name.
+  assert.match(app, /useLocation\(\{/);
   assert.match(app, /syncPrivateLocation: true/);
-  assert.match(app, /<Header[^>]*location=\{location\}/);
+  assert.doesNotMatch(app, /<Header\b/);
   assert.match(app, /TEMPLATE_PATH/);
 });
 
