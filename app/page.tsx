@@ -1,5 +1,11 @@
-import { NexoraRoot } from "./NexoraRoot";
+import { AuthProvider } from "./lib/auth";
+import { websiteClientOptions } from "./lib/supabaseClient";
+import { HomeEntry } from "./HomeEntry";
 
 export default function Home() {
-  return <NexoraRoot initialPath="/" />;
+  return (
+    <AuthProvider clientOptions={websiteClientOptions}>
+      <HomeEntry />
+    </AuthProvider>
+  );
 }
