@@ -1,0 +1,6 @@
+{
+  "name": "Nexora Luxe",
+  "description": "The Premier Network for Luxury Beauty Businesses, Wholesalers, Distributors & Professional Products",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

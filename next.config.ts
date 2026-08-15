@@ -3,6 +3,7 @@ import { configuredPortalOrigins } from "./config/portalOrigins";
 
 const EXPECTED_SUPABASE_URL = "https://qwaehqsmodekbgvnaavz.supabase.co";
 const JOB_PORTAL_BASE = "/job-portal";
+const DISTRIBUTORS_BEAUTY_INDUSTRY_BASE = "/distributors-beauty-industry";
 const publicSupabaseUrl =
   process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.VITE_SUPABASE_URL;
 const publicSupabaseAnonKey =
@@ -67,9 +68,21 @@ const nextConfig: NextConfig = {
         { source: `${JOB_PORTAL_BASE}/${route}/:path*`, destination: `${JOB_PORTAL_BASE}/index.html` },
       ]),
     ];
+    // Distributors Beauty Industry — a static Vite app built into
+    // public/distributors-beauty-industry/. The bare path resolves to its
+    // index.html; every nested path (direct refresh / deep links) falls back
+    // to the same index.html via an afterFiles rewrite so that real static
+    // files (assets/*) are always served from public/ first. Scoped to this
+    // prefix only; `/` is never affected.
+    const distributorsBeautyIndustryRoutes = [
+      { source: DISTRIBUTORS_BEAUTY_INDUSTRY_BASE, destination: `${DISTRIBUTORS_BEAUTY_INDUSTRY_BASE}/index.html` },
+    ];
+    const distributorsBeautyIndustryFallbackRoutes = [
+      { source: `${DISTRIBUTORS_BEAUTY_INDUSTRY_BASE}/:path*`, destination: `${DISTRIBUTORS_BEAUTY_INDUSTRY_BASE}/index.html` },
+    ];
     return {
-      beforeFiles: jobPortalRoutes,
-      afterFiles: [],
+      beforeFiles: [...jobPortalRoutes, ...distributorsBeautyIndustryRoutes],
+      afterFiles: distributorsBeautyIndustryFallbackRoutes,
       fallback: [],
     };
   },

@@ -39,6 +39,7 @@ next-env.d.ts
 *.tsbuildinfo
 /dist/
 /public/job-portal/
+/public/distributors-beauty-industry/
 /.wrangler/
 /.sites-runtime/
 /outputs/
