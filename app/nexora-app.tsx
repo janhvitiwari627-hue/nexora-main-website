@@ -457,13 +457,14 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
     content = <RoleEntry path={path} navigate={navigate} />;
   else content = <HomePage navigate={navigate} online={online} authState={authState} refCode={refCode} />;
 
+  const isAuthPage = path.startsWith("/auth") || path === "/login" || path === "/signup";
   return (
     <div className={`site-shell${isPortalPath(path) ? " portal-open" : ""}`}>
       {!online && <div className="offline-banner">Offline — live salon and account data may be unavailable.</div>}
       {!getClient() && <div className="offline-banner" style={{ background: "#7b244a" }}>Supabase not configured: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY for project {SUPABASE_PROJECT_REF}.</div>}
-      <Header navigate={navigate} authState={authState} location={location} />
+      {!isAuthPage && <Header navigate={navigate} authState={authState} location={location} />}
       {content}
-      <Footer navigate={navigate} />
+      {!isAuthPage && <Footer navigate={navigate} />}
     </div>
   );
 }
@@ -477,52 +478,70 @@ function Header({
   authState: AuthState;
   location: UseLocationResult;
 }) {
-  const dashboardLabel = authState.role
-    ? `${ROLE_LABELS[authState.role]} app`
-    : "Account";
-  // Canonical same-origin portal paths keep all PWAs on one browser origin.
-  // Delivery/Admin homes resolve to the authenticated "portal not mounted" screens.
+  const dashboardLabel = authState.role ? `${ROLE_LABELS[authState.role]} app` : "Account";
   const dashboardPath = authState.role ? homePathForRole(authState.role) : "/dashboard";
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const go = (target: string) => { setMobileMenuOpen(false); navigate(target); };
-  const openJobPortal = () => {
-    setMobileMenuOpen(false);
-    window.location.assign("/job-portal");
-  };
+  const openJobPortal = () => { setMobileMenuOpen(false); window.location.assign("/job-portal"); };
 
   return (
-    <header className="topbar">
-      <button className="brand" onClick={() => go("/")} aria-label="Nexora home">
-        <span className="brand-mark">N</span>
-        <span>Nexora</span>
-      </button>
-      <button
-        type="button"
-        className="mobile-menu-toggle"
-        aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
-        aria-expanded={mobileMenuOpen}
-        aria-controls="main-navigation"
-        onClick={() => setMobileMenuOpen((open) => !open)}
-      >
-        <span /> <span /> <span />
-      </button>
-      <nav id="main-navigation" aria-label="Main navigation" className={mobileMenuOpen ? "mobile-open" : ""}>
-        <LocationBadge location={location} />
-        <button onClick={() => go("/salons")}>Find salons</button>
-        <button onClick={() => { setMobileMenuOpen(false); navigate(PORTAL_PATHS.customer); }}>Customer</button>
-        <button onClick={() => { setMobileMenuOpen(false); navigate(PORTAL_PATHS.business_user); }}>Shop Owner</button>
-        <button onClick={() => { setMobileMenuOpen(false); navigate(PORTAL_PATHS.growth_partner); }}>Growth Partner</button>
-        <button onClick={() => { setMobileMenuOpen(false); navigate(TEMPLATE_PATH); }}>Template</button>
-        <button className="job-portal-link" onClick={openJobPortal}>Job Portal</button>
-        {authState.session ? (
-          <>
-            <button className="nav-cta" onClick={() => go(dashboardPath)}>{dashboardLabel}</button>
-            <button onClick={() => go("/auth/logout")}>Sign out</button>
-          </>
-        ) : (
-          !authState.loading && <button className="nav-cta" onClick={() => go("/auth/login")}>Log in</button>
-        )}
-      </nav>
+    <header className="fixed top-0 w-full z-50 bg-[#fff8f8]/85 backdrop-blur-xl border-b border-[#f6dce2]/70 shadow-[0_1px_12px_rgba(0,0,0,0.04)]">
+      <div className="h-16 max-w-[1280px] mx-auto px-5 lg:px-6 flex items-center justify-between">
+        {/* Brand */}
+        <button onClick={() => go("/")} className="flex items-center gap-2.5 group">
+          <div className="w-9 h-9 rounded-[12px] bg-gradient-to-br from-[#e2007c] to-[#b90064] grid place-items-center text-white font-bold text-[16px] shadow-[0_8px_20px_rgba(185,0,100,0.25)] group-hover:shadow-[0_12px_28px_rgba(185,0,100,0.35)] transition-all">N</div>
+          <span className="font-[500] text-[17px] tracking-tight text-[#8e004b]">Nexora SalonoS</span>
+        </button>
+
+        {/* Desktop nav */}
+        <nav className="hidden lg:flex items-center gap-1">
+          <div className="mr-2 scale-90"><LocationBadge location={location} /></div>
+          <button onClick={() => go("/salons")} className="px-3.5 py-2 rounded-full text-[11px] font-semibold tracking-[0.07em] uppercase text-[#594047] hover:text-[#26181c] hover:bg-[#fff0f2] transition-colors">Explore</button>
+          <button onClick={() => { navigate(PORTAL_PATHS.customer); }} className="px-3.5 py-2 rounded-full text-[11px] font-semibold tracking-[0.07em] uppercase text-[#594047] hover:text-[#26181c] hover:bg-[#fff0f2] transition-colors">Customer</button>
+          <button onClick={() => { navigate(PORTAL_PATHS.business_user); }} className="px-3.5 py-2 rounded-full text-[11px] font-semibold tracking-[0.07em] uppercase text-[#594047] hover:text-[#26181c] hover:bg-[#fff0f2] transition-colors">Shop Owner</button>
+          <button onClick={() => { navigate(PORTAL_PATHS.growth_partner); }} className="px-3.5 py-2 rounded-full text-[11px] font-semibold tracking-[0.07em] uppercase text-[#594047] hover:text-[#26181c] hover:bg-[#fff0f2] transition-colors">Growth Partner</button>
+          <button onClick={openJobPortal} className="px-3.5 py-2 rounded-full text-[11px] font-bold tracking-[0.07em] uppercase text-[#8e004b] bg-[#fff0f2] border border-[#ffd9e2] hover:bg-[#ffe8ed] transition-colors">Job Portal</button>
+          {authState.session ? (
+            <>
+              <button onClick={() => go(dashboardPath)} className="ml-2 px-5 h-9 bg-[#26181c] text-white rounded-full text-[11px] font-bold tracking-[0.06em] uppercase hover:bg-[#3c2c31] transition-colors">{dashboardLabel}</button>
+              <button onClick={() => go("/auth/logout")} className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#8c7077] hover:text-[#26181c]">Sign out</button>
+            </>
+          ) : (
+            !authState.loading && <button onClick={() => go("/auth/login")} className="ml-2 px-5 h-9 bg-[#8e004b] text-white rounded-full text-[11px] font-bold tracking-[0.06em] uppercase shadow-[0_4px_14px_rgba(185,0,100,0.25)] hover:bg-[#b90064] hover:shadow-[0_8px_24px_rgba(185,0,100,0.35)] transition-all flex items-center gap-1.5"><span>Log in</span><span className="w-5 h-5 rounded-full bg-white/20 grid place-items-center text-[12px]">→</span></button>
+          )}
+        </nav>
+
+        {/* Mobile toggle */}
+        <div className="flex lg:hidden items-center gap-2">
+          <div className="scale-90"><LocationBadge location={location} /></div>
+          <button onClick={() => setMobileMenuOpen(o=>!o)} className="w-9 h-9 rounded-full bg-white border border-[#f6dce2] grid place-items-center text-[#26181c] shadow-sm">
+            <span className="text-[18px]">{mobileMenuOpen ? "✕" : "☰"}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile drawer */}
+      {mobileMenuOpen && (
+        <div className="lg:hidden absolute top-full left-0 right-0 bg-white/95 backdrop-blur-xl border-b border-[#f6dce2] shadow-[0_16px_40px_rgba(60,20,40,0.12)] p-4 mx-3 rounded-[20px] mt-2">
+          <div className="grid gap-2">
+            <button onClick={() => go("/salons")} className="text-left px-4 py-3 rounded-[12px] bg-[#fff8f8] border border-[#f6dce2] text-[13px] font-semibold text-[#26181c]">Find salons</button>
+            <div className="grid grid-cols-3 gap-2">
+              <button onClick={() => { setMobileMenuOpen(false); navigate(PORTAL_PATHS.customer); }} className="px-3 py-3 rounded-[12px] bg-white border border-[#f6dce2] text-[11px] font-bold uppercase text-[#594047]">Customer</button>
+              <button onClick={() => { setMobileMenuOpen(false); navigate(PORTAL_PATHS.business_user); }} className="px-3 py-3 rounded-[12px] bg-white border border-[#f6dce2] text-[11px] font-bold uppercase text-[#594047]">Owner</button>
+              <button onClick={() => { setMobileMenuOpen(false); navigate(PORTAL_PATHS.growth_partner); }} className="px-3 py-3 rounded-[12px] bg-white border border-[#f6dce2] text-[11px] font-bold uppercase text-[#594047]">Partner</button>
+            </div>
+            <button onClick={openJobPortal} className="text-left px-4 py-3 rounded-[12px] bg-[#fff0f2] border border-[#ffd9e2] text-[13px] font-bold text-[#8e004b]">Job Portal →</button>
+            {authState.session ? (
+              <>
+                <button onClick={() => go(dashboardPath)} className="w-full h-11 bg-[#26181c] text-white rounded-[12px] text-[12px] font-bold uppercase">{dashboardLabel}</button>
+                <button onClick={() => go("/auth/logout")} className="w-full h-11 bg-white border border-[#f6dce2] text-[#26181c] rounded-[12px] text-[12px] font-bold uppercase">Sign out</button>
+              </>
+            ) : (
+              <button onClick={() => go("/auth/login")} className="w-full h-11 bg-[#8e004b] text-white rounded-[12px] text-[12px] font-bold uppercase">Log in</button>
+            )}
+          </div>
+        </div>
+      )}
     </header>
   );
 }
@@ -570,37 +589,116 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   const showForYou = isCustomer && ready && (personalized !== null || favorites.length > 0);
 
   return (
-    <main>
-      <section className="hero">
-        <div className="hero-copy">
-          <span className="eyebrow">Beauty services, made dependable</span>
-          <h1>Discover verified salons and book with confidence.</h1>
-          <p>
-            Explore published salon websites, compare real services, and manage every appointment through one secure Nexora account. Phase 1 homepage now includes Categories, Top Rated, Trending, Nearby, Recommended, Offers, Slots, Sponsored, Membership, About.
-          </p>
-          <div className="button-row" style={{ flexWrap: "wrap" }}>
-            <input value={homeQuery} onChange={(e) => setHomeQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") navigate(`/salons?q=${encodeURIComponent(homeQuery.trim())}`); }} placeholder="Search salon, service, area…" style={{ minWidth: 220, padding: "10px 14px", borderRadius: 12, border: "1px solid #e8e8e8", fontSize: 14 }} />
-            <button className="primary" onClick={() => navigate(`/salons?q=${encodeURIComponent(homeQuery.trim())}`)}>Search</button>
-            <select value={homeLocation} onChange={(e) => navigate(e.target.value ? `/salons?area=${encodeURIComponent(e.target.value)}` : "/salons")} style={{ padding: "10px 14px", borderRadius: 12, border: "1px solid #e8e8e8", fontSize: 13, maxWidth: 220 }}>
-              <option value="">📍 All Jaipur</option>
-              {JAIPUR_ZONES.map((z) => <optgroup key={z.zone} label={z.zone}>{z.areas.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>)}
-            </select>
-            <button className="secondary" onClick={() => navigate("/auth/signup")}>Create account</button>
+    <main className="w-full bg-[#fff8f8]">
+      {/* Premium Hero - Matching provided HTML design system */}
+      <section className="w-full min-h-[90vh] flex items-center justify-center relative overflow-hidden bg-[#fff8f8] px-5 lg:px-6 py-12 lg:py-0">
+        {/* Blurred background orbs */}
+        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-[#fce2e7]/60 rounded-full blur-[120px] mix-blend-multiply pointer-events-none"></div>
+        <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-[#ffd9e2]/50 rounded-full blur-[150px] mix-blend-multiply pointer-events-none"></div>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-16 w-full items-center max-w-[1280px] mx-auto relative z-10">
+          {/* Left copy */}
+          <div className="col-span-1 lg:col-span-5 flex flex-col items-start justify-center order-2 lg:order-1 relative z-20">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-[#f6dce2]/60 rounded-full text-[12px] font-semibold tracking-[0.14em] uppercase text-[#594047] mb-6 animate-[fadeInUp_0.6s_ease_out]">
+              <span className="w-2 h-2 bg-[#8e004b] rounded-full animate-pulse"></span>
+              Welcome to Nexora SalonoS
+            </div>
+            <h1 className="font-[600] text-[32px] lg:text-[48px] leading-[1.1] tracking-[-0.02em] text-[#26181c] mb-6 animate-[fadeInUp_0.8s_ease_out_0.1s_both]">
+              Jaipur Ki Beauty Industry, <br/>
+              <span className="text-[#8e004b] italic font-light">Ab Ek Smart Network Par</span>
+            </h1>
+            <p className="text-[18px] leading-[1.6] text-[#594047] max-w-md mb-8 animate-[fadeInUp_0.8s_ease_out_0.2s_both]">
+              Salon book karein, business grow karein, jobs paayein aur apne brand ko promote karein. Experiencing the future of beauty networking today.
+            </p>
+            
+            {/* Search + CTA row */}
+            <div className="w-full flex flex-col gap-4 mb-8 animate-[fadeInUp_0.8s_ease_out_0.3s_both]">
+              <div className="flex gap-2 w-full max-w-md">
+                <div className="flex-1 h-[52px] flex items-center gap-2 px-4 bg-white border border-[#f6dce2] rounded-[16px] shadow-[0_8px_25px_rgba(62,24,43,0.06)]">
+                  <span className="text-[#8c7077]">⌕</span>
+                  <input value={homeQuery} onChange={(e) => setHomeQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") navigate(`/salons?q=${encodeURIComponent(homeQuery.trim())}`); }} placeholder="Salon, service, area…" className="flex-1 border-0 outline-none text-[14px] bg-transparent" />
+                </div>
+                <button onClick={() => navigate(`/salons?q=${encodeURIComponent(homeQuery.trim())}`)} className="h-[52px] px-5 bg-[#26181c] text-white rounded-[14px] text-[13px] font-bold hover:bg-[#3c2c31] transition-colors">Search</button>
+              </div>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+                <button onClick={() => navigate("/auth/signup")} className="px-8 py-4 bg-[#8e004b] text-white text-[12px] font-semibold tracking-[0.1em] uppercase shadow-[0_4px_20px_rgba(185,0,100,0.25)] hover:shadow-[0_8px_30px_rgba(185,0,100,0.35)] hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden group">
+                  <span className="relative z-10">Get Started</span>
+                  <div className="absolute inset-0 bg-white/15 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                </button>
+                <button onClick={() => navigate("/auth/login")} className="px-8 py-4 bg-transparent text-[#26181c] border-b border-[#594047] text-[12px] font-semibold tracking-[0.1em] uppercase hover:text-[#8e004b] hover:border-[#8e004b] transition-colors">
+                  Login
+                </button>
+                <select value={homeLocation} onChange={(e) => navigate(e.target.value ? `/salons?area=${encodeURIComponent(e.target.value)}` : "/salons")} className="h-[52px] px-4 rounded-[12px] border border-[#f6dce2] bg-white text-[13px] max-w-[200px]">
+                  <option value="">📍 All Jaipur</option>
+                  {JAIPUR_ZONES.map((z) => <optgroup key={z.zone} label={z.zone}>{z.areas.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>)}
+                </select>
+              </div>
+            </div>
+            
+            {/* Trust + stats */}
+            <div className="w-full pt-8 border-t border-[#f6dce2] flex items-center justify-between animate-[fadeInUp_0.8s_ease_out_0.5s_both]">
+              <div className="flex flex-col gap-1">
+                <span className="text-[28px] font-light leading-none text-[#8e004b]">25k+</span>
+                <span className="text-[10px] font-semibold tracking-[0.07em] uppercase text-[#594047]">Active Salons</span>
+              </div>
+              <div className="w-[1px] h-12 bg-[#f6dce2]"></div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[28px] font-light leading-none text-[#8e004b]">1.2M</span>
+                <span className="text-[10px] font-semibold tracking-[0.07em] uppercase text-[#594047]">Appointments</span>
+              </div>
+              <div className="w-[1px] h-12 bg-[#f6dce2] hidden sm:block"></div>
+              <div className="flex flex-col gap-1 hidden sm:flex">
+                <span className="text-[28px] font-light leading-none text-[#8e004b]">4.9</span>
+                <span className="text-[10px] font-semibold tracking-[0.07em] uppercase text-[#594047]">User Rating</span>
+              </div>
+              {refCode && <div className="hidden md:flex px-3 py-1 bg-[#fff0f2] border border-[#ffd9e2] rounded-full text-[10px] font-bold text-[#8e004b]">✦ Partner {refCode}</div>}
+            </div>
           </div>
-          <div className="trust-row">
-            <span>✓ Published salons only</span><span>✓ Secure role access</span><span>✓ Clear payment status</span><span>✓ Phase 1 Connected</span>{refCode && <span style={{ borderColor: "var(--primary)" }}>✦ Partner referral active</span>}
+
+          {/* Right visual - Premium salon card */}
+          <div className="col-span-1 lg:col-span-7 relative h-[55vh] lg:h-[78vh] w-full order-1 lg:order-2">
+            <div className="absolute inset-0 bg-[#fce2e7] rounded-[2rem] lg:rounded-[3.5rem] rotate-[-2deg] scale-[0.97] origin-bottom-right"></div>
+            <div className="absolute inset-0 bg-[#ffd9e2]/60 rounded-[2rem] lg:rounded-[3.5rem] rotate-[1deg] scale-[0.985] origin-bottom-left"></div>
+            <div className="relative w-full h-full rounded-[2rem] lg:rounded-[2.5rem] overflow-hidden shadow-[0_30px_80px_rgba(60,20,40,0.18)]">
+              <div className="w-full h-full bg-cover bg-center hover:scale-[1.03] transition-transform duration-[1200ms]" style={{backgroundImage: "url('https://lh3.googleusercontent.com/aida/AP1WRLuZJGt2jU-aVd8g9Bx6JZT2TilncGqAQMAyueOmggwdsR0-md5_cgcmFZRzdb0OMUIWFhwAwEVmuAhnYDVTbCOaH6H8spZH7K-NrD8l3bpf_V3_mGYWYLMjSKgX-4G3rC6qAG3IeRvY8fXL4hBGlJqDfUJvl77VOOBNpp8ZlrB596kQJeFl3-4o1ZCEYdw9Y37jKWuaHgwAm5ihppW9hQCp0174FbpfV_HU1DL3UN2GeZfBzGYoIMxCJfRs')"}}></div>
+              <div className="absolute inset-0 bg-gradient-to-t from-[#3c2c31]/80 via-transparent to-transparent"></div>
+              <div className="absolute bottom-5 left-5 right-5 flex justify-between items-end gap-3">
+                <div className="bg-white/90 backdrop-blur-md p-4 rounded-[14px] shadow-lg border border-white/30 max-w-[260px]">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <div className="w-2 h-2 bg-[#8e004b] rounded-full animate-pulse"></div>
+                    <span className="text-[10px] font-bold tracking-[0.08em] uppercase text-[#26181c]">Live Activity</span>
+                  </div>
+                  <div className="text-[13px] leading-[1.4] text-[#594047]">
+                    <strong className="text-[#26181c]">Priya M.</strong> just booked a consultation in Malviya Nagar.
+                  </div>
+                </div>
+                <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center">
+                  <span className="text-white text-[28px]">✦</span>
+                </div>
+              </div>
+            </div>
+            <div className="absolute -right-3 lg:-right-6 top-[18%] bg-white px-5 py-3.5 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.09)] hidden lg:flex items-center gap-3 animate-[float_5s_ease-in-out_infinite]">
+              <div className="w-10 h-10 rounded-full bg-[#fce2e7] flex items-center justify-center text-[#8e004b]">↗</div>
+              <div>
+                <div className="text-[10px] font-semibold tracking-[0.07em] uppercase text-[#8c7077]">Growth Rate</div>
+                <div className="text-[15px] font-[500] tracking-[-0.01em] text-[#26181c]">+34% this month</div>
+              </div>
+            </div>
           </div>
         </div>
-        <div className="hero-card" aria-label="Nexora platform overview">
-          <div className="glow-orb">✦</div>
-          <h2>Your salon journey, connected</h2>
-          <div className="journey-step"><b>01</b><span>Growth Partner prepares the salon website</span></div>
-          <div className="journey-step"><b>02</b><span>Shop Owner reviews and publishes it</span></div>
-          <div className="journey-step"><b>03</b><span>Customers discover and book safely</span></div>
-        </div>
+        <style>{`@keyframes fadeInUp{0%{opacity:0;transform:translateY(24px)}100%{opacity:1;transform:translateY(0)}}@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}`}</style>
       </section>
 
       <section className="section">
+        <div className="section-heading">
+          <span className="eyebrow">Live marketplace</span>
+          <h2>Published salons</h2>
+          <p>Only owner-approved, active salon websites appear here. Verified=true, is_active=true, is_published=true, deleted_at null.</p>
+        </div>
+        <CatalogStrip navigate={navigate} online={online} statsBySalon={statsBySalon} />
+      </section>
+
+<section className="section">
         <div className="section-heading">
           <span className="eyebrow">Live marketplace</span>
           <h2>Published salons</h2>
@@ -2234,8 +2332,6 @@ function mapRequestedRoleToPlatformRole(requested: string | null): Role {
 // the fallback when returnTo is missing or unsafe. RLS still authorizes data.
 
 function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navigate: (path: string) => void; refCode: string }) {
-  // Keep the first render identical on server and client (hydration-safe);
-  // query params are applied only after mount.
   const [role, setRole] = useState<Role>("customer");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -2245,7 +2341,6 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
   const [messageType, setMessageType] = useState<"error" | "success" | "info">("error");
   const [showPassword, setShowPassword] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
-  // Section 10.2 — Google OAuth is fail-safe OFF unless the deployment opts in.
   const googleOauthConfigured = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED === "true";
   const [googleOauthFailed, setGoogleOauthFailed] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
@@ -2263,7 +2358,6 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
       const { requested, reason } = readAuthQueryParams();
       if (requested) {
         const mapped = mapRequestedRoleToPlatformRole(requested);
-        // Admin is never a public self-service signup choice.
         setRole(mode === "signup" && mapped === "admin" ? "customer" : mapped);
       }
       if (reason === "session-expired") {
@@ -2344,17 +2438,12 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
     }
   };
 
-  // Section 10.2 — Google OAuth via the shared Auth Service. The client
-  // flowType is "pkce", so signInWithGoogle generates and verifies the code
-  // challenge through buildCallbackUrl(). Fail-safe: any provider error hides
-  // the button entirely.
   const continueWithGoogle = async () => {
     setGoogleBusy(true);
     try {
       const { returnTo } = readAuthQueryParams();
       await signInWithGoogle({ returnTo, role: isSignupRole(role) ? role : undefined });
     } catch (cause) {
-      // Unverified provider, missing keys, or blocked redirect → hide button.
       console.warn("[Nexora] Google OAuth unavailable:", authErrorMessage(cause));
       setGoogleOauthFailed(true);
     } finally {
@@ -2365,104 +2454,232 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
   const roleLabel = ROLE_LABELS[role] ?? "Customer";
   const configDiagnostics = configError || (typeof window !== "undefined" && !getClient() ? getDetailedConfigError() : "");
 
+  const roles: Array<{value: Role, label: string, desc: string, icon: string}> = [
+    {value: "customer", label: "Customer", desc: "Book services", icon: "🧑"},
+    {value: "business_user", label: "Shop Owner", desc: "Manage salon", icon: "💈"},
+    {value: "growth_partner", label: "Growth Partner", desc: "Grow brands", icon: "🚀"},
+    {value: "delivery_partner", label: "Delivery Partner", desc: "Deliver", icon: "🛵"},
+  ];
+
   return (
-    <main className="center-page auth-bg">
-      <form className="auth-card" onSubmit={submit} noValidate>
-        <span className="eyebrow">{mode === "login" ? "Welcome back" : `Join Nexora as ${roleLabel}`}</span>
-        <h1>{mode === "login" ? "Log in" : "Create your account"}</h1>
-        <p className="preview-note" style={{ marginTop: -8 }}>
-          {mode === "login"
-            ? "Accounts are permanent – Nexora routes you to your assigned dashboard automatically."
-            : `Creating a ${roleLabel} account on the shared Supabase project ${SUPABASE_PROJECT_REF}. Same account works across website, customer app, owner app and partner app.`}
-        </p>
-        <label>
-          Account role
-          <select value={role} onChange={(event) => setRole(event.target.value as Role)} disabled={mode === "login"}>
-            <option value="customer">Customer</option>
-            <option value="business_user">Shop Owner</option>
-            <option value="growth_partner">Growth Partner</option>
-            <option value="delivery_partner">Delivery Partner</option>
-            {mode === "login" && <option value="admin">Administrator</option>}
-          </select>
-          {mode === "login" && <small className="preview-note">Role is fixed to your existing profile. You will be routed automatically.</small>}
-        </label>
-        {mode === "signup" && (
-          <label>
-            Full name
-            <input required value={fullName} onChange={(event) => setFullName(event.target.value)} autoComplete="name" placeholder="Your full name" />
-          </label>
-        )}
-        <label>
-          Email
-          <input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="name@domain.com" />
-        </label>
-        <label>
-          Password
-          <div style={{ position: "relative" }}>
-            <input
-              required
-              minLength={8}
-              type={showPassword ? "text" : "password"}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              placeholder="At least 8 characters"
-              style={{ paddingRight: 44 }}
-            />
-            <button
-              type="button"
-              aria-label={showPassword ? "Hide password" : "Show password"}
-              onClick={() => setShowPassword((s) => !s)}
-              style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: 0, color: "#705a64", fontSize: 12, fontWeight: 800 }}
-            >
-              {showPassword ? "Hide" : "Show"}
-            </button>
-          </div>
-        </label>
-        {configDiagnostics && <div className="form-message" role="alert" style={{ background: "#fff1d8", color: "#7d540b" }}>{configDiagnostics}</div>}
-        {message && (
-          <div className={`form-message ${messageType}`} role="status" style={messageType === "success" ? { background: "#e9f8f1", color: "#12704c" } : messageType === "info" ? { background: "#eef4ff", color: "#2f6fed" } : undefined}>
-            {message}
-          </div>
-        )}
-        <button className="primary" disabled={busy}>
-          {busy ? "Please wait…" : mode === "login" ? "Log in securely" : `Create ${roleLabel} account`}
-        </button>
-        {googleOauthConfigured && !googleOauthFailed && (
-          <button type="button" className="secondary" disabled={googleBusy} onClick={() => void continueWithGoogle()}>
-            {googleBusy ? "Redirecting to Google…" : "Continue with Google"}
+    <div className="min-h-screen w-full bg-[#fff8f8] text-[#26181c] relative overflow-hidden font-[Inter] -mt-[76px]">
+      <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
+      <div className="absolute top-[-20%] left-[-10%] w-[45%] h-[45%] bg-[#fce2e7]/50 rounded-full blur-[120px] pointer-events-none"></div>
+      <div className="absolute bottom-[-15%] right-[-10%] w-[55%] h-[55%] bg-[#ffd9e2]/30 rounded-full blur-[140px] pointer-events-none"></div>
+      
+      {/* Header - matches provided HTML */}
+      <header className="fixed top-0 w-full z-50 bg-[#fff8f8]/80 backdrop-blur-xl border-b border-[#f6dce2]/60">
+        <div className="h-16 max-w-[1280px] mx-auto px-5 lg:px-6 flex items-center justify-between">
+          <button onClick={() => navigate("/")} className="flex items-center gap-2">
+            <div className="w-9 h-9 rounded-[12px] bg-gradient-to-br from-[#e2007c] to-[#b90064] grid place-items-center text-white shadow-[0_8px_20px_rgba(185,0,100,0.25)]">N</div>
+            <span className="font-[500] text-[18px] tracking-tight text-[#8e004b]">Nexora SalonoS</span>
           </button>
-        )}
-        {googleOauthConfigured && googleOauthFailed && (
-          <p className="preview-note">Google sign-in is temporarily unavailable. Please use email and password.</p>
-        )}
-        <div className="button-row" style={{ justifyContent: "space-between", marginTop: 6 }}>
-          <button type="button" className="text-button" onClick={() => navigate(mode === "login" ? "/auth/signup" : "/auth/login")}>
-            {mode === "login" ? "Need an account? Sign up" : "Already registered? Log in"}
-          </button>
-          {mode === "login" && (
-            <button type="button" className="text-button" onClick={() => navigate("/auth/forgot-password")}>
-              Forgot password?
-            </button>
-          )}
-          {needsVerification && mode === "signup" && (
-            <button type="button" className="secondary compact" disabled={busy} onClick={() => void resend()}>
-              {busy ? "Sending…" : "Resend confirmation email"}
-            </button>
-          )}
-          {messageType === "success" && mode === "signup" && (
-            <button type="button" className="secondary compact" onClick={() => navigate(`${AUTH_ROUTES.login}?role=${role === "business_user" ? "owner" : role === "growth_partner" ? "growth-partner" : role === "delivery_partner" ? "delivery" : "customer"}`)}>
-              Go to login →
-            </button>
-          )}
+          <div className="hidden md:flex items-center gap-6">
+            <button onClick={() => navigate("/salons")} className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#594047] hover:text-[#26181c]">Explore</button>
+            <button onClick={() => navigate("/salons")} className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#594047] hover:text-[#26181c]">Services</button>
+            <button onClick={() => navigate("/")} className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#594047] hover:text-[#26181c]">Concierge</button>
+            <div className="w-8 h-8 rounded-full bg-[#8e004b] flex items-center justify-center shadow-[0_0_12px_rgba(185,0,100,0.2)]">
+              <span className="text-white text-[16px]">👤</span>
+            </div>
+          </div>
         </div>
-        <div className="trust-row" style={{ marginTop: 18 }}>
-          <span>✓ Shared Supabase {SUPABASE_PROJECT_REF}</span><span>✓ RLS protected</span><span>✓ Role locked</span>
+      </header>
+
+      <div className="flex flex-col lg:flex-row min-h-screen pt-16">
+        {/* Left - Brand showcase */}
+        <div className="hidden lg:flex lg:w-[46%] relative overflow-hidden bg-[#fff8f8] p-8">
+          <div className="absolute inset-0">
+            <div className="absolute top-[8%] left-[8%] w-[70%] h-[60%] bg-[#fce2e7] rounded-[2.5rem] rotate-[-2deg]"></div>
+            <div className="absolute top-[10%] left-[10%] w-[72%] h-[62%] bg-[#ffd9e2]/60 rounded-[2.5rem] rotate-[1deg]"></div>
+          </div>
+          <div className="relative w-full h-full rounded-[2.2rem] overflow-hidden shadow-[0_24px_60px_rgba(60,20,40,0.15)] min-h-[650px]">
+            <div className="w-full h-full bg-cover bg-center" style={{backgroundImage: "url('https://lh3.googleusercontent.com/aida/AP1WRLuZJGt2jU-aVd8g9Bx6JZT2TilncGqAQMAyueOmggwdsR0-md5_cgcmFZRzdb0OMUIWFhwAwEVmuAhnYDVTbCOaH6H8spZH7K-NrD8l3bpf_V3_mGYWYLMjSKgX-4G3rC6qAG3IeRvY8fXL4hBGlJqDfUJvl77VOOBNpp8ZlrB596kQJeFl3-4o1ZCEYdw9Y37jKWuaHgwAm5ihppW9hQCp0174FbpfV_HU1DL3UN2GeZfBzGYoIMxCJfRs')"}}></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-[#3c2c31]/85 via-[#3c2c31]/10 to-transparent"></div>
+            
+            <div className="absolute top-8 left-8 right-8">
+              <div className="flex items-center gap-3">
+                <img alt="logo" className="h-9 w-auto mix-blend-multiply" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCTXSM1uXL6IZPG2d5vJrZHTp3meZp3ugCNqDfmM7XSBsqTiBEoB65raTIgfM87Q2-Nycckxt2jvImXTu8qIEq3irPWeRIpQcZNxA4R0JaTlBwKqvBvcc-Go9UAWl5bVcwWmbbqlBTIK2-NJT9uA6x1Y3iGKNV8Fot_Z4oI5bt0ftITdQR9jr2ggS1Gi8h5RWL06dUsqs_AdG7E2j9RVLMYR7_A2uBY63Kav7vuNUajTreWXFazOVDuCuv5FTdEwPxqmoM"/>
+                <span className="text-white/90 text-[11px] font-semibold tracking-[0.12em] uppercase">Est. Jaipur 2024</span>
+              </div>
+            </div>
+
+            <div className="absolute bottom-0 left-0 right-0 p-8 text-white">
+              <div className="inline-flex px-3 py-1 bg-white/15 backdrop-blur-md rounded-full text-[10px] font-semibold tracking-[0.1em] uppercase mb-4 border border-white/20">
+                Jaipur Ki Beauty Industry
+              </div>
+              <h2 className="text-[36px] leading-[0.98] tracking-[-0.02em] font-[600] mb-3">
+                Ab Ek Smart<br/>Network Par
+              </h2>
+              <p className="text-[15px] leading-[1.5] text-white/75 max-w-[320px] mb-6">Salon book karein, business grow karein, jobs paayein — 25k+ active salons across Jaipur.</p>
+              <div className="flex items-center gap-3">
+                <div className="flex -space-x-2">
+                  <div className="w-8 h-8 rounded-full bg-[#ffb0c8] border-2 border-white grid place-items-center text-[12px]">P</div>
+                  <div className="w-8 h-8 rounded-full bg-[#f6dce2] border-2 border-white grid place-items-center text-[12px]">A</div>
+                  <div className="w-8 h-8 rounded-full bg-[#e2007c] border-2 border-white grid place-items-center text-[12px] text-white">+2k</div>
+                </div>
+                <span className="text-[12px] text-white/80">Loved by 12k+ customers</span>
+              </div>
+            </div>
+
+            {/* Floating cards over image */}
+            <div className="absolute top-[42%] -right-2 bg-white px-4 py-3 rounded-[14px] shadow-[0_8px_30px_rgba(0,0,0,0.12)] flex items-center gap-3 animate-[float_6s_ease-in-out_infinite]">
+              <div className="w-9 h-9 rounded-full bg-[#fff0f2] flex items-center justify-center text-[#8e004b] text-[16px]">↗</div>
+              <div>
+                <div className="text-[10px] font-semibold tracking-[0.07em] uppercase text-[#8c7077]">Growth</div>
+                <div className="text-[13px] font-[600] text-[#26181c]">+34% this month</div>
+              </div>
+            </div>
+            <div className="absolute bottom-[26%] -left-2 bg-white/90 backdrop-blur-md p-3.5 rounded-[14px] shadow-lg border border-white/30 max-w-[220px]">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-2 h-2 bg-[#8e004b] rounded-full animate-pulse"></div>
+                <span className="text-[10px] font-bold tracking-[0.07em] uppercase">Live Booking</span>
+              </div>
+              <div className="text-[12px] text-[#594047]"><strong className="text-[#26181c]">Priya M.</strong> booked in C-Scheme</div>
+            </div>
+          </div>
         </div>
-      </form>
-    </main>
+
+        {/* Right - Form */}
+        <div className="w-full lg:w-[54%] flex items-center justify-center p-5 lg:p-10 lg:pl-8">
+          <div className="w-full max-w-[440px] bg-white lg:bg-white rounded-[24px] lg:rounded-[28px] shadow-[0_24px_64px_rgba(60,20,40,0.08)] lg:shadow-[0_20px_60px_rgba(60,20,40,0.06)] border border-[#f6dce2]/60 p-7 lg:p-9">
+            {/* Mobile logo */}
+            <div className="lg:hidden flex items-center justify-center mb-6">
+              <div className="w-10 h-10 rounded-[12px] bg-gradient-to-br from-[#e2007c] to-[#b90064] grid place-items-center text-white font-bold">N</div>
+            </div>
+
+            <div className="mb-7">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="px-3 py-1 bg-[#fff0f2] rounded-full text-[10px] font-bold tracking-[0.08em] uppercase text-[#8e004b] border border-[#ffd9e2]">
+                  {mode === "login" ? "Welcome back" : "Join Nexora"}
+                </div>
+                {refCode && <div className="px-2.5 py-1 bg-[#b90064] text-white rounded-full text-[10px] font-bold">REF {refCode}</div>}
+              </div>
+              <h1 className="text-[28px] leading-[1.15] tracking-[-0.02em] font-[600] text-[#26181c]">
+                {mode === "login" ? "Log in to your" : "Create your"} <br/><span className="text-[#8e004b] italic font-light">{mode === "login" ? "salon account." : "Nexora account."}</span>
+              </h1>
+              <p className="text-[14px] leading-[1.5] text-[#594047] mt-3">
+                {mode === "login" ? "Secure PKCE login — same account across Customer, Owner & Partner apps." : `Start as ${roleLabel} · Shared project ${SUPABASE_PROJECT_REF} · RLS protected.`}
+              </p>
+            </div>
+
+            {/* Role pills - only for signup or role switch allowed */}
+            <div className="mb-6">
+              <div className="text-[11px] font-semibold tracking-[0.06em] uppercase text-[#8c7077] mb-2.5">Choose your role</div>
+              <div className="grid grid-cols-2 gap-2">
+                {roles.map(r => (
+                  <button key={r.value} type="button" onClick={() => mode==="signup" && setRole(r.value)} disabled={mode==="login" && role!==r.value} className={`text-left p-3 rounded-[14px] border transition-all ${role===r.value ? "bg-[#26181c] border-[#26181c] text-white shadow-[0_6px_20px_rgba(38,24,28,0.18)]" : "bg-[#fff8f8] border-[#f6dce2] text-[#594047] hover:border-[#e0bec6] hover:bg-white"}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[16px]">{r.icon}</span>
+                      <span className={`text-[13px] font-[600] ${role===r.value ? "text-white" : "text-[#26181c]"}`}>{r.label}</span>
+                    </div>
+                    <div className={`text-[11px] mt-1 ${role===r.value ? "text-white/70" : "text-[#8c7077]"}`}>{r.desc}</div>
+                  </button>
+                ))}
+              </div>
+              {mode==="login" && <p className="text-[11px] text-[#8c7077] mt-2">Role is locked to your existing profile. System will auto-route.</p>}
+            </div>
+
+            <form onSubmit={submit} noValidate className="space-y-4">
+              {mode === "signup" && (
+                <div>
+                  <label className="text-[11px] font-semibold tracking-[0.06em] uppercase text-[#594047] mb-1.5 block">Full Name</label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8c7077] text-[16px]">👤</span>
+                    <input required value={fullName} onChange={(e) => setFullName(e.target.value)} autoComplete="name" placeholder="Your full name" className="w-full h-[48px] pl-10 pr-4 bg-[#fff8f8] border border-[#f6dce2] rounded-[14px] text-[14px] outline-none focus:border-[#8e004b] focus:ring-[3px] focus:ring-[#8e004b]/10 transition-all" />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[11px] font-semibold tracking-[0.06em] uppercase text-[#594047] mb-1.5 block">Email</label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8c7077] text-[16px]">✉️</span>
+                  <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" placeholder="name@domain.com" className="w-full h-[48px] pl-10 pr-4 bg-[#fff8f8] border border-[#f6dce2] rounded-[14px] text-[14px] outline-none focus:border-[#8e004b] focus:ring-[3px] focus:ring-[#8e004b]/10 transition-all" />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[11px] font-semibold tracking-[0.06em] uppercase text-[#594047]">Password</label>
+                  {mode==="login" && <button type="button" onClick={() => navigate("/auth/forgot-password")} className="text-[11px] font-[600] text-[#8e004b] hover:underline">Forgot?</button>}
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8c7077] text-[16px]">🔒</span>
+                  <input required minLength={8} type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete={mode==="login" ? "current-password" : "new-password"} placeholder="At least 8 characters" className="w-full h-[48px] pl-10 pr-[44px] bg-[#fff8f8] border border-[#f6dce2] rounded-[14px] text-[14px] outline-none focus:border-[#8e004b] focus:ring-[3px] focus:ring-[#8e004b]/10 transition-all" />
+                  <button type="button" onClick={() => setShowPassword(s=>!s)} className="absolute right-2.5 top-1/2 -translate-y-1/2 w-8 h-8 grid place-items-center rounded-full bg-white border border-[#f6dce2] text-[12px] text-[#594047] hover:border-[#8e004b] hover:text-[#8e004b] transition-colors">
+                    {showPassword ? "🙈" : "👁️"}
+                  </button>
+                </div>
+                <div className="mt-2 h-1 w-full bg-[#f6dce2] rounded-full overflow-hidden">
+                  <div className={`h-full transition-all duration-300 ${password.length===0 ? "w-0" : password.length<8 ? "w-[35%] bg-[#ba1a1a]" : password.length<12 ? "w-[70%] bg-[#b45309]" : "w-full bg-[#005314]"}`}></div>
+                </div>
+              </div>
+
+              {configDiagnostics && <div className="bg-[#fff4cc] border border-[#ead39b] text-[#7d540b] text-[12px] p-3 rounded-[12px]">{configDiagnostics}</div>}
+              {message && (
+                <div className={`p-3 rounded-[12px] text-[13px] leading-[1.4] border ${messageType==="success" ? "bg-[#e9f8f1] border-[#bfe3d3] text-[#12704c]" : messageType==="info" ? "bg-[#eef4ff] border-[#c5d6ff] text-[#2f6fed]" : "bg-[#ffdad6] border-[#ffb4ab] text-[#93000a]"}`}>
+                  {message}
+                </div>
+              )}
+
+              <button disabled={busy} className="w-full h-[52px] bg-[#8e004b] text-white rounded-[14px] text-[12px] font-semibold tracking-[0.08em] uppercase shadow-[0_8px_24px_rgba(185,0,100,0.28)] hover:bg-[#b90064] hover:shadow-[0_12px_32px_rgba(185,0,100,0.35)] hover:-translate-y-[1px] disabled:opacity-60 disabled:translate-y-0 transition-all relative overflow-hidden group">
+                <span className="relative z-10 flex items-center justify-center gap-2">
+                  {busy && <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>}
+                  {busy ? "Please wait…" : mode==="login" ? "Log in securely →" : `Create ${roleLabel} account →`}
+                </span>
+                <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+              </button>
+
+              {googleOauthConfigured && !googleOauthFailed && (
+                <>
+                  <div className="flex items-center gap-3 py-1">
+                    <div className="h-[1px] flex-1 bg-[#f6dce2]"></div>
+                    <span className="text-[10px] font-semibold tracking-[0.1em] uppercase text-[#8c7077]">or continue with</span>
+                    <div className="h-[1px] flex-1 bg-[#f6dce2]"></div>
+                  </div>
+                  <button type="button" disabled={googleBusy} onClick={() => void continueWithGoogle()} className="w-full h-[48px] bg-white border border-[#e0bec6] rounded-[14px] text-[13px] font-[600] text-[#26181c] hover:bg-[#fff8f8] hover:border-[#8c7077] disabled:opacity-60 transition-colors flex items-center justify-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-[#4285F4] grid place-items-center text-white text-[12px] font-bold">G</span>
+                    {googleBusy ? "Redirecting to Google…" : "Continue with Google"}
+                  </button>
+                </>
+              )}
+              {googleOauthConfigured && googleOauthFailed && <p className="text-[11px] text-[#8c7077] text-center">Google sign-in temporarily unavailable. Please use email & password.</p>}
+            </form>
+
+            <div className="mt-7 pt-6 border-t border-[#f6dce2] flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <button type="button" onClick={() => navigate(mode==="login" ? "/auth/signup" : "/auth/login")} className="text-[12px] font-[600] text-[#26181c] hover:text-[#8e004b] transition-colors">
+                  {mode==="login" ? "Need an account? Sign up →" : "Already have an account? Log in →"}
+                </button>
+                {mode==="login" && <button type="button" onClick={() => navigate("/")} className="text-[11px] text-[#8c7077] hover:text-[#26181c]">Back to home</button>}
+              </div>
+
+              {needsVerification && mode==="signup" && (
+                <button type="button" disabled={busy} onClick={() => void resend()} className="w-full h-[44px] bg-[#fff0f2] border border-[#ffd9e2] rounded-[12px] text-[12px] font-semibold text-[#8e004b] hover:bg-[#ffe8ed] transition-colors">
+                  {busy ? "Sending…" : "Resend confirmation email"}
+                </button>
+              )}
+              {messageType==="success" && mode==="signup" && (
+                <button type="button" onClick={() => navigate(`${AUTH_ROUTES.login}?role=${role === "business_user" ? "owner" : role === "growth_partner" ? "growth-partner" : role === "delivery_partner" ? "delivery" : "customer"}`)} className="w-full h-[44px] bg-[#26181c] text-white rounded-[12px] text-[12px] font-semibold tracking-[0.05em] uppercase">
+                  Go to login →
+                </button>
+              )}
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                <span className="text-[10px] px-2.5 py-1 bg-[#fff8f8] border border-[#f6dce2] rounded-full text-[#8c7077]">✓ RLS protected</span>
+                <span className="text-[10px] px-2.5 py-1 bg-[#fff8f8] border border-[#f6dce2] rounded-full text-[#8c7077]">✓ PKCE secure</span>
+                <span className="text-[10px] px-2.5 py-1 bg-[#fff8f8] border border-[#f6dce2] rounded-full text-[#8c7077]">✓ Jaipur verified</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <style>{`@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}`}</style>
+    </div>
   );
 }
+
 
 // ---------------------------------------------------------------------------
 // Section 10.1 — Real Supabase auth routes: /auth/callback,
@@ -2623,8 +2840,6 @@ function ForgotPasswordPage({ navigate }: { navigate: (path: string) => void }) 
     setBusy(true);
     setMessage("");
     try {
-      // Neutral recovery: never reveal whether the email exists. The shared
-      // service sends a PKCE recovery link to AUTH_ROUTES.resetPassword.
       await sendPasswordReset(trimmedEmail);
       setMessage(neutralRecoveryMessage(trimmedEmail));
       setMessageType("success");
@@ -2637,31 +2852,40 @@ function ForgotPasswordPage({ navigate }: { navigate: (path: string) => void }) 
   };
 
   return (
-    <main className="center-page auth-bg">
-      <form className="auth-card" onSubmit={submit} noValidate>
-        <span className="eyebrow">Account recovery</span>
-        <h1>Reset your password</h1>
-        <p className="preview-note" style={{ marginTop: -8 }}>
-          We will email you a secure link. The link signs you in once, then you choose a new password. Links expire and can only be used on this website.
-        </p>
-        <label>
-          Email
-          <input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="name@domain.com" />
-        </label>
-        {message && (
-          <div className={`form-message ${messageType}`} role="status" style={messageType === "success" ? { background: "#e9f8f1", color: "#12704c" } : undefined}>
-            {message}
+    <div className="min-h-screen w-full bg-[#fff8f8] flex flex-col lg:flex-row -mt-[76px] font-[Inter]">
+      <div className="hidden lg:flex lg:w-[46%] relative overflow-hidden p-8 bg-[#fff8f8]">
+        <div className="relative w-full h-full rounded-[2.2rem] overflow-hidden shadow-[0_24px_60px_rgba(60,20,40,0.15)] min-h-[650px]">
+          <div className="w-full h-full bg-cover bg-center" style={{backgroundImage: "url('https://lh3.googleusercontent.com/aida/AP1WRLuZJGt2jU-aVd8g9Bx6JZT2TilncGqAQMAyueOmggwdsR0-md5_cgcmFZRzdb0OMUIWFhwAwEVmuAhnYDVTbCOaH6H8spZH7K-NrD8l3bpf_V3_mGYWYLMjSKgX-4G3rC6qAG3IeRvY8fXL4hBGlJqDfUJvl77VOOBNpp8ZlrB596kQJeFl3-4o1ZCEYdw9Y37jKWuaHgwAm5ihppW9hQCp0174FbpfV_HU1DL3UN2GeZfBzGYoIMxCJfRs')"}}></div>
+          <div className="absolute inset-0 bg-gradient-to-t from-[#3c2c31]/85 via-transparent to-transparent"></div>
+          <div className="absolute bottom-0 left-0 right-0 p-8 text-white">
+            <h2 className="text-[34px] leading-[1] font-[600] mb-3">Don't worry,<br/>we've got you.</h2>
+            <p className="text-[14px] text-white/70">Reset securely with PKCE — link expires after first use.</p>
           </div>
-        )}
-        <button className="primary" disabled={busy}>{busy ? "Sending…" : "Email me a reset link"}</button>
-        <div className="button-row" style={{ justifyContent: "space-between", marginTop: 6 }}>
-          <button type="button" className="text-button" onClick={() => navigate("/auth/login")}>Back to login</button>
-          <button type="button" className="text-button" onClick={() => navigate("/auth/signup")}>Need an account? Sign up</button>
         </div>
-      </form>
-    </main>
+      </div>
+      <div className="flex-1 flex items-center justify-center p-6 lg:p-12 pt-24">
+        <div className="w-full max-w-[420px] bg-white rounded-[24px] border border-[#f6dce2] shadow-[0_20px_60px_rgba(60,20,40,0.08)] p-8">
+          <div className="px-3 py-1 bg-[#fff0f2] rounded-full text-[10px] font-bold tracking-[0.08em] uppercase text-[#8e004b] inline-block mb-4">Account recovery</div>
+          <h1 className="text-[26px] leading-[1.15] font-[600] tracking-[-0.02em] text-[#26181c] mb-2">Reset your password</h1>
+          <p className="text-[13px] leading-[1.5] text-[#594047] mb-6">We will email you a secure link. The link signs you in once, then you choose a new password.</p>
+          <form onSubmit={submit} noValidate className="space-y-4">
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#594047] mb-1.5 block">Email</label>
+              <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" placeholder="name@domain.com" className="w-full h-[48px] px-4 bg-[#fff8f8] border border-[#f6dce2] rounded-[14px] text-[14px] outline-none focus:border-[#8e004b] focus:ring-[3px] focus:ring-[#8e004b]/10" />
+            </div>
+            {message && <div className={`p-3 rounded-[12px] text-[13px] border ${messageType==="success" ? "bg-[#e9f8f1] border-[#bfe3d3] text-[#12704c]" : "bg-[#ffdad6] border-[#ffb4ab] text-[#93000a]"}`}>{message}</div>}
+            <button disabled={busy} className="w-full h-[52px] bg-[#8e004b] text-white rounded-[14px] text-[12px] font-semibold uppercase tracking-[0.08em] shadow-[0_8px_24px_rgba(185,0,100,0.28)] hover:bg-[#b90064] transition-colors">{busy ? "Sending…" : "Email me a reset link →"}</button>
+            <div className="flex justify-between pt-2">
+              <button type="button" onClick={() => navigate("/auth/login")} className="text-[12px] font-semibold text-[#26181c] hover:text-[#8e004b]">Back to login</button>
+              <button type="button" onClick={() => navigate("/auth/signup")} className="text-[12px] text-[#8c7077] hover:text-[#26181c]">Create account</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
   );
 }
+
 
 function ResetPasswordPage({ navigate }: { navigate: (path: string) => void }) {
   const { session, loading, configError, updatePassword, requireAuth, handleAuthCallback } = useAuth();
@@ -2671,27 +2895,15 @@ function ResetPasswordPage({ navigate }: { navigate: (path: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
-  // The recovery link lands with ?code=…&type=recovery. The shared provider
-  // already owns the single root session listener; this page only consumes
-  // provider state and, if a PKCE code is present, the canonical callback.
   useEffect(() => {
     let active = true;
     const timer = window.setTimeout(async () => {
       if (configError) {
-        if (active) {
-          setReady("failed");
-          setMessage(configError);
-        }
+        if (active) { setReady("failed"); setMessage(configError); }
         return;
       }
-      if (loading) {
-        if (active) setReady("waiting");
-        return;
-      }
-      if (session) {
-        if (active) setReady("ready");
-        return;
-      }
+      if (loading) { if (active) setReady("waiting"); return; }
+      if (session) { if (active) setReady("ready"); return; }
       try {
         const href = typeof window !== "undefined" ? window.location.href : "";
         if (href && new URL(href).searchParams.get("code")) {
@@ -2700,83 +2912,54 @@ function ResetPasswordPage({ navigate }: { navigate: (path: string) => void }) {
           return;
         }
       } catch (cause) {
-        if (active) {
-          setReady("failed");
-          setMessage(authErrorMessage(cause));
-        }
+        if (active) { setReady("failed"); setMessage(authErrorMessage(cause)); }
         return;
       }
-      if (active) {
-        setReady("failed");
-        setMessage("This password reset link is invalid or has expired. Request a new one.");
-      }
+      if (active) { setReady("failed"); setMessage("This password reset link is invalid or has expired. Request a new one."); }
     }, 0);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
+    return () => { active = false; window.clearTimeout(timer); };
   }, [configError, handleAuthCallback, loading, session]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (password.length < 8) {
-      setMessage("Password must be at least 8 characters.");
-      return;
-    }
-    if (password !== confirm) {
-      setMessage("Passwords do not match.");
-      return;
-    }
-    setBusy(true);
-    setMessage("");
+    if (password.length < 8) { setMessage("Password must be at least 8 characters."); return; }
+    if (password !== confirm) { setMessage("Passwords do not match."); return; }
+    setBusy(true); setMessage("");
     try {
       await updatePassword(password);
       const { profile } = await requireAuth();
       navigate(homePathForRole(profile.role));
-    } catch (cause) {
-      setMessage(authErrorMessage(cause));
-    } finally {
-      setBusy(false);
-    }
+    } catch (cause) { setMessage(authErrorMessage(cause)); } finally { setBusy(false); }
   };
 
   if (ready === "waiting") {
-    return (
-      <main className="center-page">
-        <section className="entry-card">
-          <span className="eyebrow">Account recovery</span>
-          <h1>Verifying reset link…</h1>
-          <div className="loader" aria-label="Verifying reset link" />
-        </section>
-      </main>
-    );
+    return <main className="min-h-[70vh] grid place-items-center p-6 bg-[#fff8f8]"><div className="w-11 h-11 border-4 border-[#f6dce2] border-t-[#8e004b] rounded-full animate-spin"></div></main>;
   }
   if (ready === "failed") {
-    return (
-      <main className="center-page">
-        <StateCard title="Reset link unavailable" text={message || "Request a new password reset link."} action="Request new link" onAction={() => navigate("/auth/forgot-password")} />
-      </main>
-    );
+    return <main className="min-h-[70vh] grid place-items-center p-6 bg-[#fff8f8]"><div className="bg-white border border-[#f6dce2] rounded-[20px] p-8 max-w-[420px] text-center shadow-[0_16px_40px_rgba(60,20,40,0.08)]"><h3 className="text-[20px] font-[600] text-[#26181c] mb-2">Reset link unavailable</h3><p className="text-[13px] text-[#594047] mb-4">{message}</p><button onClick={() => navigate("/auth/forgot-password")} className="px-6 h-11 bg-[#8e004b] text-white rounded-[12px] text-[12px] font-semibold uppercase">Request new link</button></div></main>;
   }
   return (
-    <main className="center-page auth-bg">
-      <form className="auth-card" onSubmit={submit} noValidate>
-        <span className="eyebrow">Account recovery</span>
-        <h1>Choose a new password</h1>
-        <label>
-          New password
-          <input required minLength={8} type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" placeholder="At least 8 characters" />
-        </label>
-        <label>
-          Confirm new password
-          <input required minLength={8} type="password" value={confirm} onChange={(event) => setConfirm(event.target.value)} autoComplete="new-password" placeholder="Repeat the new password" />
-        </label>
-        {message && <div className="form-message" role="alert">{message}</div>}
-        <button className="primary" disabled={busy}>{busy ? "Saving…" : "Update password"}</button>
-      </form>
-    </main>
+    <div className="min-h-screen w-full bg-[#fff8f8] flex items-center justify-center p-6 -mt-[76px] font-[Inter]">
+      <div className="w-full max-w-[420px] bg-white rounded-[24px] border border-[#f6dce2] shadow-[0_20px_60px_rgba(60,20,40,0.08)] p-8">
+        <div className="px-3 py-1 bg-[#fff0f2] rounded-full text-[10px] font-bold uppercase text-[#8e004b] inline-block mb-4">Account recovery</div>
+        <h1 className="text-[24px] font-[600] tracking-[-0.02em] text-[#26181c] mb-6">Choose a new password</h1>
+        <form onSubmit={submit} noValidate className="space-y-4">
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#594047] mb-1.5 block">New password</label>
+            <input required minLength={8} type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" placeholder="At least 8 characters" className="w-full h-[48px] px-4 bg-[#fff8f8] border border-[#f6dce2] rounded-[14px] text-[14px] outline-none focus:border-[#8e004b] focus:ring-[3px] focus:ring-[#8e004b]/10" />
+          </div>
+          <div>
+            <label className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#594047] mb-1.5 block">Confirm new password</label>
+            <input required minLength={8} type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" placeholder="Repeat the new password" className="w-full h-[48px] px-4 bg-[#fff8f8] border border-[#f6dce2] rounded-[14px] text-[14px] outline-none focus:border-[#8e004b] focus:ring-[3px] focus:ring-[#8e004b]/10" />
+          </div>
+          {message && <div className="p-3 rounded-[12px] bg-[#ffdad6] border border-[#ffb4ab] text-[#93000a] text-[13px]">{message}</div>}
+          <button disabled={busy} className="w-full h-[52px] bg-[#8e004b] text-white rounded-[14px] text-[12px] font-semibold uppercase tracking-[0.08em] shadow-[0_8px_24px_rgba(185,0,100,0.28)]">{busy ? "Saving…" : "Update password →"}</button>
+        </form>
+      </div>
+    </div>
   );
 }
+
 
 function SessionExpiredPage({ navigate }: { navigate: (path: string) => void }) {
   const { signOut } = useAuth();
