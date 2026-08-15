@@ -513,6 +513,29 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
 
   return (
     <main className="w-full bg-[#fff8f8]">
+      {/* Homepage header — marketplace navigation + auth entry points.
+          Authentication itself lives on dedicated routes (/login, /signup);
+          the header buttons only route there, so the homepage carries no
+          embedded login/signup UI, forms, or input fields. */}
+      <header className="sticky top-0 z-50 bg-[#fff8f8]/85 backdrop-blur-xl border-b border-[#f6dce2]/60">
+        <div className="h-16 max-w-[1280px] mx-auto px-5 lg:px-6 flex items-center justify-between gap-4">
+          <button onClick={() => navigate("/")} aria-label="Nexora home" className="flex items-center gap-2 shrink-0">
+            <div className="w-9 h-9 rounded-[12px] bg-gradient-to-br from-[#e2007c] to-[#b90064] grid place-items-center text-white shadow-[0_8px_20px_rgba(185,0,100,0.25)]">N</div>
+            <span className="font-[500] text-[18px] tracking-tight text-[#8e004b]">Nexora SalonoS</span>
+          </button>
+          <nav aria-label="Marketplace navigation" className="hidden md:flex items-center gap-6">
+            <button onClick={() => navigate("/salons")} className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#594047] hover:text-[#26181c] transition-colors">Explore</button>
+            <button onClick={() => navigate("/salons")} className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#594047] hover:text-[#26181c] transition-colors">Categories</button>
+            <button onClick={() => navigate("/salons")} className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#594047] hover:text-[#26181c] transition-colors">Services</button>
+            <button onClick={() => window.location.assign("/job-portal")} className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#594047] hover:text-[#26181c] transition-colors">Jobs</button>
+          </nav>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button onClick={() => navigate("/login")} className="px-4 py-2 rounded-[10px] text-[11px] font-semibold tracking-[0.08em] uppercase text-[#594047] hover:text-[#8e004b] hover:bg-[#f6dce2]/60 transition-colors">Log in</button>
+            <button onClick={() => navigate("/signup")} className="px-4 py-2 rounded-[10px] bg-[#8e004b] text-white text-[11px] font-semibold tracking-[0.08em] uppercase shadow-[0_4px_14px_rgba(185,0,100,0.25)] hover:bg-[#b90064] transition-colors">Get Started</button>
+          </div>
+        </div>
+      </header>
+
       {/* Premium Hero - Matching provided HTML design system */}
       <section className="w-full min-h-[90vh] flex items-center justify-center relative overflow-hidden bg-[#fff8f8] px-5 lg:px-6 py-12 lg:py-0">
         {/* Blurred background orbs */}
@@ -534,28 +557,19 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
               Salon book karein, business grow karein, jobs paayein aur apne brand ko promote karein. Experiencing the future of beauty networking today.
             </p>
             
-            {/* Search + CTA row */}
+            {/* Search + marketplace location navigation */}
             <div className="w-full flex flex-col gap-4 mb-8 animate-[fadeInUp_0.8s_ease_out_0.3s_both]">
               <div className="flex gap-2 w-full max-w-md">
                 <div className="flex-1 h-[52px] flex items-center gap-2 px-4 bg-white border border-[#f6dce2] rounded-[16px] shadow-[0_8px_25px_rgba(62,24,43,0.06)]">
                   <span className="text-[#8c7077]">⌕</span>
-                  <input value={homeQuery} onChange={(e) => setHomeQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") navigate(`/salons?q=${encodeURIComponent(homeQuery.trim())}`); }} placeholder="Salon, service, area…" className="flex-1 border-0 outline-none text-[14px] bg-transparent" />
+                  <input value={homeQuery} onChange={(e) => setHomeQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") navigate(`/salons?q=${encodeURIComponent(homeQuery.trim())}`); }} placeholder="Salon, service, area…" aria-label="Search salons, services and areas" className="flex-1 border-0 outline-none text-[14px] bg-transparent" />
                 </div>
                 <button onClick={() => navigate(`/salons?q=${encodeURIComponent(homeQuery.trim())}`)} className="h-[52px] px-5 bg-[#26181c] text-white rounded-[14px] text-[13px] font-bold hover:bg-[#3c2c31] transition-colors">Search</button>
               </div>
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-                <button onClick={() => navigate("/auth/signup")} className="px-8 py-4 bg-[#8e004b] text-white text-[12px] font-semibold tracking-[0.1em] uppercase shadow-[0_4px_20px_rgba(185,0,100,0.25)] hover:shadow-[0_8px_30px_rgba(185,0,100,0.35)] hover:-translate-y-0.5 transition-all duration-300 relative overflow-hidden group">
-                  <span className="relative z-10">Get Started</span>
-                  <div className="absolute inset-0 bg-white/15 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
-                </button>
-                <button onClick={() => navigate("/auth/login")} className="px-8 py-4 bg-transparent text-[#26181c] border-b border-[#594047] text-[12px] font-semibold tracking-[0.1em] uppercase hover:text-[#8e004b] hover:border-[#8e004b] transition-colors">
-                  Login
-                </button>
-                <select value={homeLocation} onChange={(e) => navigate(e.target.value ? `/salons?area=${encodeURIComponent(e.target.value)}` : "/salons")} className="h-[52px] px-4 rounded-[12px] border border-[#f6dce2] bg-white text-[13px] max-w-[200px]">
-                  <option value="">📍 All Jaipur</option>
-                  {JAIPUR_ZONES.map((z) => <optgroup key={z.zone} label={z.zone}>{z.areas.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>)}
-                </select>
-              </div>
+              <select value={homeLocation} onChange={(e) => navigate(e.target.value ? `/salons?area=${encodeURIComponent(e.target.value)}` : "/salons")} aria-label="Choose your area in Jaipur" className="h-[52px] px-4 rounded-[12px] border border-[#f6dce2] bg-white text-[13px] max-w-md w-full sm:w-auto sm:max-w-[200px]">
+                <option value="">📍 All Jaipur</option>
+                {JAIPUR_ZONES.map((z) => <optgroup key={z.zone} label={z.zone}>{z.areas.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>)}
+              </select>
             </div>
             
             {/* Trust + stats */}
@@ -804,8 +818,8 @@ function RoleEntry({ path, navigate }: { path: string; navigate: (path: string) 
         <h1>{label} portal</h1>
         <p>Use your permanent {label.toLowerCase()} account. Accounts automatically return to their assigned same-origin portal.</p>
         <div className="button-row">
-          <button className="primary" onClick={() => navigate(`/auth/login?role=${role}&returnTo=${encodeURIComponent(portalPath)}`)}>Log in</button>
-          <button className="secondary" onClick={() => navigate(`/auth/signup?role=${role}&returnTo=${encodeURIComponent(portalPath)}`)}>Sign up</button>
+          <button className="primary" onClick={() => navigate(`/login?role=${role}&returnTo=${encodeURIComponent(portalPath)}`)}>Log in</button>
+          <button className="secondary" onClick={() => navigate(`/signup?role=${role}&returnTo=${encodeURIComponent(portalPath)}`)}>Sign up</button>
         </div>
       </section>
     </main>
@@ -2571,7 +2585,7 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
 
             <div className="mt-7 pt-6 border-t border-[#f6dce2] flex flex-col gap-3">
               <div className="flex items-center justify-between">
-                <button type="button" onClick={() => navigate(mode==="login" ? "/auth/signup" : "/auth/login")} className="text-[12px] font-[600] text-[#26181c] hover:text-[#8e004b] transition-colors">
+                <button type="button" onClick={() => navigate(mode==="login" ? "/signup" : "/login")} className="text-[12px] font-[600] text-[#26181c] hover:text-[#8e004b] transition-colors">
                   {mode==="login" ? "Need an account? Sign up →" : "Already have an account? Log in →"}
                 </button>
                 {mode==="login" && <button type="button" onClick={() => navigate("/")} className="text-[11px] text-[#8c7077] hover:text-[#26181c]">Back to home</button>}
@@ -3087,5 +3101,5 @@ function SalonSkeletons({ count }: { count: number }) {
 }
 
 function Footer({ navigate }: { navigate: (path: string) => void }) {
-  return <footer><div><div className="brand"><span className="brand-mark">N</span><span>Nexora</span></div><p>One connected platform for salons, customers, owners, growth partners, and beauty careers.</p></div><div><b>Explore</b><button onClick={() => navigate("/salons")}>Published salons</button><button onClick={() => window.location.assign("/job-portal")}>Job Portal</button><button onClick={() => navigate("/auth/login")}>Log in</button></div><div><b>Legal</b><button onClick={() => navigate("/terms")}>Terms & Conditions</button><button onClick={() => navigate("/privacy")}>Privacy Policy</button><button onClick={() => navigate("/cancellation-refund")}>Cancellation & Refund</button></div></footer>;
+  return <footer><div><div className="brand"><span className="brand-mark">N</span><span>Nexora</span></div><p>One connected platform for salons, customers, owners, growth partners, and beauty careers.</p></div><div><b>Explore</b><button onClick={() => navigate("/salons")}>Published salons</button><button onClick={() => window.location.assign("/job-portal")}>Job Portal</button><button onClick={() => navigate("/login")}>Log in</button><button onClick={() => navigate("/signup")}>Sign up</button></div><div><b>Legal</b><button onClick={() => navigate("/terms")}>Terms & Conditions</button><button onClick={() => navigate("/privacy")}>Privacy Policy</button><button onClick={() => navigate("/cancellation-refund")}>Cancellation & Refund</button></div></footer>;
 }
