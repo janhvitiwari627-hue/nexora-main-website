@@ -29,11 +29,13 @@ test("Phase 4 exposes canonical auth routes while preserving legacy links", () =
     assert.ok(app.includes(`path === "${route}"`), `${route} compatibility route must remain`);
   }
 
-  // Newly rendered links use the auth hub, including recovery redirects.
-  assert.doesNotMatch(app, /(?:navigate|go)\((?:"|`)\/(?:login|signup|forgot-password|reset-password)(?:[?"`])/);
-  // The header-local `go()` helper disappeared with the top navigation, but
-  // rendered links must still point at the canonical auth hub.
-  assert.match(app, /(?:navigate|go)\("\/auth\/login"\)/);
+  // Rendered links use the dedicated auth routes (/login, /signup) that the
+  // homepage header, footer and role entries point at. The /auth/* hub stays
+  // routed (and still used by internal flows) as canonical aliases for PKCE
+  // callbacks and legacy deep links.
+  assert.match(app, /navigate\("\/login"\)/);
+  assert.match(app, /navigate\("\/signup"\)/);
+  assert.match(app, /navigate\("\/auth\/login"\)/);
   assert.match(app, /navigate\("\/auth\/signup"\)/);
   assert.match(app, /sendPasswordReset|AUTH_ROUTES\.resetPassword/);
 
