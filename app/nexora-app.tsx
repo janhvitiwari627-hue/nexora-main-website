@@ -796,14 +796,15 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
           <RoleCard title="For Shop Owners" text="Review website proposals, publish your storefront, manage bookings, services, staff, offers, wallet and earnings under RLS own only." path={PORTAL_PATHS.business_user} navigate={navigate} />
           <RoleCard title="For Growth Partners" text="Prepare salon websites, track attribution, and view commission hold status – 10% of platform fee, held 7 days." path={PORTAL_PATHS.growth_partner} navigate={navigate} />
           <RoleCard title="For Website Templates" text="Open the Owner website builder after the same Shop Owner identity and salon workspace are verified." path={TEMPLATE_PATH} navigate={navigate} />
+          <RoleCard title="Distributors Beauty Industry" text="Browse verified wholesale distributors, brands and professional beauty products across India." path="/distributors-beauty-industry/" navigate={navigate} external />
         </div>
       </section>
     </main>
   );
 }
 
-function RoleCard({ title, text, path, navigate }: { title: string; text: string; path: string; navigate: (path: string) => void }) {
-  return <article className="role-card"><span className="role-icon">✦</span><h3>{title}</h3><p>{text}</p><button onClick={() => navigate(path)}>Open portal →</button></article>;
+function RoleCard({ title, text, path, navigate, external }: { title: string; text: string; path: string; navigate: (path: string) => void; external?: boolean }) {
+  return <article className="role-card"><span className="role-icon">✦</span><h3>{title}</h3><p>{text}</p><button onClick={() => (external ? window.location.assign(path) : navigate(path))}>Open portal →</button></article>;
 }
 
 function RoleEntry({ path, navigate }: { path: string; navigate: (path: string) => void }) {
