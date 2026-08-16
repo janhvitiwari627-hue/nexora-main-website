@@ -47,6 +47,29 @@ body {
   min-height: 100vh;
 }
 
+.nexora-job-app {
+  padding-top: 44px;
+}
+
+.nexora-global-app-header {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 90;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 4px clamp(16px, 4vw, 48px);
+  border-bottom: 1px solid rgba(224, 190, 198, 0.55);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(16px);
+}
+
+.nexora-job-app header.sticky.top-0,
+.nexora-job-app header.fixed.top-0 {
+  top: 44px !important;
+}
+
 /* Material Symbols icon support */
 .material-symbols-outlined {
   font-family: 'Material Symbols Outlined';

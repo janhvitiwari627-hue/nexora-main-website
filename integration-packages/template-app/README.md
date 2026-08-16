@@ -4,6 +4,18 @@
 - **Base verified:** `cfaedcad`
 - **Phase 2 patch:** `auth-integration.patch`
 - **Phase 6 app patch:** `phase6-unified-auth.patch`
+- **Main website return patch:** `back-to-main-website.patch`
+
+## Back to Main Website header button
+
+Apply `back-to-main-website.patch` to current Template App `main`. It adds the
+shared control once in the global `TopBar` and navigates directly to
+`https://nexora-main-website.vercel.app/` without history traversal or any
+auth/sign-out call.
+
+```bash
+git apply /path/to/integration-packages/template-app/back-to-main-website.patch
+```
 
 The Template App mounts one canonical `AuthProvider`, uses the shared client,
 and resolves salon-backed Owner access with `requireOwnerWorkspace()`. Public

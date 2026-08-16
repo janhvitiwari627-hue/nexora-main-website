@@ -1,0 +1,48 @@
+diff --git a/src/components/BackToMainWebsiteButton.tsx b/src/components/BackToMainWebsiteButton.tsx
+new file mode 100644
+index 0000000..812e141
+--- /dev/null
++++ b/src/components/BackToMainWebsiteButton.tsx
+@@ -0,0 +1,17 @@
++import React from 'react';
++import { ArrowLeft } from 'lucide-react';
++
++export const MAIN_WEBSITE_HOME_URL = 'https://nexora-main-website.vercel.app/';
++
++/** Absolute navigation only: no history traversal and no auth side effects. */
++export const BackToMainWebsiteButton: React.FC = () => (
++  <a
++    href={MAIN_WEBSITE_HOME_URL}
++    aria-label="Back to Main Website"
++    title="Back to Main Website"
++    className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full border border-outline-variant/60 bg-primary/10 px-3 text-[11px] font-bold text-primary shadow-sm transition-all hover:bg-primary/20 active:scale-95"
++  >
++    <ArrowLeft aria-hidden="true" className="h-[18px] w-[18px] shrink-0" />
++    <span className="whitespace-nowrap">Back to Main Website</span>
++  </a>
++);
+diff --git a/src/components/TopBar.tsx b/src/components/TopBar.tsx
+index 0469576..01b395d 100644
+--- a/src/components/TopBar.tsx
++++ b/src/components/TopBar.tsx
+@@ -6,2 +6,3 @@ import OfflineSyncStatus from './OfflineSyncStatus';
+ import LocationStatusIndicator from './LocationStatusIndicator';
++import { BackToMainWebsiteButton } from './BackToMainWebsiteButton';
+
+@@ -54,2 +55,4 @@ export default function TopBar({
+       <div className="flex items-center gap-2 sm:gap-3">
++        <BackToMainWebsiteButton />
++
+         {/* Offline Sync Status Indicator */}
+diff --git a/src/website-builder/components/TopBar.tsx b/src/website-builder/components/TopBar.tsx
+index fe7489f..1c2dd87 100644
+--- a/src/website-builder/components/TopBar.tsx
++++ b/src/website-builder/components/TopBar.tsx
+@@ -2,2 +2,3 @@ import { Sparkles, CheckCircle2, AlertCircle, Users, LayoutDashboard, Loader2, C
+ import { useState } from 'react';
++import { BackToMainWebsiteButton } from '../../components/BackToMainWebsiteButton';
+
+@@ -161,2 +162,3 @@ export default function TopBar({ step, activeModule, setActiveModule, saveStatus
+       <div className="flex items-center gap-2 md:gap-4 shrink-0">
++        <BackToMainWebsiteButton />
+         <button

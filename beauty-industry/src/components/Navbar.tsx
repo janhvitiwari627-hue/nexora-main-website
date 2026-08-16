@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { MapPin, User, FileText, Sparkles, Menu, X, LogOut, Check, Bell, Settings } from 'lucide-react';
 import { UserProfile } from '../types';
+import { BackToMainWebsiteButton } from './BackToMainWebsiteButton';
 
 export type NavTab = 'home' | 'discover' | 'products' | 'brands' | 'distributors' | 'business' | 'offers' | 'gallery' | 'gallery-moderation';
 
@@ -64,6 +65,9 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-[#F0E6EC] transition-all">
+      <div className="h-11 border-b border-[#F0E6EC]/80 flex items-center justify-end px-4 sm:px-6 lg:px-8">
+        <BackToMainWebsiteButton />
+      </div>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
         {/* Brand Logo */}
         <div 

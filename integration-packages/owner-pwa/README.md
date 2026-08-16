@@ -5,6 +5,17 @@
 **Patch:** `auth-integration.patch`
 **Build verified:** `npm run build` passes on the locked base after applying the patch.
 
+## Back to Main Website header button
+
+Apply `back-to-main-website.patch` to current Owner App `main`. The shared
+button is mounted in both owner global headers (workspace and website builder)
+and navigates directly to `https://nexora-main-website.vercel.app/` without
+history traversal or any auth/sign-out call.
+
+```bash
+git apply /path/to/integration-packages/owner-pwa/back-to-main-website.patch
+```
+
 > This patch targets the current owner-repository `main` listed below and is
 > self-contained. The older `supabase-integration.patch` is retained as the
 > historical owner/data-layer artifact but no longer applies to current

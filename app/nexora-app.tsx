@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Session, SupabaseClient } from "@supabase/supabase-js";
+import { BackToMainWebsiteButton } from "./BackToMainWebsiteButton";
 import {
   AUTH_ROUTES,
   EXPECTED_SUPABASE_HOSTNAME,
@@ -457,8 +458,14 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   else content = <HomePage navigate={navigate} online={online} authState={authState} refCode={refCode} />;
 
   const isAuthPage = path.startsWith("/auth");
+  const showMainWebsiteReturn = path !== "/";
   return (
-    <div className={`site-shell${isPortalPath(path) ? " portal-open" : ""}`}>
+    <div className={`site-shell${isPortalPath(path) ? " portal-open" : ""}${showMainWebsiteReturn ? " with-main-website-return" : ""}`}>
+      {showMainWebsiteReturn && (
+        <header className="main-website-return-header" aria-label="Global navigation">
+          <BackToMainWebsiteButton />
+        </header>
+      )}
       {!online && <div className="offline-banner">Offline — live salon and account data may be unavailable.</div>}
       {!getClient() && <div className="offline-banner" style={{ background: "#7b244a" }}>Supabase not configured: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY for project {SUPABASE_PROJECT_REF}.</div>}
       {content}
