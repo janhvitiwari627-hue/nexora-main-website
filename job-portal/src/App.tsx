@@ -46,6 +46,7 @@ import { SettingsScreen } from './components/seeker/SettingsScreen';
 import { EmployerOnboardingStep1Screen } from './components/employer/EmployerOnboardingStep1Screen';
 import { EmployerOnboardingStep2Screen } from './components/employer/EmployerOnboardingStep2Screen';
 import { PwaInstallButton } from './components/pwa/PwaInstallButton';
+import { GlobalAppHeader } from './components/BackToMainWebsiteButton';
 import { AdminLoginScreen } from './components/admin/AdminLoginScreen';
 import { AdminJobsScreen } from './components/admin/AdminJobsScreen';
 
@@ -606,7 +607,8 @@ export default function App() {
 
   if (isBackendLoading) {
     return (
-      <div className="min-h-screen bg-[#fdf8f8] flex items-center justify-center text-[#8e004b]">
+      <div className="nexora-job-app min-h-screen bg-[#fdf8f8] flex items-center justify-center text-[#8e004b]">
+        <GlobalAppHeader />
         <div className="text-center space-y-3">
           <div className="mx-auto h-9 w-9 rounded-full border-4 border-[#ffd9e2] border-t-[#e2007c] animate-spin" />
           <p className="text-sm font-semibold">Loading your workspace…</p>
@@ -616,9 +618,10 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#fdf8f8] font-sans antialiased">
+    <div className="nexora-job-app min-h-screen bg-[#fdf8f8] font-sans antialiased">
+      <GlobalAppHeader />
       {backendError && (
-        <div role="alert" className="fixed top-3 left-1/2 -translate-x-1/2 z-[100] w-[min(92vw,560px)] rounded-xl border border-rose-200 bg-white px-4 py-3 shadow-xl flex items-start gap-3">
+        <div role="alert" className="fixed top-14 left-1/2 -translate-x-1/2 z-[100] w-[min(92vw,560px)] rounded-xl border border-rose-200 bg-white px-4 py-3 shadow-xl flex items-start gap-3">
           <p className="flex-1 text-xs font-semibold text-rose-700">{backendError}</p>
           <button type="button" onClick={() => setBackendError(null)} className="text-xs font-bold text-rose-700 hover:underline">
             Dismiss

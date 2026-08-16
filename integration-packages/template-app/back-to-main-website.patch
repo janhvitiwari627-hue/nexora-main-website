@@ -1,0 +1,35 @@
+diff --git a/src/components/BackToMainWebsiteButton.tsx b/src/components/BackToMainWebsiteButton.tsx
+new file mode 100644
+index 0000000..464ea0c
+--- /dev/null
++++ b/src/components/BackToMainWebsiteButton.tsx
+@@ -0,0 +1,17 @@
++import React from 'react';
++import { ArrowLeft } from 'lucide-react';
++
++export const MAIN_WEBSITE_HOME_URL = 'https://nexora-main-website.vercel.app/';
++
++/** Absolute navigation only: no history traversal and no auth side effects. */
++export const BackToMainWebsiteButton: React.FC = () => (
++  <a
++    href={MAIN_WEBSITE_HOME_URL}
++    aria-label="Back to Main Website"
++    title="Back to Main Website"
++    className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full border border-[#e0bec6]/60 bg-[#fde7f3] px-3 text-[11px] font-bold text-[#8e004b] shadow-sm transition-all hover:bg-[#ffd9e2] active:scale-95"
++  >
++    <ArrowLeft aria-hidden="true" className="h-[18px] w-[18px] shrink-0" />
++    <span className="whitespace-nowrap">Back to Main Website</span>
++  </a>
++);
+diff --git a/src/components/TopBar.tsx b/src/components/TopBar.tsx
+index 7f96504..e01205f 100644
+--- a/src/components/TopBar.tsx
++++ b/src/components/TopBar.tsx
+@@ -4,2 +4,3 @@ import { useAuthModal } from './AuthModalProvider';
+ import { useAuth, signOut } from '../lib/useAuth';
++import { BackToMainWebsiteButton } from './BackToMainWebsiteButton';
+
+@@ -165,2 +166,3 @@ export default function TopBar({ step, activeModule, setActiveModule, saveStatus
+       <div className="flex items-center gap-2 md:gap-4 shrink-0">
++        <BackToMainWebsiteButton />
+         <button

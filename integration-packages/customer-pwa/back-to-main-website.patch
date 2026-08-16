@@ -1,0 +1,64 @@
+diff --git a/src/App.tsx b/src/App.tsx
+index cfcd52b..4ae05f7 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -15,6 +15,7 @@ import { purgeLegacyLocalStorage, purgeObsoleteBusinessKeys, readLegacyJson, rea
+ import { PaymentStatusTracker } from './components/PaymentStatusTracker';
+
+ import { Header } from './components/Header';
++import { GlobalAppHeader } from './components/BackToMainWebsiteButton';
+ import { BottomNav } from './components/BottomNav';
+ import { HomeScreen } from './components/HomeScreen';
+ import { SalonDetailScreen } from './components/SalonDetailScreen';
+@@ -962,7 +963,8 @@ export default function App() {
+   }
+
+   return (
+-    <div className="min-h-screen bg-[#fff8f8] text-[#26181c] font-['Inter',sans-serif] relative flex flex-col justify-between">
++    <div className="min-h-screen pt-11 bg-[#fff8f8] text-[#26181c] font-['Inter',sans-serif] relative flex flex-col justify-between">
++      <GlobalAppHeader />
+       <NotificationOverlay
+         notification={activePushOverlay}
+         onDismiss={() => setActivePushOverlay(null)}
+diff --git a/src/components/BackToMainWebsiteButton.tsx b/src/components/BackToMainWebsiteButton.tsx
+new file mode 100644
+index 0000000..846ae60
+--- /dev/null
++++ b/src/components/BackToMainWebsiteButton.tsx
+@@ -0,0 +1,23 @@
++import React from 'react';
++import { ArrowLeft } from 'lucide-react';
++
++export const MAIN_WEBSITE_HOME_URL = 'https://nexora-main-website.vercel.app/';
++
++/** Absolute navigation only: no history traversal and no auth side effects. */
++export const BackToMainWebsiteButton: React.FC = () => (
++  <a
++    href={MAIN_WEBSITE_HOME_URL}
++    aria-label="Back to Main Website"
++    title="Back to Main Website"
++    className="inline-flex h-9 shrink-0 items-center gap-2 rounded-full border border-[#e0bec6]/60 bg-[#fde7f3] px-3 text-[11px] font-bold text-[#8e004b] shadow-sm transition-all hover:bg-[#ffd9e2] active:scale-95"
++  >
++    <ArrowLeft aria-hidden="true" className="h-[18px] w-[18px] shrink-0" />
++    <span className="whitespace-nowrap">Back to Main Website</span>
++  </a>
++);
++
++export const GlobalAppHeader: React.FC = () => (
++  <header className="fixed inset-x-0 top-0 z-[60] flex h-11 items-center justify-end border-b border-[#e0bec6]/50 bg-white/95 px-4 backdrop-blur-xl">
++    <BackToMainWebsiteButton />
++  </header>
++);
+diff --git a/src/components/Header.tsx b/src/components/Header.tsx
+index 87cc5ff..e1e54a0 100644
+--- a/src/components/Header.tsx
++++ b/src/components/Header.tsx
+@@ -31,7 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
+   isSyncing = false,
+ }) => {
+   return (
+-    <header className="fixed top-0 w-full z-50 bg-white/85 backdrop-blur-2xl border-b border-[#e8e8e8]/50 pt-safe">
++    <header className="fixed top-11 w-full z-50 bg-white/85 backdrop-blur-2xl border-b border-[#e8e8e8]/50 pt-safe">
+       <div className="flex items-center justify-between h-16 px-4 max-w-md mx-auto">
+         <div className="flex items-center gap-1.5 overflow-hidden">
+           {showBack && (
