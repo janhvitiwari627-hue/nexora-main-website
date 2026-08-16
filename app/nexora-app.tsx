@@ -440,8 +440,6 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   else if (path === "/terms") content = <LegalPage type="terms" />;
   else if (path === "/privacy") content = <LegalPage type="privacy" />;
   else if (path === "/cancellation-refund") content = <LegalPage type="refund" />;
-  else if (path === "/auth/login" || path === "/login" || path === "/auth/signup" || path === "/signup")
-    content = <AuthPage mode={path === "/auth/signup" || path === "/signup" ? "signup" : "login"} navigate={navigate} refCode={refCode} />;
   else if (path === "/auth/forgot-password" || path === "/forgot-password") content = <ForgotPasswordPage navigate={navigate} />;
   else if (path === "/auth/reset-password" || path === "/reset-password") content = <ResetPasswordPage navigate={navigate} />;
   else if (path === "/auth/callback" || path === "/auth/verify") content = <AuthCallbackPage navigate={navigate} />;
@@ -458,7 +456,7 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
     content = <RoleEntry path={path} navigate={navigate} />;
   else content = <HomePage navigate={navigate} online={online} authState={authState} refCode={refCode} />;
 
-  const isAuthPage = path.startsWith("/auth") || path === "/login" || path === "/signup";
+  const isAuthPage = path.startsWith("/auth");
   return (
     <div className={`site-shell${isPortalPath(path) ? " portal-open" : ""}`}>
       {!online && <div className="offline-banner">Offline — live salon and account data may be unavailable.</div>}
