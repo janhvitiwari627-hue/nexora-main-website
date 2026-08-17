@@ -51,6 +51,30 @@ button { cursor:pointer; }
 .loc-panel-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .loc-panel-actions .secondary { min-height:38px; padding:0 15px; font-size:13px; }
 
+/* ---- Homepage Phase 1 · Section 02 — Hero ----
+   Entrance motion for the Hero. Every animation here is purely decorative:
+   the Hero renders complete and readable with all of it disabled, which is
+   exactly what happens under prefers-reduced-motion (block at the end).
+   Scoped to .hero2* so no other section inherits this motion. */
+@keyframes hero2Rise { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:none; } }
+@keyframes hero2Pulse { 0%,100% { opacity:1; } 50% { opacity:.35; } }
+.hero2-rise { animation:hero2Rise .6s cubic-bezier(.22,.61,.36,1) both; }
+.hero2-d1 { animation-delay:.06s; }
+.hero2-d2 { animation-delay:.12s; }
+.hero2-d3 { animation-delay:.18s; }
+.hero2-d4 { animation-delay:.24s; }
+.hero2-dot { animation:hero2Pulse 2s ease-in-out infinite; }
+.hero2-cta { transition:transform .18s ease, background-color .18s ease, border-color .18s ease; }
+.hero2-cta:active { transform:scale(.985); }
+.hero2 img { max-width:100%; height:auto; }
+/* Accessibility: honour the OS "reduce motion" setting. Content stays fully
+   visible — animations are removed, never the elements they animate. */
+@media (prefers-reduced-motion:reduce) {
+  .hero2-rise, .hero2-dot { animation:none !important; opacity:1 !important; transform:none !important; }
+  .hero2-cta { transition:none !important; }
+  .hero2-cta:active { transform:none !important; }
+}
+
 .hero { min-height:680px; padding:92px clamp(24px,7vw,110px); display:grid; grid-template-columns:1.12fr .88fr; gap:70px; align-items:center; background:radial-gradient(circle at 15% 15%,#ffd9eb 0,transparent 32%),linear-gradient(135deg,#fff 0,#fff7fb 65%,#fce3ee 100%); }
 .hero-copy { max-width:720px; }
 .eyebrow { display:inline-block; color:var(--pink-dark); font-size:12px; font-weight:850; letter-spacing:.15em; text-transform:uppercase; margin-bottom:14px; }

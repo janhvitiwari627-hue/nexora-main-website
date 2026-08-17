@@ -541,94 +541,182 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         </div>
       </header>
 
-      {/* Premium Hero - Matching provided HTML design system */}
-      <section className="w-full min-h-[90vh] flex items-center justify-center relative overflow-hidden bg-[#fff8f8] px-5 lg:px-6 py-12 lg:py-0">
-        {/* Blurred background orbs */}
-        <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-[#fce2e7]/60 rounded-full blur-[120px] mix-blend-multiply pointer-events-none"></div>
-        <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-[#ffd9e2]/50 rounded-full blur-[150px] mix-blend-multiply pointer-events-none"></div>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-16 w-full items-center max-w-[1280px] mx-auto relative z-10">
-          {/* Left copy */}
-          <div className="col-span-1 lg:col-span-5 flex flex-col items-start justify-center order-2 lg:order-1 relative z-20">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-[#f6dce2]/60 rounded-full text-[12px] font-semibold tracking-[0.14em] uppercase text-[#594047] mb-6 animate-[fadeInUp_0.6s_ease_out]">
-              <span className="w-2 h-2 bg-[#8e004b] rounded-full animate-pulse"></span>
-              Welcome to Nexora SalonoS
-            </div>
-            <h1 className="font-[600] text-[32px] lg:text-[48px] leading-[1.1] tracking-[-0.02em] text-[#26181c] mb-6 animate-[fadeInUp_0.8s_ease_out_0.1s_both]">
-              Jaipur Ki Beauty Industry, <br/>
-              <span className="text-[#8e004b] italic font-light">Ab Ek Smart Network Par</span>
-            </h1>
-            <p className="text-[18px] leading-[1.6] text-[#594047] max-w-md mb-8 animate-[fadeInUp_0.8s_ease_out_0.2s_both]">
-              Salon book karein, business grow karein, jobs paayein aur apne brand ko promote karein. Experiencing the future of beauty networking today.
+      {/*
+        ── HOMEPAGE PHASE 1 · SECTION 02 — HERO ────────────────────────────
+        A single, focused first screen: what Nexora is, one primary action
+        (/salons) and one secondary action (the Apps section further down).
+
+        Deliberate decisions:
+         • The Hero carries NO search UI. Smart Search is its own section
+           immediately below, so the two are visually and structurally
+           separate and neither competes with the other for attention.
+         • Every claim here is verifiable from the platform itself. No
+           invented counts, ratings, testimonials or "live activity" feed.
+         • The image is a local, self-hosted, responsive asset — never a
+           temporary remote URL that can expire and break the page.
+         • Motion is opt-out: all Hero animation is disabled under
+           prefers-reduced-motion (see .hero2 rules in globals.css).
+      */}
+      <section
+        id="hero"
+        aria-labelledby="hero-heading"
+        className="hero2 relative w-full overflow-hidden bg-[#fff8f8] px-5 lg:px-6 pt-10 pb-12 sm:pt-14 lg:pt-20 lg:pb-24"
+      >
+        {/* Decorative background wash. Purely presentational. */}
+        <div aria-hidden="true" className="pointer-events-none absolute -top-[18%] -left-[10%] h-[46%] w-[46%] rounded-full bg-[#fce2e7]/60 blur-[120px] mix-blend-multiply" />
+        <div aria-hidden="true" className="pointer-events-none absolute -bottom-[22%] -right-[12%] h-[55%] w-[55%] rounded-full bg-[#ffd9e2]/50 blur-[150px] mix-blend-multiply" />
+
+        <div className="relative z-10 mx-auto grid w-full max-w-[1280px] grid-cols-1 items-center gap-10 lg:grid-cols-12 lg:gap-16">
+          {/* ── Copy column ─────────────────────────────────────────────── */}
+          <div className="order-2 col-span-1 flex flex-col items-start lg:order-1 lg:col-span-6">
+            <p className="hero2-rise inline-flex items-center gap-2 rounded-full bg-[#f6dce2]/70 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#594047]">
+              <span aria-hidden="true" className="hero2-dot h-2 w-2 rounded-full bg-[#8e004b]" />
+              Jaipur beauty marketplace
             </p>
-            
-            {/* Search + marketplace location navigation */}
-            <div className="w-full flex flex-col gap-4 mb-8 animate-[fadeInUp_0.8s_ease_out_0.3s_both]">
-              <div className="flex gap-2 w-full max-w-md">
-                <div className="flex-1 h-[52px] flex items-center gap-2 px-4 bg-white border border-[#f6dce2] rounded-[16px] shadow-[0_8px_25px_rgba(62,24,43,0.06)]">
-                  <span className="text-[#8c7077]">⌕</span>
-                  <input value={homeQuery} onChange={(e) => setHomeQuery(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") navigate(`/salons?q=${encodeURIComponent(homeQuery.trim())}`); }} placeholder="Salon, service, area…" aria-label="Search salons, services and areas" className="flex-1 border-0 outline-none text-[14px] bg-transparent" />
-                </div>
-                <button onClick={() => navigate(`/salons?q=${encodeURIComponent(homeQuery.trim())}`)} className="h-[52px] px-5 bg-[#26181c] text-white rounded-[14px] text-[13px] font-bold hover:bg-[#3c2c31] transition-colors">Search</button>
-              </div>
-              <select value={homeLocation} onChange={(e) => navigate(e.target.value ? `/salons?area=${encodeURIComponent(e.target.value)}` : "/salons")} aria-label="Choose your area in Jaipur" className="h-[52px] px-4 rounded-[12px] border border-[#f6dce2] bg-white text-[13px] max-w-md w-full sm:w-auto sm:max-w-[200px]">
-                <option value="">📍 All Jaipur</option>
-                {JAIPUR_ZONES.map((z) => <optgroup key={z.zone} label={z.zone}>{z.areas.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>)}
-              </select>
+
+            <h1
+              id="hero-heading"
+              className="hero2-rise hero2-d1 mt-6 text-[34px] font-semibold leading-[1.08] tracking-[-0.02em] text-[#26181c] sm:text-[42px] lg:text-[56px]"
+            >
+              Book Jaipur&rsquo;s best salons,
+              <br className="hidden sm:block" />{" "}
+              <span className="font-light italic text-[#8e004b]">all in one place</span>
+            </h1>
+
+            <p className="hero2-rise hero2-d2 mt-5 max-w-xl text-[16px] leading-[1.65] text-[#594047] sm:text-[18px]">
+              Nexora connects customers, salon owners, growth partners and beauty
+              professionals on one platform. Browse verified salon websites, see
+              real services and prices, and book directly with the salon.
+            </p>
+
+            {/* ── Calls to action ──────────────────────────────────────── */}
+            <div className="hero2-rise hero2-d3 mt-8 flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
+              {/* PRIMARY — the marketplace itself. */}
+              <button
+                type="button"
+                onClick={() => navigate("/salons")}
+                className="hero2-cta inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-[14px] bg-[#8e004b] px-7 text-[14px] font-bold text-white shadow-[0_10px_28px_rgba(142,0,75,0.28)] transition-colors hover:bg-[#b90064] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b] sm:w-auto"
+              >
+                Explore salons
+                <span aria-hidden="true">&rarr;</span>
+              </button>
+
+              {/* SECONDARY — in-page jump to the Apps section (Section 02 scope). */}
+              <a
+                href="#nexora-apps"
+                className="hero2-cta inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#e9c9d3] bg-white px-7 text-[14px] font-bold text-[#26181c] transition-colors hover:border-[#d8a9b8] hover:bg-[#fff0f2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b] sm:w-auto"
+              >
+                See the Nexora apps
+                <span aria-hidden="true">&darr;</span>
+              </a>
             </div>
-            
-            {/* Trust + stats */}
-            <div className="w-full pt-8 border-t border-[#f6dce2] flex items-center justify-between animate-[fadeInUp_0.8s_ease_out_0.5s_both]">
-              <div className="flex flex-col gap-1">
-                <span className="text-[28px] font-light leading-none text-[#8e004b]">25k+</span>
-                <span className="text-[10px] font-semibold tracking-[0.07em] uppercase text-[#594047]">Active Salons</span>
-              </div>
-              <div className="w-[1px] h-12 bg-[#f6dce2]"></div>
-              <div className="flex flex-col gap-1">
-                <span className="text-[28px] font-light leading-none text-[#8e004b]">1.2M</span>
-                <span className="text-[10px] font-semibold tracking-[0.07em] uppercase text-[#594047]">Appointments</span>
-              </div>
-              <div className="w-[1px] h-12 bg-[#f6dce2] hidden sm:block"></div>
-              <div className="flex flex-col gap-1 hidden sm:flex">
-                <span className="text-[28px] font-light leading-none text-[#8e004b]">4.9</span>
-                <span className="text-[10px] font-semibold tracking-[0.07em] uppercase text-[#594047]">User Rating</span>
-              </div>
-              {refCode && <div className="hidden md:flex px-3 py-1 bg-[#fff0f2] border border-[#ffd9e2] rounded-full text-[10px] font-bold text-[#8e004b]">✦ Partner {refCode}</div>}
-            </div>
+
+            {/* ── Trust indicators ─────────────────────────────────────────
+                Honest by construction: each item states a platform rule or
+                guarantee that is enforced in code/RLS, not a metric we would
+                have to invent. No counts, no star ratings, no testimonials.
+            */}
+            <ul className="hero2-rise hero2-d4 mt-9 grid w-full grid-cols-1 gap-x-6 gap-y-3 border-t border-[#f6dce2] pt-7 sm:grid-cols-2 lg:max-w-xl">
+              {[
+                "Only salon-owner approved, published websites are listed",
+                "Real services, prices and timings set by each salon",
+                "Book directly with the salon — no hidden markup",
+                "One Nexora account across every Nexora app",
+              ].map((claim) => (
+                <li key={claim} className="flex items-start gap-2.5 text-[13px] leading-[1.5] text-[#594047]">
+                  <svg aria-hidden="true" viewBox="0 0 20 20" className="mt-[2px] h-4 w-4 shrink-0 text-[#8e004b]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m4 10.5 4 4 8-9" />
+                  </svg>
+                  <span>{claim}</span>
+                </li>
+              ))}
+            </ul>
+
+            {refCode && (
+              <p className="hero2-rise hero2-d4 mt-5 inline-flex items-center gap-2 rounded-full border border-[#ffd9e2] bg-[#fff0f2] px-3.5 py-1.5 text-[11px] font-bold text-[#8e004b]">
+                <span aria-hidden="true">&#10022;</span>
+                Referred by partner {refCode}
+              </p>
+            )}
           </div>
 
-          {/* Right visual - Premium salon card */}
-          <div className="col-span-1 lg:col-span-7 relative h-[55vh] lg:h-[78vh] w-full order-1 lg:order-2">
-            <div className="absolute inset-0 bg-[#fce2e7] rounded-[2rem] lg:rounded-[3.5rem] rotate-[-2deg] scale-[0.97] origin-bottom-right"></div>
-            <div className="absolute inset-0 bg-[#ffd9e2]/60 rounded-[2rem] lg:rounded-[3.5rem] rotate-[1deg] scale-[0.985] origin-bottom-left"></div>
-            <div className="relative w-full h-full rounded-[2rem] lg:rounded-[2.5rem] overflow-hidden shadow-[0_30px_80px_rgba(60,20,40,0.18)]">
-              <div className="w-full h-full bg-cover bg-center hover:scale-[1.03] transition-transform duration-[1200ms]" style={{backgroundImage: "url('https://lh3.googleusercontent.com/aida/AP1WRLuZJGt2jU-aVd8g9Bx6JZT2TilncGqAQMAyueOmggwdsR0-md5_cgcmFZRzdb0OMUIWFhwAwEVmuAhnYDVTbCOaH6H8spZH7K-NrD8l3bpf_V3_mGYWYLMjSKgX-4G3rC6qAG3IeRvY8fXL4hBGlJqDfUJvl77VOOBNpp8ZlrB596kQJeFl3-4o1ZCEYdw9Y37jKWuaHgwAm5ihppW9hQCp0174FbpfV_HU1DL3UN2GeZfBzGYoIMxCJfRs')"}}></div>
-              <div className="absolute inset-0 bg-gradient-to-t from-[#3c2c31]/80 via-transparent to-transparent"></div>
-              <div className="absolute bottom-5 left-5 right-5 flex justify-between items-end gap-3">
-                <div className="bg-white/90 backdrop-blur-md p-4 rounded-[14px] shadow-lg border border-white/30 max-w-[260px]">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <div className="w-2 h-2 bg-[#8e004b] rounded-full animate-pulse"></div>
-                    <span className="text-[10px] font-bold tracking-[0.08em] uppercase text-[#26181c]">Live Activity</span>
-                  </div>
-                  <div className="text-[13px] leading-[1.4] text-[#594047]">
-                    <strong className="text-[#26181c]">Priya M.</strong> just booked a consultation in Malviya Nagar.
-                  </div>
-                </div>
-                <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-md border border-white/30 flex items-center justify-center">
-                  <span className="text-white text-[28px]">✦</span>
-                </div>
-              </div>
-            </div>
-            <div className="absolute -right-3 lg:-right-6 top-[18%] bg-white px-5 py-3.5 rounded-[16px] shadow-[0_8px_30px_rgba(0,0,0,0.09)] hidden lg:flex items-center gap-3 animate-[float_5s_ease-in-out_infinite]">
-              <div className="w-10 h-10 rounded-full bg-[#fce2e7] flex items-center justify-center text-[#8e004b]">↗</div>
-              <div>
-                <div className="text-[10px] font-semibold tracking-[0.07em] uppercase text-[#8c7077]">Growth Rate</div>
-                <div className="text-[15px] font-[500] tracking-[-0.01em] text-[#26181c]">+34% this month</div>
+          {/* ── Visual column ───────────────────────────────────────────── */}
+          <div className="order-1 col-span-1 lg:order-2 lg:col-span-6">
+            <div className="hero2-figure relative mx-auto w-full max-w-[520px] lg:max-w-none">
+              <div aria-hidden="true" className="absolute inset-0 -rotate-2 scale-[0.97] rounded-[2rem] bg-[#fce2e7] lg:rounded-[3rem]" />
+              <div aria-hidden="true" className="absolute inset-0 rotate-1 scale-[0.985] rounded-[2rem] bg-[#ffd9e2]/60 lg:rounded-[3rem]" />
+              <div className="relative overflow-hidden rounded-[2rem] shadow-[0_30px_80px_rgba(60,20,40,0.18)] lg:rounded-[2.5rem]">
+                {/*
+                  Local, self-hosted, responsive asset. `width`/`height` are
+                  set so the browser reserves space and the Hero never shifts
+                  (CLS). Eager + high priority: this is the LCP element.
+                */}
+                <img
+                  src="/home/hero-salon-800.jpg"
+                  srcSet="/home/hero-salon-480.jpg 480w, /home/hero-salon-800.jpg 800w, /home/hero-salon-1200.jpg 1200w"
+                  sizes="(min-width: 1024px) 46vw, (min-width: 640px) 70vw, 100vw"
+                  width={1200}
+                  height={1600}
+                  loading="eager"
+                  fetchPriority="high"
+                  decoding="async"
+                  alt="Interior of a modern Jaipur beauty salon with styling chairs, round mirrors and daylight from an arched window."
+                  className="block aspect-[3/4] w-full object-cover sm:aspect-[4/3] lg:aspect-[4/5]"
+                />
               </div>
             </div>
           </div>
         </div>
-        <style>{`@keyframes fadeInUp{0%{opacity:0;transform:translateY(24px)}100%{opacity:1;transform:translateY(0)}}@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}`}</style>
+      </section>
+
+      {/*
+        ── SMART SEARCH ────────────────────────────────────────────────────
+        Kept fully intact and moved out of the Hero into its own labelled
+        section. Same state (homeQuery / homeLocation), same /salons query
+        contract, same Jaipur zone list — only the placement and the
+        surrounding markup changed, so nothing about search behaviour is lost.
+      */}
+      <section aria-labelledby="smart-search-heading" className="w-full border-y border-[#f6dce2] bg-white px-5 py-10 lg:px-6 lg:py-12">
+        <div className="mx-auto w-full max-w-[1280px]">
+          <h2 id="smart-search-heading" className="text-[20px] font-semibold tracking-[-0.01em] text-[#26181c] sm:text-[24px]">
+            Find a salon near you
+          </h2>
+          <p className="mt-1.5 text-[14px] leading-[1.6] text-[#594047]">
+            Search by salon, service or area — or pick your part of Jaipur.
+          </p>
+          <div className="mt-5 flex w-full flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="flex w-full gap-2 lg:max-w-xl">
+              <div className="flex h-[52px] flex-1 items-center gap-2 rounded-[16px] border border-[#f6dce2] bg-white px-4 shadow-[0_8px_25px_rgba(62,24,43,0.06)] focus-within:border-[#d8a9b8]">
+                <span aria-hidden="true" className="text-[#8c7077]">&#8981;</span>
+                <input
+                  id="home-search"
+                  value={homeQuery}
+                  onChange={(e) => setHomeQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") navigate(`/salons?q=${encodeURIComponent(homeQuery.trim())}`); }}
+                  placeholder="Salon, service, area…"
+                  aria-label="Search salons, services and areas"
+                  className="min-w-0 flex-1 border-0 bg-transparent text-[14px] outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate(`/salons?q=${encodeURIComponent(homeQuery.trim())}`)}
+                className="h-[52px] shrink-0 rounded-[14px] bg-[#26181c] px-6 text-[13px] font-bold text-white transition-colors hover:bg-[#3c2c31] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#26181c]"
+              >
+                Search
+              </button>
+            </div>
+            <select
+              value={homeLocation}
+              onChange={(e) => { setHomeLocation(e.target.value); navigate(e.target.value ? `/salons?area=${encodeURIComponent(e.target.value)}` : "/salons"); }}
+              aria-label="Choose your area in Jaipur"
+              className="h-[52px] w-full rounded-[12px] border border-[#f6dce2] bg-white px-4 text-[13px] lg:w-auto lg:max-w-[220px]"
+            >
+              <option value="">📍 All Jaipur</option>
+              {JAIPUR_ZONES.map((z) => <optgroup key={z.zone} label={z.zone}>{z.areas.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>)}
+            </select>
+          </div>
+        </div>
       </section>
 
       <section className="section">
@@ -793,8 +881,10 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         {isCustomer && <p className="section-hint"><button className="text-button" onClick={() => navigate(PORTAL_PATHS.customer)}>View your rewards &amp; loyalty points in the Customer app →</button></p>}
       </section>)}
 
-      {/* About */}
-      <section className="section">
+      {/* About — also the Nexora apps directory. `id` is the scroll target for
+          the Hero secondary CTA (Section 02); `scroll-mt` keeps the heading
+          clear of the sticky header after the jump. Content is unchanged. */}
+      <section id="nexora-apps" className="section scroll-mt-24">
         <div className="section-heading"><span className="eyebrow">About Nexora</span><h2>One connected platform</h2><p>Customers discover published salons, Shop Owners manage own shop data under RLS, Growth Partners submit proposals, commissions 10% of platform fee held 7 days, owner payout daily 22:00 IST. All 6 locked business rules verifiable via verify_business_rules().</p></div>
         <div className="role-grid">
           <RoleCard title="For Customers" text="Find published salons, book services, and follow payment or refund status." path={PORTAL_PATHS.customer} navigate={navigate} />
