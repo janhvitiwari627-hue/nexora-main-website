@@ -184,6 +184,80 @@ button { cursor:pointer; }
 .smart-picks-reason { margin:8px 0 0; font-size:12px; font-weight:600; color:#594047; background:var(--cream,#fff5f8); border:1px solid var(--line,#f6dce2); padding:6px 10px; border-radius:999px; }
 .smart-picks-actions { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 14px; }
 .smart-picks-actions .secondary { min-height:44px; }
+/* Section 12.2 — functional, horizontally scrollable tabs. The scroll is
+   contained inside the section on narrow screens, and every tab remains a
+   full-size, single-line touch target. The selected tab has a persistent
+   underline/raised shape in addition to its colour change. */
+.section12 { min-width:0; overflow-x:clip; }
+/* Section 12.8: one scoped grid contract for all three panels — three cards on
+   desktop, two on tablet and one on mobile. minmax(0,1fr) prevents long live
+   content from widening the page. */
+.section12 .salon-grid,.section12 .service-grid,.section12 .section12-area-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:22px; }
+.section12 .salon-card,.section12 .service-card,.section12 .section12-area-card { min-width:0; max-width:100%; }
+.section12 .salon-body h3,.section12 .service-card h3,.section12 .section12-area-card h3 { line-height:1.3; overflow-wrap:anywhere; word-break:break-word; }
+.section12 .salon-body p,.section12 .service-card p,.section12 .service-card small,.section12 .service-card b { overflow-wrap:anywhere; word-break:break-word; }
+.section12 .salon-meta,.section12 .salon-bottom { min-width:0; flex-wrap:wrap; }
+.section12 .section-heading p,.section12 .salon-body p,.section12 .service-card p,.section12 .service-card small,.section12-data-note,.section12-partial-status { color:#594047; }
+.section12 .salon-meta { color:#684f5a; }
+.section12 button { min-height:44px; }
+.section12 .primary { background:var(--pink-dark); color:#fff; }
+.section12 .primary:hover { background:#8e004b; }
+.section12 .salon-bottom button,.section12 .text-button { border-radius:9px; padding:8px 7px; }
+.section12 button:focus-visible { outline:3px solid #8e004b; outline-offset:3px; box-shadow:0 0 0 2px #fff; }
+.section12 .primary:focus-visible { outline-color:#26181c; box-shadow:0 0 0 2px #fff; }
+.section12 .trending-salon-card .salon-visual { width:100%; height:auto; aspect-ratio:32/19; }
+.section12 .trending-salon-card .salon-visual img { display:block; width:100%; height:100%; object-fit:cover; }
+.section12-tabs-scroll { width:100%; max-width:100%; overflow-x:auto; overflow-y:hidden; margin:0 0 30px; padding:2px 0 6px; overscroll-behavior-x:contain; scrollbar-width:thin; }
+.section12-tablist { display:flex; width:max-content; min-width:100%; gap:6px; padding:5px; border:1px solid var(--line); border-radius:16px; background:#fff; }
+.section12-tab { position:relative; flex:0 0 auto; min-height:48px; padding:0 18px; white-space:nowrap; border:1px solid transparent; border-radius:11px; background:transparent; color:var(--muted); font-size:13px; font-weight:750; }
+.section12-tab:hover { background:#fff0f7; color:var(--pink-dark); }
+.section12-tab[aria-selected="true"] { border-color:#efb9cf; background:#fff0f7; color:var(--pink-dark); font-weight:850; box-shadow:0 5px 14px #55132f12; }
+.section12-tab[aria-selected="true"]::after { content:""; position:absolute; left:18px; right:18px; bottom:5px; height:3px; border-radius:999px; background:currentColor; }
+.section12-tab:focus-visible { outline:2px solid #8e004b; outline-offset:2px; }
+.section12-panel { min-width:0; }
+.section12-panel[hidden] { display:none; }
+.section12-panel:focus-visible { outline:2px solid #8e004b; outline-offset:6px; border-radius:4px; }
+.section12-panel-heading { margin-bottom:18px; }
+.section12-panel-cta { display:flex; justify-content:center; margin-top:28px; }
+.section12-panel-cta .primary { min-height:50px; }
+.section12-data-note,.section12-partial-status { margin:0 0 16px; padding:11px 14px; border:1px solid var(--line); border-radius:12px; background:#fff; color:var(--muted); font-size:13px; line-height:1.5; }
+.section12-partial-status { background:#fff8fb; font-weight:700; }
+.section12-inline-state { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 0 16px; padding:12px 14px; border:1px solid var(--line); border-radius:14px; background:#fff; color:var(--muted); font-size:13px; }
+.section12-inline-error { border-color:#edcad9; background:#fff7fa; color:#7b244a; }
+.section12-state-card .button-row { justify-content:center; margin-top:20px; }
+.section12-skeleton-grid { pointer-events:none; }
+.section12-service-skeleton { min-height:150px; background:#fff; animation:pulse 1.25s infinite; }
+.section12-service-skeleton span,.section12-area-skeleton>span { display:block; height:13px; border-radius:999px; background:#f7eaf0; }
+.section12-service-skeleton>div:first-child { width:min(260px,62%); display:grid; gap:14px; }
+.section12-service-skeleton>div:last-child { width:100px; display:grid; align-content:start; gap:14px; }
+.section12-service-skeleton span:nth-child(2) { width:72%; }
+.section12-service-skeleton span:nth-child(3) { width:48%; }
+.section12-area-skeleton { min-height:190px; width:100%; gap:16px; animation:pulse 1.25s infinite; }
+.section12-area-skeleton>span { width:100%; }
+.section12-area-skeleton>span:first-child { width:42%; }
+.section12-area-skeleton>span:last-child { width:62%; }
+.section12-area-grid { list-style:none; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin:0; padding:0; }
+.section12-area-card { min-width:0; padding:24px; border:1px solid var(--line); border-radius:20px; background:#fff; box-shadow:0 10px 28px #55132f0a; display:flex; flex-direction:column; align-items:flex-start; }
+.section12-area-card .eyebrow { margin-bottom:9px; }
+.section12-area-card h3 { margin-bottom:9px; overflow-wrap:anywhere; }
+.section12-area-card p { margin-bottom:0; color:var(--muted); font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
+.section12-area-card .secondary { min-height:44px; margin-top:18px; }
+@media(max-width:920px) {
+  .section12 .salon-grid,.section12 .service-grid,.section12 .section12-area-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:620px) {
+  .section12-tabs-scroll { margin-bottom:24px; }
+  .section12-tab { min-height:48px; padding-inline:16px; }
+  .section12-inline-state { align-items:flex-start; flex-direction:column; }
+  .section12 .salon-grid,.section12 .service-grid,.section12 .section12-area-grid { grid-template-columns:minmax(0,1fr); }
+  .section12-area-card { padding:20px; }
+  .section12-panel-cta,.section12-panel-cta .primary { width:100%; }
+  .section12-state-card .button-row,.section12-state-card .button-row>button { width:100%; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .section12 .skeleton,.section12-service-skeleton,.section12-area-skeleton { animation:none; }
+  .section12 * { scroll-behavior:auto !important; transition-duration:0s !important; }
+}
 /* Smart Search (Section 03-safe): make keyboard focus unambiguous on the
    query input and the Jaipur area select. */
 .hero2-search-input:focus-within { border-color:#8e004b !important; box-shadow:0 0 0 3px rgba(142,0,75,.12); }
@@ -263,6 +337,22 @@ h1,h2,h3,p { margin-top:0; }
 .service-card p,.service-card small { color:var(--muted); }
 .service-card>b { color:var(--pink-dark); white-space:nowrap; }
 .service-card>div:last-child { display:grid; justify-items:end; gap:8px; }
+/* Section 12 service cards keep the shared surface while stacking their live
+   fields so three desktop columns remain readable even with long names/prices. */
+.section12-service-card { min-height:220px; background:#fff; flex-direction:column; }
+.section12-service-card>div:first-child { min-width:0; }
+.section12-service-card h3,.section12-service-card p { overflow-wrap:anywhere; }
+.section12-service-card>div:last-child { width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:auto; padding-top:14px; border-top:1px solid #f6eaf0; }
+.section12-service-card>div:last-child b { min-width:0; color:var(--pink-dark); white-space:normal; }
+.section12-service-card .text-button { flex:0 0 auto; min-height:44px; }
+.section12-service-card .text-button:disabled { opacity:.5; cursor:not-allowed; }
+.section12-service-card.section12-service-skeleton { min-height:220px; }
+.section12-service-card.section12-service-skeleton>div:last-child { width:100px; display:grid; align-content:start; gap:14px; margin-top:0; padding-top:0; border-top:0; }
+@media(max-width:620px) {
+  .section12-service-card { min-height:0; }
+  .section12-service-card.section12-service-skeleton { min-height:180px; }
+  .section12-service-card>div:last-child { align-items:flex-start; flex-wrap:wrap; }
+}
 .booking-page { max-width:1000px; }
 .booking-card { display:grid; gap:24px; padding:28px; border:1px solid var(--line); border-radius:24px; background:#fff; box-shadow:0 18px 50px #55132f0d; }
 .booking-card fieldset { display:grid; gap:16px; margin:0; padding:0; border:0; }
