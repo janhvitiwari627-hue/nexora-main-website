@@ -377,6 +377,34 @@ h1,h2,h3,p { margin-top:0; }
 @media (prefers-reduced-motion: reduce) {
   .section13-offer-skeleton { animation:none; }
 }
+/* Section 14 — Customer Reviews: a source-order-preserving, public-review
+   shell. Cards use only the aggregate's salon, rating, text, author and date
+   fields; no avatar, verified badge, reply, filters, or social-proof layer is
+   implied by the visual treatment. */
+.section14 { min-width:0; overflow-x:clip; }
+.section14-heading { max-width:740px; }
+.section14-reviews-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:22px; }
+.section14-review-card { min-width:0; max-width:100%; min-height:268px; padding:24px; border:1px solid var(--line); border-radius:20px; background:#fff; box-shadow:0 10px 28px #55132f0a; display:flex; flex-direction:column; gap:20px; }
+.section14-review-card-main { min-width:0; display:grid; gap:18px; }
+.section14-review-meta { min-width:0; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.section14-review-meta h3 { min-width:0; margin:0; font-size:20px; line-height:1.3; overflow-wrap:anywhere; word-break:break-word; }
+.section14-review-rating { flex:0 0 auto; display:inline-flex; align-items:center; gap:5px; padding:6px 9px; border:1px solid #f0d3de; border-radius:999px; background:#fff7fa; color:var(--pink-dark); font-size:13px; font-weight:850; white-space:nowrap; }
+.section14-review-text { min-width:0; margin:0; padding:0; }
+.section14-review-text p { margin:0; color:#594047; line-height:1.7; overflow-wrap:anywhere; word-break:break-word; }
+.section14-review-footer { display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; color:#806772; font-size:12px; line-height:1.5; }
+.section14-review-author { color:var(--ink); font-weight:800; overflow-wrap:anywhere; word-break:break-word; }
+.section14-review-footer time { color:#806772; }
+.section14-review-action { align-self:flex-start; min-height:44px; margin-top:auto; padding:8px 0; }
+.section14-inline-state { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 12px; color:#7b244a; }
+.section14 button:focus-visible { outline:3px solid #8e004b; outline-offset:3px; box-shadow:0 0 0 2px #fff; }
+@media(max-width:920px) {
+  .section14-reviews-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:620px) {
+  .section14-reviews-grid { grid-template-columns:minmax(0,1fr); }
+  .section14-review-card { min-height:0; padding:20px; }
+  .section14-inline-state { flex-direction:column; align-items:flex-start; }
+}
 /* Section 12 service cards keep the shared surface while stacking their live
    fields so three desktop columns remain readable even with long names/prices. */
 .section12-service-card { min-height:220px; background:#fff; flex-direction:column; }

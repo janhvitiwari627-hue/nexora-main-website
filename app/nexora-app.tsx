@@ -105,14 +105,51 @@ type CatalogItem = Salon & { website: Website };
 
 // Live marketplace aggregates (Customer PWA data — security-definer RPCs so
 // anon may read aggregates without exposing private rows).
+type MarketplaceRecentReview = {
+  /** Public author text returned by marketplace_salon_stats; never joined to profiles. */
+  author: string;
+  rating: number;
+  comment: string;
+  /** Present in the existing RPC row, but not promoted to a homepage badge. */
+  verified_booking: boolean;
+  created_at: string;
+};
 type SalonStats = {
   salon_id: string;
   rating_avg: number;
   review_count: number;
   booking_count: number;
-  recent_reviews: Array<{ author: string; rating: number; comment: string; verified_booking: boolean; created_at: string }>;
+  recent_reviews: MarketplaceRecentReview[];
   partner_onboarded: boolean;
 };
+
+/**
+ * Section 14's deliberately narrow view model. It is adapted only from the
+ * public marketplace aggregate and carries no customer, auth, booking, or
+ * appointment identifiers. The aggregate has no avatar, reply, or review-id
+ * field, so those are intentionally absent here.
+ */
+type CustomerReviewCardData = {
+  /** Internal deterministic React key from the public source fields; not a review ID. */
+  sourceKey: string;
+  salonName: string;
+  salonSlug: string;
+  rating: number;
+  text: string;
+  displayName: string;
+  /** Existing public aggregate timestamp; rendered only when formatable. */
+  reviewDate: string;
+};
+
+type PublicSalonReviewReference = {
+  name: string;
+  slug: string;
+};
+
+// Existing homepage review feed capped output at three rows. This is a
+// frontend presentation limit only; no backend review-limit configuration is
+// defined in this repository.
+const SECTION14_REVIEW_LIMIT = 3;
 type PopularService = {
   service_id: string;
   salon_id: string;
@@ -592,7 +629,13 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   // (with Retry) in the "Published salons" section; Section 06 (Nearby Shops)
   // uses it for its own honest error state.
   const { items, loading, error: catalogError } = useCatalog(online);
-  const { statsBySalon } = useMarketplaceStats(online);
+  const {
+    statsBySalon,
+    statsRows,
+    loading: statsLoading,
+    error: statsError,
+    load: reloadMarketplaceStats,
+  } = useMarketplaceStats(online);
   const { services: popularServices, loading: popularLoading, error: popularError, load: retryPopularServices } = usePopularServices(online);
   const { personalized, favorites, ready } = useCustomerSuggestions(online, authState.session, items);
   const { rows: recommendationRows, loading: recommendationsLoading, isPersonalized, load: refreshRecommendations, error: recommendationsError } = useRecommendations(online, authState.session);
@@ -628,15 +671,20 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   // do not recreate a frontend booking/rating sort here.
   const nearbyAreas = Array.from(new Set(items.map(i=>i.area).filter(Boolean))) as string[];
   const recommended = [...items].sort((a,b)=>((ratingOf(b)*reviewsOf(b))+bookingsOf(b))-((ratingOf(a)*reviewsOf(a))+bookingsOf(a))).slice(0,3);
-  // Recent public reviews across the catalog (Customer PWA content).
-  const reviewFeed = useMemo(() => {
-    const rows: Array<SalonStats["recent_reviews"][number] & { salonId: string; salonName: string; salonSlug: string }> = [];
-    for (const item of items) {
-      const s = statsBySalon[item.id];
-      for (const r of s?.recent_reviews ?? []) rows.push({ ...r, salonId: item.id, salonName: item.name, salonSlug: item.website.slug });
-    }
-    return rows.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")).slice(0, 3);
-  }, [items, statsBySalon]);
+  // Section 14: join public salon names/slugs to the existing public aggregate
+  // without querying customer, booking, or auth tables. The adapter preserves
+  // marketplace_salon_stats row order and each row's recent_reviews order;
+  // it deliberately does not add a client-side recency, rating, or featured
+  // ranking.
+  const section14SalonReferences = useMemo<ReadonlyMap<string, PublicSalonReviewReference>>(() => {
+    const references = new Map<string, PublicSalonReviewReference>();
+    for (const item of items) references.set(item.id, { name: item.name, slug: item.website.slug });
+    return references;
+  }, [items]);
+  const reviewFeed = useMemo(
+    () => adaptMarketplaceReviews(statsRows, section14SalonReferences),
+    [statsRows, section14SalonReferences],
+  );
   const showForYou = isCustomer && ready && (personalized !== null || favorites.length > 0);
   // Section 12 receives only the public fields it needs from the published
   // catalog. A memoized map avoids repeated O(catalog) slug/image lookups and
@@ -1289,6 +1337,17 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   />
 )}
 
+      {/* Section 14 — the existing homepage review feed, consolidated into a
+          dedicated public-safe component immediately after Section 13. */}
+      <CustomerReviewsSection
+        reviews={reviewFeed}
+        loading={statsLoading}
+        error={statsError}
+        online={online}
+        onRetry={() => void reloadMarketplaceStats()}
+        navigate={navigate}
+      />
+
       {/* Partner-approved promotions — only active + approved (published) */}
       <section className="section" style={{ background: "var(--cream)" }}>
         <div className="section-heading"><span className="eyebrow">Partner promotions</span><h2>Partner Approved Offers</h2><p>Active offers from Growth Partner onboarded salons — shown only after owner approval. Commission and partner details stay private.</p></div>
@@ -1343,12 +1402,6 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
           {rvConsent && <p className="section-hint"><button className="text-button" onClick={() => void setConsentPref(false)}>Disable recently viewed</button></p>}
         </section>
       ) : null)}
-
-      {/* What customers say — public review content from the Customer PWA */}
-      <section className="section">
-        <div className="section-heading"><span className="eyebrow">Reviews</span><h2>What customers say</h2><p>Real reviews left by customers after their visits — public, verified bookings marked.</p></div>
-        {reviewFeed.length ? <div className="service-grid">{reviewFeed.map((r, i) => <article className="service-card" key={i}><div><h3>{r.salonName}</h3><p>“{r.comment}”</p><small>★ {Number(r.rating).toFixed(1)} · {r.author}{r.verified_booking ? " · ✓ verified booking" : ""}</small></div><button className="text-button" onClick={() => navigate(`/salons/${r.salonSlug}`)}>View salon</button></article>)}</div> : <StateCard title="No reviews yet" text="Reviews customers leave in the Customer PWA appear here once published." />}
-      </section>
 
       {/* Membership — live plans + current customer status */}
 {visible('membership') && (      <section className="section" style={{ background: "var(--cream)" }}>
@@ -2169,6 +2222,162 @@ function BestOffersSection({
             <button type="button" className="secondary" onClick={() => navigate("/salons")}>View All Salons</button>
           </div>
         </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * The public aggregate does not expose a review status, moderation state, or
+ * review id. It is therefore the only publication boundary for Section 14:
+ * this adapter never queries a direct review table or attempts to recreate
+ * moderation, verified-booking, or featured-review logic in the browser.
+ */
+function hasRenderableMarketplaceReview(review: MarketplaceRecentReview): boolean {
+  // `customer_reviews.rating` is an integer constrained to the inclusive 1–5
+  // range. Invalid aggregate rows fail closed instead of receiving invented
+  // text/rating fallback values. Text and author remain untouched when shown.
+  return typeof review.comment === "string"
+    && review.comment.trim().length > 0
+    && typeof review.author === "string"
+    && Number.isInteger(review.rating)
+    && review.rating >= 1
+    && review.rating <= 5;
+}
+
+/**
+ * Convert only fields explicitly present in the existing public
+ * marketplace_salon_stats response into the homepage view model. The source
+ * has no global-review endpoint or review id, so it is traversed exactly in
+ * RPC-row order and then each source recent_reviews array order. No frontend
+ * sort, synthetic identity, avatar, or verification label is added.
+ */
+function adaptMarketplaceReviews(
+  statsRows: readonly SalonStats[],
+  salonReferences: ReadonlyMap<string, PublicSalonReviewReference>,
+): CustomerReviewCardData[] {
+  const rows: CustomerReviewCardData[] = [];
+  // No backend review ID is available. Deduplicate only byte-for-byte repeated
+  // public aggregate rows caused by frontend composition; this does not rank,
+  // filter sentiment, or change the first occurrence's source order.
+  const seenSourceRows = new Set<string>();
+  for (const stats of statsRows) {
+    const salon = salonReferences.get(stats.salon_id);
+    if (!salon || !trimPublicText(salon.name) || !isSafeSalonSlug(salon.slug)) continue;
+    for (const review of stats.recent_reviews ?? []) {
+      if (!hasRenderableMarketplaceReview(review)) continue;
+      const sourceKey = [stats.salon_id, review.created_at, review.author, review.rating, review.comment].join("\u0000");
+      if (seenSourceRows.has(sourceKey)) continue;
+      seenSourceRows.add(sourceKey);
+      rows.push({
+        sourceKey,
+        salonName: salon.name,
+        salonSlug: salon.slug,
+        rating: review.rating,
+        text: review.comment,
+        displayName: review.author,
+        reviewDate: review.created_at,
+      });
+      if (rows.length >= SECTION14_REVIEW_LIMIT) return rows;
+    }
+  }
+  return rows;
+}
+
+/**
+ * Section 14 — Customer Reviews. This is the existing homepage review feed
+ * extracted from HomePage, not a second review query. It consumes the
+ * public-safe adapter above and never reads customer_reviews, reviews,
+ * profiles, bookings, or auth.users directly.
+ */
+function CustomerReviewsSection({
+  reviews,
+  loading,
+  error = false,
+  online = true,
+  onRetry,
+  navigate,
+}: {
+  reviews: readonly CustomerReviewCardData[];
+  loading: boolean;
+  error?: boolean;
+  online?: boolean;
+  onRetry?: () => void;
+  navigate: (path: string) => void;
+}) {
+  const count = reviews.length;
+  const status = !online
+    ? count
+      ? `${count} previously loaded customer review${count === 1 ? "" : "s"} available. Live review updates are unavailable while offline.`
+      : "You are offline. Live customer reviews cannot load."
+    : loading && !count
+      ? "Customer reviews are loading."
+      : error && !count
+        ? "Customer reviews could not load. Try again."
+        : count
+          ? `${count} customer review${count === 1 ? "" : "s"} available.`
+          : "No public customer reviews are available.";
+
+  return (
+    <section id="customer-reviews" aria-labelledby="customer-reviews-heading" className="section section14 scroll-mt-24">
+      <div className="section-heading section14-heading">
+        <span className="eyebrow">CUSTOMER REVIEWS</span>
+        <h2 id="customer-reviews-heading">Customers Nexora Ke Baare Mein Kya Kehte Hain</h2>
+        <p>Real customers ke genuine experiences aur ratings dekhein.</p>
+      </div>
+      <p className="sr-only" role="status" aria-live="polite">{status}</p>
+      {count ? (
+        <>
+          {!online && <p className="saved-results-label">Previously loaded results</p>}
+          {online && error && <p className="saved-results-label">Previously loaded results</p>}
+          {!online && <p className="section-hint">You are offline. These review results may not be current.</p>}
+          {online && error && (
+            <div className="section14-inline-state" role="alert">
+              <span>Customer reviews could not refresh. Previously loaded results are still shown.</span>
+              {onRetry && <button type="button" className="secondary compact" onClick={() => void onRetry()}>Try again</button>}
+            </div>
+          )}
+          <div className="section14-reviews-grid">
+            {reviews.map((review) => {
+              const reviewDate = formatOfferDate(review.reviewDate);
+              return (
+                <article className="section14-review-card" key={review.sourceKey}>
+                  <div className="section14-review-card-main">
+                    <div className="section14-review-meta">
+                      <h3>{review.salonName}</h3>
+                      <span
+                        className="section14-review-rating"
+                        role="img"
+                        aria-label={`${review.rating} out of 5 stars`}
+                      >
+                        <span aria-hidden="true">★</span>
+                        <span aria-hidden="true">{review.rating}</span>
+                      </span>
+                    </div>
+                    <blockquote className="section14-review-text">
+                      <p>{review.text}</p>
+                    </blockquote>
+                    {(review.displayName || reviewDate) && (
+                      <footer className="section14-review-footer">
+                        {review.displayName && <span className="section14-review-author">{review.displayName}</span>}
+                        {reviewDate && <time dateTime={review.reviewDate}>{reviewDate}</time>}
+                      </footer>
+                    )}
+                  </div>
+                  <button type="button" className="text-button section14-review-action" onClick={() => navigate(`/salons/${review.salonSlug}`)}>View salon</button>
+                </article>
+              );
+            })}
+          </div>
+        </>
+      ) : !online ? (
+        <StateCard title="You are offline" text="Reconnect to load public customer reviews." />
+      ) : loading ? (
+        <SalonSkeletons count={3} />
+      ) : error ? (
+        <StateCard title="Customer reviews could not load" text="Try again to load public customer reviews." action="Try again" onAction={onRetry} />
+      ) : (
+        <StateCard title="No customer reviews yet" text="Public customer reviews will appear here when they are available." />
       )}
     </section>
   );
@@ -4517,24 +4726,36 @@ const EMPTY_MARKETPLACE: SalonMarketplace = { services: [], staff: [], hours: []
 
 function useMarketplaceStats(online: boolean) {
   const [statsBySalon, setStatsBySalon] = useState<Record<string, SalonStats>>({});
+  // Keep the RPC array as well as the existing lookup map. Section 14 uses the
+  // array so its source order remains intact instead of reconstructing a new
+  // client-side ranking from the per-salon aggregates.
+  const [statsRows, setStatsRows] = useState<SalonStats[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const load = useCallback(async () => {
     setLoading(true);
+    setError(false);
     try {
       const client = getClient();
       if (!client) return;
-      const { data, error } = await client.rpc("marketplace_salon_stats");
-      if (error) throw error;
+      const { data, error: rpcError } = await client.rpc("marketplace_salon_stats");
+      if (rpcError) throw rpcError;
+      const rows = (data ?? []) as SalonStats[];
       const map: Record<string, SalonStats> = {};
-      for (const row of (data ?? []) as SalonStats[]) map[row.salon_id] = row;
+      for (const row of rows) map[row.salon_id] = row;
+      setStatsRows(rows);
       setStatsBySalon(map);
-    } catch { /* sections fall back to salons columns */ } finally { setLoading(false); }
+    } catch {
+      // Salon cards retain their existing catalog-column fallback. The review
+      // section separately reports that its public aggregate could not load.
+      setError(true);
+    } finally { setLoading(false); }
   }, []);
   useEffect(() => {
     const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
     return () => window.clearTimeout(t);
   }, [load, online]);
-  return { statsBySalon, loading, load };
+  return { statsBySalon, statsRows, loading, error, load };
 }
 
 /** Most-booked services across the published catalog. */
