@@ -597,7 +597,8 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   const reviewsOf = (i: CatalogItem) => { const s = statsBySalon[i.id]; return s ? Number(s.review_count) : Number(i.review_count); };
   const bookingsOf = (i: CatalogItem) => { const s = statsBySalon[i.id]; return s ? Number(s.booking_count) : 0; };
   const topRated = [...items].sort((a,b)=>ratingOf(b)-ratingOf(a) || reviewsOf(b)-reviewsOf(a)).slice(0,3);
-  const trending = [...items].sort((a,b)=>bookingsOf(b)-bookingsOf(a) || reviewsOf(b)-reviewsOf(a)).slice(0,3);
+  // Section 12 Trending is exclusively the marketplace_trending RPC order;
+  // do not recreate a frontend booking/rating sort here.
   const nearbyAreas = Array.from(new Set(items.map(i=>i.area).filter(Boolean))) as string[];
   const recommended = [...items].sort((a,b)=>((ratingOf(b)*reviewsOf(b))+bookingsOf(b))-((ratingOf(a)*reviewsOf(a))+bookingsOf(a))).slice(0,3);
   // Recent public reviews across the catalog (Customer PWA content).
@@ -1080,12 +1081,6 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         <TopJaipurSection online={online} loading={topRatedLoading} error={topRatedError} onRetry={() => void loadTopRated()} rows={topRatedRows} items={items} fixUsable={nearbyFixUsable} gpsFix={gpsFix} navigate={navigate} />
       )}
 
-{visible('trending') && (
-<section className="section" style={{background:"var(--cream)"}}>
-        <div className="section-heading"><span className="eyebrow">Trending</span><h2>Trending Now</h2><p>Sorted by review_count desc – most reviewed.</p></div>
-        {trendingLoading ? <SalonSkeletons count={3} /> : trendingRows.length ? <div className="salon-grid">{trendingRows.map((r) => <TrendingCard key={r.id} row={r} navigate={navigate} />)}</div> : <StateCard title="No trending activity yet" text="Salons rise here from recent bookings, views and reviews (time-decayed). Admin overrides can boost any salon." />}
-      </section>)}
-
 {/*
         ── HOMEPAGE PHASE 1 · SECTION 06 — NEARBY SHOPS ───────────────────
         Upgraded in place (stable id=nearby-shops, no duplicate section).
@@ -1218,6 +1213,25 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         );
       })()}
 
+{/*
+  ── HOMEPAGE PHASE 1 · SECTION 12 — TRENDING AND MOST BOOKED ─────────────
+  The two existing homepage render sites are consolidated here (stable
+  id=trending-most-booked). HomePage still owns exactly one useTrending() and
+  one usePopularServices() request; this component receives those live rows
+  unchanged and maps them in backend/RPC order. The existing `trending`
+  visibility key remains the Section 12 admin gate. PHASE1_SECTION12.md.
+*/}
+{visible('trending') && (
+  <TrendingMostBookedSection
+    trendingRows={trendingRows}
+    trendingLoading={trendingLoading}
+    popularServices={popularServices}
+    popularLoading={popularLoading}
+    catalogItems={items}
+    navigate={navigate}
+  />
+)}
+
 {visible('offers') && (
 <section className="section">
         <div className="section-heading"><span className="eyebrow">Offers</span><h2>Active Offers</h2><p>From offers table where is_active=true – RLS public read. Shows discount_type, discount_value.</p></div>
@@ -1283,12 +1297,6 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
       <section className="section">
         <div className="section-heading"><span className="eyebrow">Reviews</span><h2>What customers say</h2><p>Real reviews left by customers after their visits — public, verified bookings marked.</p></div>
         {reviewFeed.length ? <div className="service-grid">{reviewFeed.map((r, i) => <article className="service-card" key={i}><div><h3>{r.salonName}</h3><p>“{r.comment}”</p><small>★ {Number(r.rating).toFixed(1)} · {r.author}{r.verified_booking ? " · ✓ verified booking" : ""}</small></div><button className="text-button" onClick={() => navigate(`/salons/${r.salonSlug}`)}>View salon</button></article>)}</div> : <StateCard title="No reviews yet" text="Reviews customers leave in the Customer PWA appear here once published." />}
-      </section>
-
-      {/* Popular services — most-booked services across the catalog */}
-      <section className="section" style={{ background: "var(--cream)" }}>
-        <div className="section-heading"><span className="eyebrow">Popular services</span><h2>Most Booked Services</h2><p>Services customers book the most — live from booking activity.</p></div>
-        {popularLoading ? <SalonSkeletons count={3} /> : popularServices.length ? <div className="service-grid">{popularServices.map((svc) => <article className="service-card" key={svc.service_id}><div><h3>{svc.service_name}</h3><p>{svc.salon_name}</p><small>{svc.duration_minutes} minutes · {svc.booking_count} bookings</small></div><div><b>{money(svc.price_paise)}</b><button className="text-button" onClick={() => navigate(`/salons/${items.find(i=>i.id===svc.salon_id)?.website.slug ?? ""}`)}>View salon</button></div></article>)}</div> : <StateCard title="No booking activity yet" text="Once customers start booking, the most popular services appear here." />}
       </section>
 
       {/* Membership — live plans + current customer status */}
@@ -3269,6 +3277,94 @@ function TopJaipurSection({
 
       <div className="categories-cta">
         <button type="button" className="primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b]" onClick={viewAllJaipurSalons}>Jaipur Ke Sabhi Salons Dekhein</button>
+      </div>
+    </section>
+  );
+}
+
+type TrendingMostBookedSectionProps = {
+  trendingRows: TrendingRow[];
+  trendingLoading: boolean;
+  popularServices: PopularService[];
+  popularLoading: boolean;
+  catalogItems: CatalogItem[];
+  navigate: (path: string) => void;
+};
+
+/**
+ * Section 12 — Trending and Most Booked.
+ *
+ * Foundation/live-data boundary: HomePage owns the existing hooks and passes
+ * their RPC responses here unchanged. In particular, `trendingRows` is mapped
+ * directly — no frontend sort may replace the marketplace_trending order.
+ * Popular Services likewise stays in marketplace_popular_services order and
+ * resolves navigation only against the already-loaded published catalog.
+ */
+function TrendingMostBookedSection({
+  trendingRows,
+  trendingLoading,
+  popularServices,
+  popularLoading,
+  catalogItems,
+  navigate,
+}: TrendingMostBookedSectionProps) {
+  return (
+    <section
+      id="trending-most-booked"
+      aria-labelledby="trending-most-booked-heading"
+      className="section scroll-mt-24"
+      style={{ background: "var(--cream)" }}
+    >
+      <div className="section-heading">
+        <span className="eyebrow">Live marketplace activity</span>
+        <h2 id="trending-most-booked-heading">Trending and Most Booked</h2>
+        <p>Discover salons gaining momentum and the services customers book most.</p>
+      </div>
+
+      <div aria-labelledby="trending-salons-heading">
+        <div className="section-heading" style={{ marginBottom: 18 }}>
+          <span className="eyebrow">Trending</span>
+          <h3 id="trending-salons-heading">Trending Now</h3>
+          <p>Live marketplace ranking from recent bookings, views and reviews.</p>
+        </div>
+        {trendingLoading ? (
+          <SalonSkeletons count={3} />
+        ) : trendingRows.length ? (
+          <div className="salon-grid">
+            {trendingRows.map((row) => <TrendingCard key={row.id} row={row} navigate={navigate} />)}
+          </div>
+        ) : (
+          <StateCard title="No trending activity yet" text="Salons rise here from recent bookings, views and reviews (time-decayed). Admin overrides can boost any salon." />
+        )}
+      </div>
+
+      <div aria-labelledby="most-booked-services-heading" style={{ marginTop: 48 }}>
+        <div className="section-heading" style={{ marginBottom: 18 }}>
+          <span className="eyebrow">Popular services</span>
+          <h3 id="most-booked-services-heading">Most Booked Services</h3>
+          <p>Services customers book the most — live from booking activity.</p>
+        </div>
+        {popularLoading ? (
+          <SalonSkeletons count={3} />
+        ) : popularServices.length ? (
+          <div className="service-grid">
+            {popularServices.map((service) => (
+              <article className="service-card" key={service.service_id}>
+                <div>
+                  <h3>{service.service_name}</h3>
+                  <p>{service.salon_name}</p>
+                  <small>{service.duration_minutes} minutes · {service.booking_count} bookings</small>
+                </div>
+                <div>
+                  <b>{money(service.price_paise)}</b>
+                  <button className="text-button" onClick={() => navigate(`/salons/${catalogItems.find((item) => item.id === service.salon_id)?.website.slug ?? ""}`)}>View salon</button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <StateCard title="No booking activity yet" text="Once customers start booking, the most popular services appear here." />
+        )}
       </div>
     </section>
   );
