@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Session, SupabaseClient } from "@supabase/supabase-js";
 import { BackToMainWebsiteButton } from "./BackToMainWebsiteButton";
 import {
@@ -118,8 +118,8 @@ type PopularService = {
   salon_id: string;
   salon_name: string;
   service_name: string;
-  price_paise: number;
-  duration_minutes: number;
+  price_paise: number | null;
+  duration_minutes: number | null;
   booking_count: number;
 };
 
@@ -397,6 +397,20 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   const [path, setPath] = useState(initialPath);
   const [online, setOnline] = useState(true);
   const refCode = useReferralCode(online);
+
+  // Keep the existing online flag synchronized with browser connectivity so
+  // Section 12 can distinguish offline from a retryable live-data failure.
+  useEffect(() => {
+    const updateOnlineState = () => setOnline(navigator.onLine);
+    const timer = window.setTimeout(updateOnlineState, 0);
+    window.addEventListener("online", updateOnlineState);
+    window.addEventListener("offline", updateOnlineState);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("online", updateOnlineState);
+      window.removeEventListener("offline", updateOnlineState);
+    };
+  }, []);
   // Auth state has one owner: the shared @nexora/auth provider mounted at
   // the website root. Do not add a second getSession/auth-event listener
   // here; it races the provider and forks profile authorization state.
@@ -449,6 +463,18 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
     window.history.pushState({}, "", target);
     setPath(new URL(target, window.location.origin).pathname);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  // pushState is paired with a popstate subscription so Section 12 routes (and
+  // every existing internal route) remain reversible with browser Back/Forward.
+  // Direct loads and hard refreshes continue through app/[...path]/page.tsx.
+  useEffect(() => {
+    const handlePopState = () => {
+      setPath(window.location.pathname);
+      window.scrollTo({ top: 0, behavior: "auto" });
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   const signOut = useCallback(async (destination = "/") => {
@@ -567,7 +593,7 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   // uses it for its own honest error state.
   const { items, loading, error: catalogError } = useCatalog(online);
   const { statsBySalon } = useMarketplaceStats(online);
-  const { services: popularServices, loading: popularLoading } = usePopularServices(online);
+  const { services: popularServices, loading: popularLoading, error: popularError, load: retryPopularServices } = usePopularServices(online);
   const { personalized, favorites, ready } = useCustomerSuggestions(online, authState.session, items);
   const { rows: recommendationRows, loading: recommendationsLoading, isPersonalized, load: refreshRecommendations, error: recommendationsError } = useRecommendations(online, authState.session);
   const { plans: membershipPlans, loading: membershipLoading } = useMembershipPlans(online);
@@ -583,7 +609,7 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   const { categories: adminCategories, loading: categoriesLoading, error: categoriesError, load: loadCategories } = useMarketplaceCategories(online);
   const { sponsored, loading: sponsoredLoading } = useSponsored(online);
   const { rows: topRatedRows, loading: topRatedLoading, error: topRatedError, load: loadTopRated } = useTopRated(online);
-  const { rows: trendingRows, loading: trendingLoading } = useTrending(online);
+  const { rows: trendingRows, loading: trendingLoading, error: trendingError, load: retryTrending } = useTrending(online);
   const { rows: nearbyRows, loading: nearbyLoading } = useNearby(online);
   // Section 06: OBSERVE only (auto:false) — the homepage never requests GPS
   // permission on page load. Acquisition starts only from the explicit
@@ -611,6 +637,20 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
     return rows.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")).slice(0, 3);
   }, [items, statsBySalon]);
   const showForYou = isCustomer && ready && (personalized !== null || favorites.length > 0);
+  // Section 12 receives only the public fields it needs from the published
+  // catalog. A memoized map avoids repeated O(catalog) slug/image lookups and
+  // keeps phone/address/config data outside the Section 12 component path.
+  const section12SalonReferences = useMemo<ReadonlyMap<string, Section12SalonReference>>(() => {
+    const references = new Map<string, Section12SalonReference>();
+    for (const item of items) {
+      references.set(item.id, {
+        id: item.id,
+        slug: item.website.slug,
+        coverImagePath: item.cover_image_path,
+      });
+    }
+    return references;
+  }, [items]);
 
   // ---- Section 06: Nearby Shops -------------------------------------------
   // Honest defaults: Jaipur is the DEFAULT location (never presented as
@@ -1225,9 +1265,14 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   <TrendingMostBookedSection
     trendingRows={trendingRows}
     trendingLoading={trendingLoading}
+    trendingError={trendingError}
+    onRetryTrending={retryTrending}
     popularServices={popularServices}
     popularLoading={popularLoading}
-    catalogItems={items}
+    popularError={popularError}
+    onRetryPopular={retryPopularServices}
+    salonReferences={section12SalonReferences}
+    online={online}
     navigate={navigate}
   />
 )}
@@ -3282,100 +3327,592 @@ function TopJaipurSection({
   );
 }
 
+type Section12SalonReference = {
+  id: string;
+  slug: string;
+  coverImagePath: string | null;
+};
+
 type TrendingMostBookedSectionProps = {
   trendingRows: TrendingRow[];
   trendingLoading: boolean;
+  trendingError: boolean;
+  onRetryTrending: () => void | Promise<void>;
   popularServices: PopularService[];
   popularLoading: boolean;
-  catalogItems: CatalogItem[];
+  popularError: boolean;
+  onRetryPopular: () => void | Promise<void>;
+  salonReferences: ReadonlyMap<string, Section12SalonReference>;
+  online: boolean;
   navigate: (path: string) => void;
 };
+
+const SECTION12_TABS = [
+  { key: "trending", label: "Trending Salons", tabId: "section12-tab-trending", panelId: "section12-panel-trending" },
+  { key: "services", label: "Most Booked Services", tabId: "section12-tab-services", panelId: "section12-panel-services" },
+  { key: "areas", label: "Trending Areas", tabId: "section12-tab-areas", panelId: "section12-panel-areas" },
+] as const;
+
+type Section12Tab = (typeof SECTION12_TABS)[number]["key"];
+
+/** Pure roving-tab transition used by the real key handler and runtime tests. */
+export function section12TabIndexForKey(key: string, currentIndex: number, tabCount = SECTION12_TABS.length): number | null {
+  if (tabCount <= 0) return null;
+  if (key === "ArrowRight") return (currentIndex + 1) % tabCount;
+  if (key === "ArrowLeft") return (currentIndex - 1 + tabCount) % tabCount;
+  if (key === "Home") return 0;
+  if (key === "End") return tabCount - 1;
+  return null;
+}
+
+type TrendingArea = { key: string; name: string; city: string | null; sourceSalon: string };
+
+/** Section 12.3: the backend already returns at most six; keep a UI cap too. */
+const TRENDING_SALONS_DISPLAY_LIMIT = 6;
+
+/**
+ * Reject only structurally unusable RPC rows. Publication/activity eligibility
+ * remains the marketplace_trending backend's responsibility; the frontend does
+ * not invent another business-status filter or ranking rule.
+ */
+function isRenderableTrendingSalonRow(row: TrendingRow): boolean {
+  if (typeof row.id !== "string" || !row.id.trim()) return false;
+  if (typeof row.name !== "string" || !row.name.trim()) return false;
+  if (typeof row.slug !== "string") return false;
+  const slug = row.slug.trim();
+  return Boolean(slug)
+    && !slug.includes("/")
+    && !slug.includes("\\")
+    && !slug.includes("?")
+    && !slug.includes("#")
+    && !/\s/.test(slug);
+}
+
+/** Section 12.4: mirror the trusted RPC limit with a defensive UI cap. */
+const POPULAR_SERVICES_DISPLAY_LIMIT = 6;
+
+/** Keep only structurally usable aggregate rows; never re-rank them. */
+function isRenderablePopularService(service: PopularService): boolean {
+  if (typeof service.service_id !== "string" || !service.service_id.trim()) return false;
+  if (typeof service.salon_id !== "string" || !service.salon_id.trim()) return false;
+  if (typeof service.service_name !== "string" || !service.service_name.trim()) return false;
+  if (typeof service.salon_name !== "string" || !service.salon_name.trim()) return false;
+  const bookingCount = Number(service.booking_count);
+  return Number.isSafeInteger(bookingCount) && bookingCount >= 0;
+}
+
+/** Resolve only an existing canonical slug from the published catalog. */
+function resolvePopularServiceSalonSlug(salonReference: Section12SalonReference | undefined, salonId: string): string | null {
+  if (!salonReference || salonReference.id !== salonId) return null;
+  const slug = salonReference.slug?.trim();
+  if (!slug
+    || slug.includes("/")
+    || slug.includes("\\")
+    || slug.includes("?")
+    || slug.includes("#")
+    || /\s/.test(slug)) return null;
+  return slug;
+}
+
+/** Format a real duration value without substituting a made-up default. */
+function formatPopularServiceDuration(value: number | null | undefined): string {
+  const totalMinutes = Number(value);
+  if (!Number.isInteger(totalMinutes) || totalMinutes <= 0) return "Duration unavailable";
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (!hours) return `${minutes} min`;
+  if (!minutes) return `${hours} hr`;
+  return `${hours} hr ${minutes} min`;
+}
+
+/** Section 12.5: areas come only from the six already-ranked Trending rows. */
+const TRENDING_AREAS_DISPLAY_LIMIT = 6;
+
+type NormalizedAreaPart = { display: string; key: string };
+
+/** Trim and collapse whitespace for grouping; never rename a real locality. */
+function normalizeTrendingAreaPart(value: unknown): NormalizedAreaPart | null {
+  if (typeof value !== "string") return null;
+  const display = value.trim().replace(/\s+/g, " ");
+  return display ? { display, key: display.toLowerCase() } : null;
+}
 
 /**
  * Section 12 — Trending and Most Booked.
  *
- * Foundation/live-data boundary: HomePage owns the existing hooks and passes
- * their RPC responses here unchanged. In particular, `trendingRows` is mapped
- * directly — no frontend sort may replace the marketplace_trending order.
- * Popular Services likewise stays in marketplace_popular_services order and
- * resolves navigation only against the already-loaded published catalog.
+ * HomePage owns both existing data hooks, so changing a tab only changes which
+ * already-loaded panel is exposed. It never remounts a hook or starts a new
+ * request. Trending Salons keeps the marketplace_trending response order and
+ * Most Booked Services keeps the marketplace_popular_services response order.
+ * Trending Areas is intentionally modest: it lists only real area values found
+ * in the current trending salon rows and makes no separate popularity claim.
  */
-function TrendingMostBookedSection({
+export function TrendingMostBookedSection({
   trendingRows,
   trendingLoading,
+  trendingError,
+  onRetryTrending,
   popularServices,
   popularLoading,
-  catalogItems,
+  popularError,
+  onRetryPopular,
+  salonReferences,
+  online,
   navigate,
 }: TrendingMostBookedSectionProps) {
+  const [selectedTab, setSelectedTab] = useState<Section12Tab>("trending");
+
+  // Select, but never re-sort, the first six structurally valid RPC rows. The
+  // bounded array is the exact collection rendered, so no hidden extra cards
+  // are traversed merely to return null.
+  const renderableTrendingRows = useMemo(() => {
+    const rows: TrendingRow[] = [];
+    for (const row of trendingRows) {
+      if (!isRenderableTrendingSalonRow(row)) continue;
+      rows.push(row);
+      if (rows.length >= TRENDING_SALONS_DISPLAY_LIMIT) break;
+    }
+    return rows;
+  }, [trendingRows]);
+
+  // Preserve RPC order while rejecting malformed/duplicate service rows and
+  // selecting no more than six. This does not calculate popularity locally.
+  const renderablePopularServices = useMemo(() => {
+    const rows: PopularService[] = [];
+    const seenServiceIds = new Set<string>();
+    for (const service of popularServices) {
+      if (!isRenderablePopularService(service)) continue;
+      const serviceId = service.service_id.trim();
+      if (seenServiceIds.has(serviceId)) continue;
+      seenServiceIds.add(serviceId);
+      rows.push(service);
+      if (rows.length >= POPULAR_SERVICES_DISPLAY_LIMIT) break;
+    }
+    return rows;
+  }, [popularServices]);
+
+  // No dedicated area-popularity source exists in this repository. Group only
+  // areas from the valid, already-ranked Trending rows: first backend presence
+  // wins, duplicate whitespace/case variants collapse, and no score is made up.
+  const trendingAreas = useMemo<TrendingArea[]>(() => {
+    const seen = new Set<string>();
+    const areas: TrendingArea[] = [];
+    for (const row of renderableTrendingRows) {
+      const area = normalizeTrendingAreaPart(row.area);
+      if (!area) continue;
+      const city = normalizeTrendingAreaPart(row.city);
+      // City remains part of the key so equal locality names in genuinely
+      // different cities are never merged based on a frontend guess.
+      const key = `${area.key}::${city?.key ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      areas.push({ key, name: area.display, city: city?.display ?? null, sourceSalon: row.name.trim() });
+      if (areas.length >= TRENDING_AREAS_DISPLAY_LIMIT) break;
+    }
+    return areas;
+  }, [renderableTrendingRows]);
+
+  const trendingCount = renderableTrendingRows.length;
+  const serviceCount = renderablePopularServices.length;
+  const areaCount = trendingAreas.length;
+  const trendingHeading = !online
+    ? "Saved Trending Salons"
+    : trendingError
+      ? trendingCount ? "Previously Loaded Trending Salons" : "Trending Salons"
+      : "Trending Now";
+  const servicesHeading = !online
+    ? "Saved Popular Services"
+    : popularError
+      ? serviceCount ? "Previously Loaded Popular Services" : "Most Booked Services"
+      : "Most Booked Services";
+  const areasHeading = !online
+    ? "Saved Trending Areas"
+    : trendingError
+      ? areaCount ? "Previously Loaded Trending Areas" : "Trending Areas"
+      : "Trending Areas";
+  const trendingStatus = !online
+    ? trendingCount
+      ? `${trendingCount} saved trending salon result${trendingCount === 1 ? "" : "s"} available. Live trends update nahi kiye ja sakte.`
+      : "Aap offline hain. Live trends update nahi kiye ja sakte."
+    : trendingLoading && !trendingCount
+      ? "Trending salons load ho rahe hain."
+      : trendingError && !trendingCount
+        ? "Trending data load nahi ho saka. Dobara try karein."
+        : trendingCount
+          ? trendingError
+            ? `${trendingCount} pehle load kiye gaye trending salon result available hain. Update nahi ho saka.`
+            : trendingLoading
+              ? `${trendingCount} trending salon result available hain. Results refresh ho rahe hain.`
+              : trendingCount < TRENDING_SALONS_DISPLAY_LIMIT
+                ? `${trendingCount} reliable trending salon result available hain.`
+                : `${trendingCount} trending salon results available hain.`
+          : "Abhi enough trending activity available nahi hai.";
+  const servicesStatus = !online
+    ? serviceCount
+      ? `${serviceCount} saved popular service result${serviceCount === 1 ? "" : "s"} available. Live results update nahi kiye ja sakte.`
+      : "Aap offline hain. Most-booked services update nahi ki ja sakti."
+    : popularLoading && !serviceCount
+      ? "Most-booked services load ho rahi hain."
+      : popularError && !serviceCount
+        ? "Most-booked services load nahi ho saki. Dobara try karein."
+        : serviceCount
+          ? popularError
+            ? `${serviceCount} pehle load kiye gaye service result available hain. Update nahi ho saka.`
+            : popularLoading
+              ? `${serviceCount} service result available hain. Results refresh ho rahe hain.`
+              : serviceCount < POPULAR_SERVICES_DISPLAY_LIMIT
+                ? `${serviceCount} reliable most-booked service result available hain.`
+                : `${serviceCount} most-booked service results available hain.`
+          : "Most-booked services abhi available nahi hain.";
+  const areasStatus = !online
+    ? areaCount
+      ? `${areaCount} saved trending area result${areaCount === 1 ? "" : "s"} available. Live trends update nahi kiye ja sakte.`
+      : "Aap offline hain. Trending areas update nahi kiye ja sakte."
+    : trendingLoading && !areaCount
+      ? "Trending areas derive kiye ja rahe hain."
+      : trendingError && !areaCount
+        ? "Trending areas load nahi ho sake. Dobara try karein."
+        : areaCount
+          ? trendingError
+            ? `${areaCount} pehle load kiye gaye area result available hain. Update nahi ho saka.`
+            : trendingLoading
+              ? `${areaCount} area result available hain. Results refresh ho rahe hain.`
+              : areaCount < TRENDING_AREAS_DISPLAY_LIMIT
+                ? `${areaCount} reliable trending area result available hain.`
+                : `${areaCount} trending area results available hain.`
+          : "Trending area data abhi available nahi hai.";
+
+  const handleTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, currentIndex: number) => {
+    const nextIndex = section12TabIndexForKey(event.key, currentIndex);
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    const nextTab = SECTION12_TABS[nextIndex];
+    setSelectedTab(nextTab.key);
+    document.getElementById(nextTab.tabId)?.focus();
+  };
+
   return (
     <section
       id="trending-most-booked"
       aria-labelledby="trending-most-booked-heading"
-      className="section scroll-mt-24"
+      className="section section12 scroll-mt-24"
       style={{ background: "var(--cream)" }}
     >
       <div className="section-heading">
-        <span className="eyebrow">Live marketplace activity</span>
-        <h2 id="trending-most-booked-heading">Trending and Most Booked</h2>
-        <p>Discover salons gaining momentum and the services customers book most.</p>
+        <span className="eyebrow">TRENDING ON NEXORA</span>
+        <h2 id="trending-most-booked-heading">Abhi Kya Trending Hai</h2>
+        <p>Real customer activity ke basis par popular salons, services aur Jaipur areas explore karein.</p>
       </div>
 
-      <div aria-labelledby="trending-salons-heading">
-        <div className="section-heading" style={{ marginBottom: 18 }}>
-          <span className="eyebrow">Trending</span>
-          <h3 id="trending-salons-heading">Trending Now</h3>
-          <p>Live marketplace ranking from recent bookings, views and reviews.</p>
+      <div className="section12-tabs-scroll">
+        <div className="section12-tablist" role="tablist" aria-label="Trending and most booked views" aria-orientation="horizontal">
+          {SECTION12_TABS.map((tab, index) => (
+            <button
+              key={tab.key}
+              type="button"
+              id={tab.tabId}
+              className="section12-tab"
+              role="tab"
+              aria-selected={selectedTab === tab.key}
+              aria-controls={tab.panelId}
+              tabIndex={selectedTab === tab.key ? 0 : -1}
+              onClick={() => setSelectedTab(tab.key)}
+              onKeyDown={(event) => handleTabKeyDown(event, index)}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
-        {trendingLoading ? (
-          <SalonSkeletons count={3} />
-        ) : trendingRows.length ? (
-          <div className="salon-grid">
-            {trendingRows.map((row) => <TrendingCard key={row.id} row={row} navigate={navigate} />)}
-          </div>
+      </div>
+
+      <div
+        id="section12-panel-trending"
+        className="section12-panel"
+        role="tabpanel"
+        aria-labelledby="section12-tab-trending"
+        tabIndex={0}
+        hidden={selectedTab !== "trending"}
+      >
+        <div className="section-heading section12-panel-heading">
+          <span className="eyebrow">{online && !trendingError ? "Trending" : trendingCount ? "Saved results" : "Trending salons"}</span>
+          <h3 id="trending-salons-heading">{trendingHeading}</h3>
+          <p>{online && !trendingError ? "Live marketplace ranking from recent bookings, views and reviews." : trendingCount ? "Pehle load kiye gaye results dikhaye ja rahe hain." : "Marketplace trending results abhi available nahi hain."}</p>
+        </div>
+        <p className="sr-only" role="status" aria-live="polite">{trendingStatus}</p>
+        {!online && !trendingCount ? (
+          <Section12StateCard
+            kind="status"
+            title="Aap offline hain. Live trends update nahi kiye ja sakte."
+            text="Internet reconnect hone par live trending salons dobara load honge."
+            fallbackLabel="View All Salons"
+            onFallback={() => navigate("/salons")}
+          />
+        ) : trendingCount ? (
+          <>
+            {!online && <p className="saved-results-label">Saved results</p>}
+            {online && trendingError && <p className="saved-results-label">Previously loaded results</p>}
+            {!online && <p className="section12-data-note">Aap offline hain. Saved results dikhaye ja rahe hain; inhe current live trends na samjhein.</p>}
+            {online && trendingError && (
+              <div className="section12-inline-state section12-inline-error" role="alert">
+                <span>Trending data refresh nahi ho saka. Pehle load kiye gaye results available hain.</span>
+                <button type="button" className="secondary compact" aria-label="Retry trending salons" onClick={() => void onRetryTrending()}>Dobara Try Karein</button>
+              </div>
+            )}
+            {online && trendingLoading && <p className="section12-data-note" role="status">Results refresh ho rahe hain; available salons visible rahenge.</p>}
+            {online && !trendingLoading && !trendingError && trendingCount < TRENDING_SALONS_DISPLAY_LIMIT && (
+              <p className="section12-partial-status">{trendingCount} reliable trending salon result{trendingCount === 1 ? "" : "s"} available.</p>
+            )}
+            <div className="salon-grid">
+              {renderableTrendingRows.map((row) => (
+                <TrendingCard
+                  key={row.id}
+                  row={row}
+                  salonReference={salonReferences.get(row.id)}
+                  saved={!online || trendingError}
+                  navigate={navigate}
+                />
+              ))}
+            </div>
+          </>
+        ) : trendingLoading ? (
+          <Section12SalonSkeletons count={3} />
+        ) : trendingError ? (
+          <Section12StateCard
+            kind="error"
+            title="Trending data load nahi ho saka. Dobara try karein."
+            text="Live marketplace results abhi available nahi hain."
+            actionLabel="Dobara Try Karein"
+            onAction={() => void onRetryTrending()}
+            fallbackLabel="View All Salons"
+            onFallback={() => navigate("/salons")}
+          />
         ) : (
-          <StateCard title="No trending activity yet" text="Salons rise here from recent bookings, views and reviews (time-decayed). Admin overrides can boost any salon." />
+          <Section12StateCard
+            kind="status"
+            title="Abhi enough trending activity available nahi hai."
+            text="Jaise hi reliable marketplace activity available hogi, salons yahan dikhenge."
+            fallbackLabel="View All Salons"
+            onFallback={() => navigate("/salons")}
+          />
         )}
+        <div className="section12-panel-cta">
+          <button type="button" className="primary" onClick={() => navigate("/salons")}>Sabhi Trending Salons Dekhein</button>
+        </div>
       </div>
 
-      <div aria-labelledby="most-booked-services-heading" style={{ marginTop: 48 }}>
-        <div className="section-heading" style={{ marginBottom: 18 }}>
-          <span className="eyebrow">Popular services</span>
-          <h3 id="most-booked-services-heading">Most Booked Services</h3>
-          <p>Services customers book the most — live from booking activity.</p>
+      <div
+        id="section12-panel-services"
+        className="section12-panel"
+        role="tabpanel"
+        aria-labelledby="section12-tab-services"
+        tabIndex={0}
+        hidden={selectedTab !== "services"}
+      >
+        <div className="section-heading section12-panel-heading">
+          <span className="eyebrow">{online && !popularError ? "Popular services" : serviceCount ? "Saved results" : "Popular services"}</span>
+          <h3 id="most-booked-services-heading">{servicesHeading}</h3>
+          <p>{online && !popularError ? "Services customers book the most — live from aggregate booking activity." : serviceCount ? "Pehle load kiye gaye aggregate service results dikhaye ja rahe hain." : "Aggregate service results abhi available nahi hain."}</p>
         </div>
-        {popularLoading ? (
-          <SalonSkeletons count={3} />
-        ) : popularServices.length ? (
-          <div className="service-grid">
-            {popularServices.map((service) => (
-              <article className="service-card" key={service.service_id}>
-                <div>
-                  <h3>{service.service_name}</h3>
-                  <p>{service.salon_name}</p>
-                  <small>{service.duration_minutes} minutes · {service.booking_count} bookings</small>
-                </div>
-                <div>
-                  <b>{money(service.price_paise)}</b>
-                  <button className="text-button" onClick={() => navigate(`/salons/${catalogItems.find((item) => item.id === service.salon_id)?.website.slug ?? ""}`)}>View salon</button>
-                </div>
-              </article>
-            ))}
-          </div>
+        <p className="sr-only" role="status" aria-live="polite">{servicesStatus}</p>
+        {!online && !serviceCount ? (
+          <Section12StateCard
+            kind="status"
+            title="Aap offline hain. Live trends update nahi kiye ja sakte."
+            text="Internet reconnect hone par most-booked services dobara load hongi."
+            fallbackLabel="Explore Categories"
+            onFallback={() => scrollToCategoriesSection()}
+          />
+        ) : serviceCount ? (
+          <>
+            {!online && <p className="saved-results-label">Saved results</p>}
+            {online && popularError && <p className="saved-results-label">Previously loaded results</p>}
+            {!online && <p className="section12-data-note">Aap offline hain. Saved aggregate results dikhaye ja rahe hain; ye current live ranking nahi hai.</p>}
+            {online && popularError && (
+              <div className="section12-inline-state section12-inline-error" role="alert">
+                <span>Most-booked services refresh nahi ho saki. Pehle load kiye gaye results available hain.</span>
+                <button type="button" className="secondary compact" aria-label="Retry most-booked services" onClick={() => void onRetryPopular()}>Dobara Try Karein</button>
+              </div>
+            )}
+            {online && popularLoading && <p className="section12-data-note" role="status">Results refresh ho rahe hain; available services visible rahengi.</p>}
+            {online && !popularLoading && !popularError && serviceCount < POPULAR_SERVICES_DISPLAY_LIMIT && (
+              <p className="section12-partial-status">{serviceCount} reliable most-booked service result{serviceCount === 1 ? "" : "s"} available.</p>
+            )}
+            <div className="service-grid">
+              {renderablePopularServices.map((service) => (
+                <PopularServiceCard
+                  key={service.service_id}
+                  service={service}
+                  salonReference={salonReferences.get(service.salon_id)}
+                  navigate={navigate}
+                />
+              ))}
+            </div>
+          </>
+        ) : popularLoading ? (
+          <Section12ServiceSkeletons count={4} />
+        ) : popularError ? (
+          <Section12StateCard
+            kind="error"
+            title="Most-booked services load nahi ho saki. Dobara try karein."
+            text="Public aggregate booking results abhi available nahi hain."
+            actionLabel="Dobara Try Karein"
+            onAction={() => void onRetryPopular()}
+            fallbackLabel="Explore Categories"
+            onFallback={() => scrollToCategoriesSection()}
+          />
         ) : (
-          <StateCard title="No booking activity yet" text="Once customers start booking, the most popular services appear here." />
+          <Section12StateCard
+            kind="status"
+            title="Most-booked services abhi available nahi hain."
+            text="Reliable aggregate booking activity available hone par services yahan dikhengi."
+            fallbackLabel="Explore Categories"
+            onFallback={() => scrollToCategoriesSection()}
+          />
+        )}
+        <div className="section12-panel-cta">
+          <button type="button" className="primary" onClick={() => navigate("/salons")}>Popular Services Explore Karein</button>
+        </div>
+      </div>
+
+      <div
+        id="section12-panel-areas"
+        className="section12-panel"
+        role="tabpanel"
+        aria-labelledby="section12-tab-areas"
+        tabIndex={0}
+        hidden={selectedTab !== "areas"}
+      >
+        <div className="section-heading section12-panel-heading">
+          <span className="eyebrow">{online && !trendingError ? "From trending results" : areaCount ? "Saved results" : "Trending areas"}</span>
+          <h3 id="trending-areas-heading">{areasHeading}</h3>
+          <p>{online && !trendingError ? "Ye areas live trending salon results se derive kiye gaye hain." : areaCount ? "Pehle load kiye gaye trending salon results se derived areas dikhaye ja rahe hain." : "Reliable trending area results abhi available nahi hain."}</p>
+        </div>
+        <p className="sr-only" role="status" aria-live="polite">{areasStatus}</p>
+        {!online && !areaCount ? (
+          <Section12StateCard
+            kind="status"
+            title="Aap offline hain. Live trends update nahi kiye ja sakte."
+            text="Saved area results available nahi hain. Internet reconnect hone par trending areas dobara derive honge."
+            fallbackLabel="View All Salons"
+            onFallback={() => navigate("/salons")}
+          />
+        ) : areaCount ? (
+          <>
+            {!online && <p className="saved-results-label">Saved results</p>}
+            {online && trendingError && <p className="saved-results-label">Previously loaded results</p>}
+            {!online && <p className="section12-data-note">Aap offline hain. Saved area results dikhaye ja rahe hain; ye current live trends nahi hain.</p>}
+            {online && trendingError && (
+              <div className="section12-inline-state section12-inline-error" role="alert">
+                <span>Trending areas refresh nahi ho sake. Pehle load kiye gaye results available hain.</span>
+                <button type="button" className="secondary compact" aria-label="Retry trending areas" onClick={() => void onRetryTrending()}>Dobara Try Karein</button>
+              </div>
+            )}
+            {online && trendingLoading && <p className="section12-data-note" role="status">Area results refresh ho rahe hain; available areas visible rahenge.</p>}
+            {online && !trendingLoading && !trendingError && areaCount < TRENDING_AREAS_DISPLAY_LIMIT && (
+              <p className="section12-partial-status">{areaCount} reliable trending area result{areaCount === 1 ? "" : "s"} available.</p>
+            )}
+            <ul className="section12-area-grid" aria-label={online && !trendingError ? "Areas represented in live trending salon results" : "Saved areas from previously loaded trending salon results"}>
+              {trendingAreas.map((area) => (
+                <li className="section12-area-card" key={area.key}>
+                  <span className="eyebrow">{online && !trendingError ? "Trending presence" : "Saved result"}</span>
+                  <h3>{area.name}</h3>
+                  <p>{area.sourceSalon} {online && !trendingError ? "live trending salon results mein dikh raha hai" : "ke pehle load kiye gaye result se"}{area.city ? ` · ${area.city}` : ""}.</p>
+                  <button
+                    type="button"
+                    className="secondary compact"
+                    aria-label={`View salons in ${area.name}`}
+                    onClick={() => navigate(`/salons?area=${encodeURIComponent(area.name)}`)}
+                  >
+                    Area Ke Salons Dekhein
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : trendingLoading ? (
+          <Section12AreaSkeletons count={3} />
+        ) : trendingError ? (
+          <Section12StateCard
+            kind="error"
+            title="Trending areas load nahi ho sake. Dobara try karein."
+            text="Reliable area data derive karne ke liye trending salon results abhi available nahi hain."
+            actionLabel="Dobara Try Karein"
+            onAction={() => void onRetryTrending()}
+            fallbackLabel="View All Salons"
+            onFallback={() => navigate("/salons")}
+          />
+        ) : (
+          <Section12StateCard
+            kind="status"
+            title="Trending area data abhi available nahi hai."
+            text="Reliable trending salon rows mein area details aane par yahan dikhengi."
+            fallbackLabel="View All Salons"
+            onFallback={() => navigate("/salons")}
+          />
         )}
       </div>
     </section>
   );
 }
 
-function TrendingCard({ row, navigate }: { row: TrendingRow; navigate: (path: string) => void }) {
+function TrendingCard({
+  row,
+  salonReference,
+  saved = false,
+  navigate,
+}: {
+  row: TrendingRow;
+  salonReference?: Section12SalonReference;
+  saved?: boolean;
+  navigate: (path: string) => void;
+}) {
+  const name = row.name.trim();
+  const slug = row.slug.trim();
+  const category = row.business_category?.trim() || "Salon";
+  const area = row.area?.trim() || "";
+  const city = row.city?.trim() || "";
+  const location = area && city && area.toLowerCase() !== city.toLowerCase()
+    ? `${area}, ${city}`
+    : area || city || "Location unavailable";
+  const rating = Number(row.rating_avg);
+  const reviews = Number(row.review_count);
+  const hasRating = Number.isFinite(rating) && rating > 0 && rating <= 5 && Number.isFinite(reviews) && reviews >= 0;
+  const ratingText = hasRating ? `${rating.toFixed(1)} ★ · ${reviews} review${reviews === 1 ? "" : "s"}` : "No ratings yet";
+  const bookingCount = Number(row.booking_count);
+  const hasBookingActivity = Number.isFinite(bookingCount) && bookingCount > 0;
+  // Images are resolved only from the already-loaded, verified and published
+  // catalog. A missing/non-public URL uses the shared salon-card fallback.
+  const cover = salonReference?.coverImagePath?.startsWith("http") ? salonReference.coverImagePath : null;
+
   return (
-    <article className="salon-card">
-      <div className="salon-visual"><span>🔥</span><em>{row.overridden ? "ADMIN FEATURED" : "TRENDING"}</em></div>
-      <div className="salon-body"><div className="salon-meta"><span>{row.business_category ?? "Salon"}</span><span>★ {Number(row.rating_avg).toFixed(1)} ({row.review_count})</span></div>
-      <h3>{row.name}</h3><p>{row.area ?? row.city}, {row.city} · {row.booking_count} recent bookings</p><div className="salon-bottom"><button onClick={() => navigate(`/salons/${row.slug}`)}>View salon</button></div></div>
+    <article className="salon-card trending-salon-card">
+      <div className="salon-visual">
+        {cover ? (
+          // eslint-disable-next-line @next/next/no-img-element -- dynamic public salon media uses the existing catalog URL contract.
+          <img src={cover} alt={`${name} salon photo`} width={640} height={380} loading="lazy" decoding="async" />
+        ) : (
+          <span aria-hidden="true">✦</span>
+        )}
+        <em>{saved ? (row.overridden ? "Saved featured" : "Saved") : row.overridden ? "Featured" : "Trending"}</em>
+      </div>
+      <div className="salon-body">
+        <div className="salon-meta">
+          <span>{category}</span>
+          <span aria-label={hasRating ? `${rating.toFixed(1)} out of 5, ${reviews} review${reviews === 1 ? "" : "s"}` : "No ratings yet"}>{ratingText}</span>
+        </div>
+        <h3>{name}</h3>
+        <p>{location}</p>
+        {hasBookingActivity && (
+          <div className="salon-meta">
+            <span>Booking activity</span>
+            <span>{bookingCount} booking{bookingCount === 1 ? "" : "s"}</span>
+          </div>
+        )}
+        <div className="salon-bottom">
+          <button type="button" aria-label={`View ${name}`} onClick={() => navigate(`/salons/${slug}`)}>View Salon</button>
+        </div>
+      </div>
     </article>
   );
 }
@@ -3386,6 +3923,118 @@ function TrendingCard({ row, navigate }: { row: TrendingRow; navigate: (path: st
  * honest fallback. The reason chip renders ONLY the backend-provided reason
  * for personalized rows — never a frontend-invented one.
  */
+function PopularServiceCard({
+  service,
+  salonReference,
+  navigate,
+}: {
+  service: PopularService;
+  salonReference?: Section12SalonReference;
+  navigate: (path: string) => void;
+}) {
+  const serviceName = service.service_name.trim();
+  const salonName = service.salon_name.trim();
+  const durationText = formatPopularServiceDuration(service.duration_minutes);
+  const bookingCount = Number(service.booking_count);
+  const rawPrice = service.price_paise;
+  const pricePaise = Number(rawPrice);
+  const hasPrice = rawPrice != null && Number.isFinite(pricePaise) && pricePaise >= 0;
+  const priceText = hasPrice ? money(pricePaise) : "Price unavailable";
+  const salonSlug = resolvePopularServiceSalonSlug(salonReference, service.salon_id);
+
+  return (
+    <article className="service-card section12-service-card">
+      <div>
+        <h3>{serviceName}</h3>
+        <p>{salonName}</p>
+        <small>
+          {durationText} · <span aria-label={`${bookingCount} bookings from aggregate marketplace activity`}>{bookingCount} booking{bookingCount === 1 ? "" : "s"}</span>
+        </small>
+      </div>
+      <div>
+        <b>{priceText}</b>
+        <button
+          type="button"
+          className="text-button"
+          disabled={!salonSlug}
+          aria-label={`View ${salonName} for ${serviceName}`}
+          title={salonSlug ? `View ${salonName}` : "Salon page unavailable"}
+          onClick={() => salonSlug && navigate(`/salons/${salonSlug}`)}
+        >
+          View Salon
+        </button>
+      </div>
+    </article>
+  );
+}
+
+type Section12StateCardProps = {
+  kind: "status" | "error";
+  title: string;
+  text: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  fallbackLabel: string;
+  onFallback: () => void;
+};
+
+/** Tab-specific copy/actions with shared Nexora state-card presentation. */
+function Section12StateCard({
+  kind,
+  title,
+  text,
+  actionLabel,
+  onAction,
+  fallbackLabel,
+  onFallback,
+}: Section12StateCardProps) {
+  return (
+    <div className="state-card section12-state-card" role={kind === "error" ? "alert" : "status"}>
+      <span aria-hidden="true">✦</span>
+      <h3>{title}</h3>
+      <p>{text}</p>
+      <div className="button-row">
+        {actionLabel && onAction && <button type="button" className="secondary" aria-label={`${actionLabel}: ${title}`} onClick={onAction}>{actionLabel}</button>}
+        <button type="button" className="secondary" aria-label={`${fallbackLabel}: ${title}`} onClick={onFallback}>{fallbackLabel}</button>
+      </div>
+    </div>
+  );
+}
+
+const SECTION12_SKELETON_KEYS = ["one", "two", "three", "four", "five", "six"] as const;
+
+function Section12SalonSkeletons({ count }: { count: number }) {
+  return (
+    <div className="salon-grid section12-skeleton-grid" aria-hidden="true">
+      {SECTION12_SKELETON_KEYS.slice(0, count).map((key) => (
+        <div className="salon-card skeleton" key={`salon-skeleton-${key}`}><div /><p /><p /><p /></div>
+      ))}
+    </div>
+  );
+}
+
+function Section12ServiceSkeletons({ count }: { count: number }) {
+  return (
+    <div className="service-grid section12-skeleton-grid" aria-hidden="true">
+      {SECTION12_SKELETON_KEYS.slice(0, count).map((key) => (
+        <div className="service-card section12-service-card section12-service-skeleton" key={`service-skeleton-${key}`}>
+          <div><span /><span /><span /></div><div><span /><span /></div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Section12AreaSkeletons({ count }: { count: number }) {
+  return (
+    <div className="section12-area-grid section12-skeleton-grid" aria-hidden="true">
+      {SECTION12_SKELETON_KEYS.slice(0, count).map((key) => (
+        <div className="section12-area-card section12-area-skeleton" key={`area-skeleton-${key}`}><span /><span /><span /></div>
+      ))}
+    </div>
+  );
+}
+
 function RecommendationCard({
   row,
   navigate,
@@ -3485,21 +4134,34 @@ function useMarketplaceStats(online: boolean) {
 function usePopularServices(online: boolean) {
   const [services, setServices] = useState<PopularService[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const requestVersion = useRef(0);
   const load = useCallback(async () => {
+    const version = ++requestVersion.current;
     setLoading(true);
+    setError(false);
     try {
       const client = getClient();
-      if (!client) return;
-      const { data, error } = await client.rpc("marketplace_popular_services", { p_limit: 6 });
-      if (error) throw error;
-      setServices((data ?? []) as PopularService[]);
-    } catch { setServices([]); } finally { setLoading(false); }
+      if (!client) throw new Error("Marketplace client unavailable");
+      const { data, error: rpcError } = await client.rpc("marketplace_popular_services", { p_limit: 6 });
+      if (rpcError) throw rpcError;
+      if (version === requestVersion.current) setServices((data ?? []) as PopularService[]);
+    } catch {
+      // Keep already-loaded aggregate rows during a failed refresh. Raw backend
+      // details never leave this hook; Section 12 receives only a boolean.
+      if (version === requestVersion.current) setError(true);
+    } finally {
+      if (version === requestVersion.current) setLoading(false);
+    }
   }, []);
   useEffect(() => {
     const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
-    return () => window.clearTimeout(t);
+    return () => {
+      window.clearTimeout(t);
+      requestVersion.current += 1;
+    };
   }, [load, online]);
-  return { services, loading, load };
+  return { services, loading, load, error };
 }
 
 /** Admin-configurable homepage section order + visibility. */
@@ -3708,20 +4370,32 @@ function useTopRated(online: boolean) {
 function useTrending(online: boolean) {
   const [rows, setRows] = useState<TrendingRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const requestVersion = useRef(0);
   const load = useCallback(async () => {
+    const version = ++requestVersion.current;
     setLoading(true);
+    setError(false);
     try {
-      const client = getClient(); if (!client) return;
-      const { data, error } = await client.rpc("marketplace_trending", { p_limit: 6 });
-      if (error) throw error;
-      setRows((data ?? []) as TrendingRow[]);
-    } catch { setRows([]); } finally { setLoading(false); }
+      const client = getClient(); if (!client) throw new Error("Marketplace client unavailable");
+      const { data, error: rpcError } = await client.rpc("marketplace_trending", { p_limit: 6 });
+      if (rpcError) throw rpcError;
+      if (version === requestVersion.current) setRows((data ?? []) as TrendingRow[]);
+    } catch {
+      // Preserve trusted rows during retry failure; never expose RPC/SQL text.
+      if (version === requestVersion.current) setError(true);
+    } finally {
+      if (version === requestVersion.current) setLoading(false);
+    }
   }, []);
   useEffect(() => {
     const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
-    return () => window.clearTimeout(t);
+    return () => {
+      window.clearTimeout(t);
+      requestVersion.current += 1;
+    };
   }, [load, online]);
-  return { rows, loading, load };
+  return { rows, loading, load, error };
 }
 
 /** Record public-marketplace interaction events (auth required, deduped server-side). */
