@@ -74,6 +74,120 @@ button { cursor:pointer; }
   .hero2-cta { transition:none !important; }
   .hero2-cta:active { transform:none !important; }
 }
+/* Smooth anchor scrolling (Hero secondary CTA → #nexora-apps and any other
+   in-page jump). Only enabled when the user has NOT asked for reduced
+   motion; the JS handler also checks matchMedia, so both layers agree. */
+@media (prefers-reduced-motion:no-preference) {
+  html { scroll-behavior:smooth; }
+}
+/* The apps section receives programmatic focus after the in-page jump so
+   assistive tech lands on the new content. It is a container, not an
+   interactive control, so no visible ring is drawn for that focus. */
+#nexora-apps:focus { outline:none; }
+/* Section 04 — app directory status line + card badges. */
+.apps-status { margin:0 0 18px; font-size:13px; font-weight:600; color:var(--muted); }
+.app-card-badge { display:inline-block; margin:0 0 12px; padding:4px 10px; border-radius:999px; background:var(--cream,#fff5f8); border:1px solid var(--line,#f6dce2); color:#8c7077; font-size:11px; font-weight:700; letter-spacing:.04em; min-height:0; }
+/* Card buttons keep a visible keyboard focus and an honest disabled state
+   while the account check is running. */
+.app-card button:disabled { opacity:.55; cursor:wait; }
+.app-card button:focus-visible { outline:2px solid #8e004b; outline-offset:2px; border-radius:8px; }
+/* Section 05 — Beauty Categories: whole card is one big accessible button.
+   The visible "Explore" control owns focus; its ::after stretches the click
+   target over the entire card, so pointer and keyboard users both win. */
+.category-card { position:relative; display:flex; flex-direction:column; align-items:flex-start; text-align:left; }
+.category-card .category-icon { width:26px; height:26px; display:inline-grid; place-items:center; }
+.category-card .category-icon svg { width:100%; height:100%; }
+.category-open { margin-top:auto; border:0; background:none; color:var(--pink-dark); font-weight:800; font-size:14px; padding:6px 0; cursor:pointer; }
+.category-open::after { content:""; position:absolute; inset:0; border-radius:inherit; }
+.category-card:hover { border-color:var(--pink); }
+.category-card:focus-within { outline:2px solid #8e004b; outline-offset:2px; }
+.categories-cta { margin-top:26px; display:flex; justify-content:center; }
+/* Section 05 grid: 4–5 balanced columns on desktop, 2–3 on tablet, 2-column
+   compact on mobile — reuses the existing 22px gap + breakpoints. */
+.categories-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:22px; }
+@media(max-width:920px) { .categories-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(max-width:620px) { .categories-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; } .category-card { padding:20px; } .category-card h3 { font-size:17px; overflow-wrap:anywhere; } .category-card p { min-height:0; } }
+.categories-more { margin-top:18px; display:flex; justify-content:center; }
+.saved-results-label { display:inline-block; margin:0 0 14px; padding:5px 12px; border-radius:999px; background:#fff; border:1px solid var(--line); color:#8c7077; font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+/* Category-card skeletons mirror real card dimensions (icon block + lines). */
+.category-card-skeleton { min-height:212px; pointer-events:none; }
+.category-skeleton-icon { width:45px; height:45px; border-radius:14px; background:#f6e3ea; margin-bottom:25px; animation:categorySkeletonPulse 1.4s ease-in-out infinite; }
+.category-skeleton-line { height:14px; border-radius:7px; background:#f6e3ea; margin-bottom:12px; animation:categorySkeletonPulse 1.4s ease-in-out infinite; }
+.category-skeleton-line-long { width:72%; }
+.category-skeleton-line-short { width:46%; }
+@keyframes categorySkeletonPulse { 0%,100% { opacity:1; } 50% { opacity:.45; } }
+@media (prefers-reduced-motion:reduce) {
+  .category-skeleton-icon, .category-skeleton-line { animation:none; }
+}
+/* Visually hidden but screen-reader announced (live region). */
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+/* Section 06 — Nearby Shops. Reuses existing palette/spacing/radii tokens. */
+.nearby-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-bottom:10px; }
+.nearby-controls label { display:flex; flex-direction:column; gap:6px; font-size:12px; font-weight:700; color:var(--muted); }
+.nearby-controls select { min-height:44px; padding:9px 11px; border-radius:12px; border:1px solid var(--line); background:#fff; color:var(--ink); font-size:13px; }
+.nearby-controls > button { min-height:44px; }
+.nearby-gps-note { margin:0 0 8px; font-size:12px; color:var(--muted); }
+.nearby-status { margin:0 0 12px; font-size:13px; font-weight:600; color:var(--muted); }
+.nearby-actions { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 14px; }
+.nearby-actions .secondary { min-height:44px; }
+.nearby-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:22px; }
+@media(max-width:920px) { .nearby-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:620px) { .nearby-grid { grid-template-columns:1fr; } }
+.nearby-filter-panel { border:1px solid var(--line); background:#fff; border-radius:18px; padding:16px; margin:0 0 16px; box-shadow:0 12px 30px #55132f10; }
+.nearby-filter-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; align-items:end; }
+.nearby-filter-grid label { display:flex; flex-direction:column; gap:6px; font-size:12px; font-weight:700; color:var(--muted); }
+.nearby-filter-grid select { min-height:44px; padding:9px 11px; border-radius:12px; border:1px solid var(--line); background:#fff; color:var(--ink); font-size:13px; }
+.nearby-filter-grid select:disabled { opacity:.55; cursor:not-allowed; }
+.nearby-check { flex-direction:row !important; align-items:center; gap:8px !important; font-size:13px !important; min-height:44px; }
+.nearby-check input { width:18px; height:18px; }
+.nearby-filter-note { grid-column:1/-1; margin:0; font-size:12px; color:var(--muted); }
+.nearby-filter-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
+@media(max-width:620px) {
+  /* Mobile: accessible bottom sheet (focus trap + Escape in the component). */
+  .nearby-filter-panel { position:fixed; left:0; right:0; bottom:0; z-index:70; margin:0; border-radius:18px 18px 0 0; max-height:72vh; overflow:auto; box-shadow:0 -12px 40px #26181c33; }
+}
+/* Verified badge + accessible tooltip (backend-truth copy only). */
+.verified-badge-wrap { position:relative; display:inline-block; }
+.verified-badge { border:1px solid #bfe3c8; background:#e9f8f1; color:#12704c; font-size:11px; font-weight:800; border-radius:999px; padding:5px 10px; cursor:pointer; min-height:28px; }
+.verified-tooltip { position:absolute; bottom:calc(100% + 6px); left:0; z-index:40; width:220px; background:#26181c; color:#fff; font-size:12px; line-height:1.45; padding:8px 10px; border-radius:10px; box-shadow:0 10px 26px #26181c40; }
+@media(max-width:620px) { .verified-tooltip { left:auto; right:0; } }
+/* Section 07 — Open Now: compact wrapped chips (mobile-friendly, >=44px),
+   status badges with visible text labels (never color-only). */
+.open-now-filters { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:0 0 16px; }
+.open-now-mandatory { font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:#12704c; background:#e9f8f1; border:1px solid #bfe3c8; padding:10px 12px; border-radius:999px; min-height:44px; display:inline-flex; align-items:center; }
+.open-now-chip { min-height:44px; padding:8px 14px; border-radius:999px; border:1px solid var(--line); background:#fff; color:var(--ink); font-size:13px; font-weight:700; cursor:pointer; }
+.open-now-chip.active { background:#8e004b; border-color:#8e004b; color:#fff; }
+.open-now-chip:disabled { opacity:.55; cursor:not-allowed; }
+.open-now-chip:focus-visible, .open-now-select:focus-visible { outline:2px solid #8e004b; outline-offset:2px; }
+.open-now-select { min-height:44px; padding:8px 12px; border-radius:12px; border:1px solid var(--line); background:#fff; color:var(--ink); font-size:13px; }
+.open-now-badges { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:6px 0 4px; }
+.open-badge { display:inline-block; background:#e9f8f1; color:#12704c; border:1px solid #bfe3c8; font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; }
+.open-badge-offline { background:#fff; color:#8c7077; border-color:var(--line); }
+.open-until { font-size:12px; font-weight:700; color:var(--muted); }
+.closing-soon { display:inline-block; background:#fff4cc; color:#7d540b; border:1px solid #ead39b; font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; }
+/* Section 10 — Jaipur's Top 5: semantic ordered rank list, visible rank
+   (renumbered from "Section 08" per locked MEMORY.md order)
+   badges (never color/size-only), #1 slightly featured on desktop only. */
+.top-jaipur-list { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:22px; }
+.top-jaipur-item { position:relative; min-width:0; }
+.top-jaipur-card { position:relative; }
+.rank-badge { position:absolute; top:12px; left:12px; z-index:2; background:#26181c; color:#fff; font-size:12px; font-weight:800; letter-spacing:.03em; padding:5px 10px; border-radius:999px; box-shadow:0 6px 16px #26181c33; }
+@media(min-width:1024px) {
+  .top-jaipur-item:first-child { grid-column:span 2; }
+  .top-jaipur-card-featured .salon-visual { height:230px; }
+}
+@media(max-width:920px) { .top-jaipur-list { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:620px) { .top-jaipur-list { grid-template-columns:1fr; } }
+/* Section 11 — Smart Picks: reason chip (visible text, SR-available) and
+   (renumbered from "Section 09" per locked MEMORY.md order)
+   section actions row. Cards reuse the shared salon-card + nearby-grid. */
+.smart-picks-reason { margin:8px 0 0; font-size:12px; font-weight:600; color:#594047; background:var(--cream,#fff5f8); border:1px solid var(--line,#f6dce2); padding:6px 10px; border-radius:999px; }
+.smart-picks-actions { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 14px; }
+.smart-picks-actions .secondary { min-height:44px; }
+/* Smart Search (Section 03-safe): make keyboard focus unambiguous on the
+   query input and the Jaipur area select. */
+.hero2-search-input:focus-within { border-color:#8e004b !important; box-shadow:0 0 0 3px rgba(142,0,75,.12); }
+.hero2-area-select:focus-visible { outline:2px solid #8e004b; outline-offset:2px; }
 
 .hero { min-height:680px; padding:92px clamp(24px,7vw,110px); display:grid; grid-template-columns:1.12fr .88fr; gap:70px; align-items:center; background:radial-gradient(circle at 15% 15%,#ffd9eb 0,transparent 32%),linear-gradient(135deg,#fff 0,#fff7fb 65%,#fce3ee 100%); }
 .hero-copy { max-width:720px; }

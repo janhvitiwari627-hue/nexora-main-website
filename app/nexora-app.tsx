@@ -35,6 +35,27 @@ import {
   roleQueryForPortalRole,
   type PortalKey,
 } from "./lib/portalRoutes";
+// Phase 1 · Section 02 Hero — verified trust claims (data only, no JSX).
+import { HERO_TRUST_CLAIMS } from "./lib/heroTrustClaims";
+// Phase 1 · Section 03 Smart Search — Jaipur boundary check for the
+// user-triggered GPS flow (answers yes/no only; raw coordinates never leave
+// the device, the URL or the UI).
+import { isInsideJaipur } from "./lib/jaipurBounds";
+// Phase 1 · Section 05 — approved category icon library (SVG only; raw
+// emoji/admin icon strings are never rendered directly).
+import { CategoryIcon } from "./lib/categoryIcons";
+// Phase 1 · Section 07 — Open Now pure time logic (IST-safe, unit-tested;
+// never claims open on missing/invalid hours).
+import {
+  dayOfWeekIST,
+  minutesNowIST as minutesNowISTShared,
+  openNowVerdict,
+  type OpenNowVerdict,
+} from "./lib/openNow";
+// Phase 1 · Section 10 — Jaipur city eligibility (real city field only;
+// (renumbered from "Section 08" per locked MEMORY.md order — PHASE1_SECTION10.md).
+// area names and missing cities never qualify).
+import { isJaipurCity } from "./lib/jaipurCity";
 // GPS location system — browser-native geolocation only. No Google
 // Geolocation/Maps Geocoding, no Mapbox, no Nominatim, no API keys.
 import {
@@ -121,6 +142,9 @@ type SearchRow = {
   rating_avg: number; review_count: number; booking_count: number;
   starting_price_paise: number | null; cover_image_path: string | null;
   has_offer: boolean; score: number;
+  /** On-device distance from the user's own GPS fix (Section 03). Present
+      only when the distance filter is active; never the raw coordinates. */
+  distanceKm?: number | null;
 };
 type Suggestion = { name: string; slug: string; kind: "salon" | "category" };
 type CategoryRow = { name: string; slug: string; icon: string; sort_order: number; salon_count: number; service_count: number };
@@ -474,26 +498,97 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   );
 }
 
+/**
+ * Secondary Hero CTA — scroll to the apps section ("Aap Nexora Par Kya Karna
+ * Chahte Hain?", id=nexora-apps). Keeps the real `href="#nexora-apps"` for
+ * keyboard/no-JS semantics, then enhances: smooth scroll when motion is
+ * allowed, instant jump under prefers-reduced-motion. The section's own
+ * scroll-margin keeps the heading clear of the sticky header.
+ */
+function scrollToAppsSection(event: { preventDefault: () => void }) {
+  const target = document.getElementById("nexora-apps");
+  if (!target) return;
+  event.preventDefault();
+  let reduced = false;
+  try {
+    reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    reduced = false;
+  }
+  target.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+  target.setAttribute("tabindex", "-1");
+  target.focus({ preventScroll: true });
+  window.history.replaceState(window.history.state, "", "#nexora-apps");
+}
+
+/**
+ * Header "Categories" link — smooth-scroll to the Beauty Categories section
+ * (id=categories). Same reduced-motion behaviour as the apps-section jump;
+ * scroll-margin keeps the heading clear of the sticky header.
+ */
+function scrollToCategoriesSection(event?: { preventDefault: () => void }) {
+  const target = document.getElementById("categories");
+  if (!target) return;
+  event?.preventDefault();
+  let reduced = false;
+  try {
+    reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    reduced = false;
+  }
+  target.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+  target.setAttribute("tabindex", "-1");
+  target.focus({ preventScroll: true });
+  window.history.replaceState(window.history.state, "", "#categories");
+}
+
+/** Section 05 — initial visible category count (spec: desktop 8–10, mobile 6–8). */
+const CATEGORIES_INITIAL_COUNT = 8;
+
+/**
+ * Section 05 — honest counts line. Real numbers only (live RPC values);
+ * when a count is unavailable it is NEVER faked as 0 — the neutral copy
+ * "Explore available listings" is shown instead. Grammar: 1 salon / 2 salons,
+ * 1 service / 2 services.
+ */
+function categoryCountsCopy(salonCount: number | null | undefined, serviceCount: number | null | undefined): string {
+  const salons = typeof salonCount === "number" && Number.isFinite(salonCount) ? salonCount : null;
+  const services = typeof serviceCount === "number" && Number.isFinite(serviceCount) ? serviceCount : null;
+  if (salons === null && services === null) return "Explore available listings";
+  const parts: string[] = [];
+  if (salons !== null) parts.push(`${salons} salon${salons === 1 ? "" : "s"}`);
+  if (services !== null) parts.push(`${services} service${services === 1 ? "" : "s"}`);
+  return parts.join(" • ");
+}
+
 function HomePage({ navigate, online, authState, refCode }: { navigate: (path: string) => void; online: boolean; authState: AuthState; refCode: string }) {
-  const { items, loading, error } = useCatalog(online);
+  // The catalog fetch error is surfaced by CatalogStrip's own StateCard
+  // (with Retry) in the "Published salons" section; Section 06 (Nearby Shops)
+  // uses it for its own honest error state.
+  const { items, loading, error: catalogError } = useCatalog(online);
   const { statsBySalon } = useMarketplaceStats(online);
   const { services: popularServices, loading: popularLoading } = usePopularServices(online);
   const { personalized, favorites, ready } = useCustomerSuggestions(online, authState.session, items);
-  const { rows: recommendationRows, loading: recommendationsLoading, isPersonalized } = useRecommendations(online, authState.session);
+  const { rows: recommendationRows, loading: recommendationsLoading, isPersonalized, load: refreshRecommendations, error: recommendationsError } = useRecommendations(online, authState.session);
   const { plans: membershipPlans, loading: membershipLoading } = useMembershipPlans(online);
   const { status: membershipStatus } = useMyMembership(online, authState.session);
   const { visible } = useHomepageSections(online);
   const { rows: recentlyViewed, consent: rvConsent, consentLoaded, loading: rvLoading, setConsentPref } = useRecentlyViewed(online, authState.session);
   const [homeQuery, setHomeQuery] = useState("");
   const [homeLocation, setHomeLocation] = useState("");
+  // Section 05 — "Sabhi Categories Dekhein" expandable control: initially only
+  // CATEGORIES_INITIAL_COUNT live categories render; the rest stay one click away.
+  const [showAllCategories, setShowAllCategories] = useState(false);
   const isCustomer = authState.session && authState.role === "customer";
-  const { categories: adminCategories, loading: categoriesLoading } = useMarketplaceCategories(online);
+  const { categories: adminCategories, loading: categoriesLoading, error: categoriesError, load: loadCategories } = useMarketplaceCategories(online);
   const { sponsored, loading: sponsoredLoading } = useSponsored(online);
-  const { rows: topRatedRows, loading: topRatedLoading } = useTopRated(online);
+  const { rows: topRatedRows, loading: topRatedLoading, error: topRatedError, load: loadTopRated } = useTopRated(online);
   const { rows: trendingRows, loading: trendingLoading } = useTrending(online);
   const { rows: nearbyRows, loading: nearbyLoading } = useNearby(online);
-  // Live GPS (watchPosition) + on-device Haversine ranking.
-  const location = useLocation();
+  // Section 06: OBSERVE only (auto:false) — the homepage never requests GPS
+  // permission on page load. Acquisition starts only from the explicit
+  // "Use My Current Location" action below (or the signed-in shell flow).
+  const location = useLocation({ auto: false });
   const { buckets: nearbyBuckets, ranked: nearbyRanked } = useNearbySalons(nearbyRows, location.fix);
   const categories = Array.from(new Set(items.map(i=>i.business_category).filter(Boolean))) as string[];
   // Live customer signals: rating avg + review count from customer_reviews,
@@ -516,6 +611,167 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   }, [items, statsBySalon]);
   const showForYou = isCustomer && ready && (personalized !== null || favorites.length > 0);
 
+  // ---- Section 06: Nearby Shops -------------------------------------------
+  // Honest defaults: Jaipur is the DEFAULT location (never presented as
+  // detected). GPS starts only from the explicit "Use My Current Location"
+  // action. All rows come from the live published catalog — nothing faked.
+  const [nearbyArea, setNearbyArea] = useState("");
+  const [nearbyCity, setNearbyCity] = useState("Jaipur");
+  const [nearbyDraft, setNearbyDraft] = useState<NearbyFilters>(NEARBY_FILTERS_EMPTY);
+  const [nearbyFilters, setNearbyFilters] = useState<NearbyFilters>(NEARBY_FILTERS_EMPTY);
+  const [nearbyPanelOpen, setNearbyPanelOpen] = useState(false);
+  const nearbyPanelRef = useRef<HTMLDivElement | null>(null);
+  const nearbyFilterToggleRef = useRef<HTMLButtonElement | null>(null);
+  const nearbyAreaSelectRef = useRef<HTMLSelectElement | null>(null);
+
+  const gpsFix = location.fix;
+  const insideJaipur = isInsideJaipur(gpsFix);
+  const nearbyFixUsable = gpsFix != null && insideJaipur;
+  const nearbyActiveFilterCount = countActiveNearbyFilters(nearbyFilters);
+  const nearbyModeIsFiltered = nearbyActiveFilterCount > 0 || nearbyArea !== "";
+
+  // Area-filtered base (real published catalog; same matching semantics as
+  // the /salons client-side area filter).
+  const nearbyBaseItems = useMemo(() => {
+    const needle = nearbyArea.trim().toLowerCase();
+    if (!needle) return items;
+    return items.filter((item) =>
+      (item.city ?? "").toLowerCase().includes(needle) ||
+      (item.area ?? "").toLowerCase().includes(needle) ||
+      (item.address ?? "").toLowerCase().includes(needle),
+    );
+  }, [items, nearbyArea]);
+  const nearbyBaseIdsKey = nearbyBaseItems.map((item) => item.id).join(",");
+  const nearbyHours = useTodayHours(online && !nearbyLoading, nearbyBaseItems.map((item) => item.id), nearbyBaseIdsKey);
+  // Section 07 — shared hours (salon_hours + config fallback) for the legacy
+  // OpenTodayStrip, so no duplicate request runs.
+  const openTodayPreloaded = useMemo(() => {
+    const map: Record<string, { opens: string | null; closes: string | null; closed: boolean }> = {};
+    for (const item of nearbyBaseItems) {
+      const hours = nearbyHours[item.id];
+      if (hours) { map[item.id] = { opens: hours.opens_at, closes: hours.closes_at, closed: Boolean(hours.is_closed) }; continue; }
+      const cfg = configOpeningHours(item);
+      if (cfg) map[item.id] = { opens: cfg.opens_at, closes: cfg.closes_at, closed: cfg.is_closed };
+    }
+    return { todayRows: map, loading: nearbyLoading };
+  }, [nearbyBaseItems, nearbyHours, nearbyLoading]);
+
+  // Pipeline for manual-area / filtered mode: real distances (approved
+  // coordinates only), real rating/price/hours filters, nearest-first with
+  // missing-distance rows last. Capped for the homepage.
+  const nearbyPipelineRows = useMemo<NearbyShopRow[]>(() => {
+    if (!nearbyModeIsFiltered) return [];
+    let rows: NearbyShopRow[] = nearbyBaseItems.map((item) => ({
+      item,
+      distanceKm:
+        nearbyFixUsable && gpsFix && item.approval_status === "approved" &&
+        typeof item.latitude === "number" && typeof item.longitude === "number"
+          ? haversineKm(gpsFix.latitude, gpsFix.longitude, Number(item.latitude), Number(item.longitude))
+          : null,
+    }));
+    if (nearbyFilters.radius && nearbyFilters.radius !== "nearest" && nearbyFixUsable) {
+      const maxKm = Number(nearbyFilters.radius);
+      rows = rows.filter((row) => row.distanceKm != null && row.distanceKm <= maxKm);
+    }
+    if (nearbyFilters.rating) {
+      const min = Number(nearbyFilters.rating);
+      rows = rows.filter((row) => Number(row.item.rating_average ?? 0) >= min && Number(row.item.review_count ?? 0) > 0);
+    }
+    if (nearbyFilters.price) {
+      const maxPaise = Number(nearbyFilters.price);
+      rows = rows.filter((row) =>
+        typeof row.item.starting_price_paise === "number" &&
+        row.item.starting_price_paise > 0 &&
+        row.item.starting_price_paise <= maxPaise,
+      );
+    }
+    if (nearbyFilters.gender) {
+      rows = rows.filter((row) => nearbyGenderMatches(nearbyFilters.gender, row.item.business_category));
+    }
+    if (nearbyFilters.openNow && online) {
+      rows = rows.filter((row) => salonOpenState(row.item, nearbyHours[row.item.id]) === true);
+    }
+    const withDistance = rows.filter((row) => row.distanceKm != null)
+      .sort((a, b) => Number(a.distanceKm) - Number(b.distanceKm));
+    const withoutDistance = rows.filter((row) => row.distanceKm == null);
+    return [...withDistance, ...withoutDistance].slice(0, NEARBY_DISPLAY_LIMIT);
+  }, [nearbyModeIsFiltered, nearbyBaseItems, nearbyFilters, nearbyFixUsable, gpsFix, nearbyHours, online]);
+
+  // Honest location status line (polite live region).
+  let nearbyGpsState: "default" | "detecting" | "active" | "denied" | "unavailable" | "outside" = "default";
+  let nearbyStatus: string;
+  if (location.isImproving) {
+    nearbyGpsState = "detecting";
+    nearbyStatus = "Location detect ho rahi hai…";
+  } else if (gpsFix && !insideJaipur) {
+    nearbyGpsState = "outside";
+    nearbyStatus = "Aapki current location Jaipur se bahar hai. Filhaal Jaipur ke available salons dikhaye ja rahe hain.";
+  } else if (gpsFix) {
+    nearbyGpsState = "active";
+    nearbyStatus = `Aapki current location ke paas ke salons${nearbyArea ? ` — ${nearbyArea}` : ""} (nearest pehle). ${locationHeadline(location)}`;
+  } else if (location.status === "denied") {
+    nearbyGpsState = "denied";
+    nearbyStatus = "Location permission nahi mili. Jaipur ke salons dikhaye ja rahe hain — aap area manually change kar sakte hain.";
+  } else if (location.status === "timeout" || location.status === "unavailable" || location.status === "unsupported") {
+    nearbyGpsState = "unavailable";
+    nearbyStatus = "Current location detect nahi ho saki. Jaipur se results dikhaye ja rahe hain.";
+  } else {
+    nearbyStatus = `Jaipur (default location)${nearbyArea ? ` — ${nearbyArea}` : ""} ke salons dikhai ja rahe hain.`;
+  }
+
+  const focusNearbyAreaSelect = () => {
+    nearbyAreaSelectRef.current?.focus();
+    nearbyAreaSelectRef.current?.scrollIntoView({ block: "center" });
+  };
+  const continueWithJaipur = () => {
+    setNearbyArea("");
+    setNearbyDraft((f) => ({ ...f, radius: "" }));
+    setNearbyFilters((f) => ({ ...f, radius: "" }));
+  };
+  const clearNearbyFilters = () => {
+    setNearbyDraft(NEARBY_FILTERS_EMPTY);
+    setNearbyFilters(NEARBY_FILTERS_EMPTY);
+  };
+  // Section CTA → existing /salons route with EXISTING parameter names only.
+  const openAllNearbySalons = () => {
+    const params = new URLSearchParams();
+    if (nearbyArea) params.set("area", nearbyArea);
+    if (nearbyFilters.rating) params.set("rating", nearbyFilters.rating);
+    if (nearbyFilters.price) params.set("price", nearbyFilters.price);
+    if (nearbyFilters.gender) params.set("gender", nearbyFilters.gender);
+    if (nearbyFilters.openNow) params.set("open", "1");
+    if (nearbyFixUsable && (nearbyFilters.radius === "2" || nearbyFilters.radius === "5" || nearbyFilters.radius === "10")) {
+      params.set("dist", nearbyFilters.radius);
+    }
+    const qs = params.toString();
+    navigate(qs ? `/salons?${qs}` : "/salons");
+  };
+
+  // Filter panel: focus trap + Escape-to-close + return focus to the toggle.
+  useEffect(() => {
+    if (!nearbyPanelOpen) return;
+    const panel = nearbyPanelRef.current;
+    if (!panel) return;
+    const focusables = () => Array.from(panel.querySelectorAll<HTMLElement>('button, select, input, [tabindex]:not([tabindex="-1"])'));
+    focusables()[0]?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setNearbyPanelOpen(false);
+        nearbyFilterToggleRef.current?.focus();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const list = focusables();
+      if (!list.length) return;
+      const first = list[0];
+      const last = list[list.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [nearbyPanelOpen]);
+
   return (
     <main className="w-full bg-[#fff8f8]">
       {/* Homepage header — marketplace navigation + auth entry points.
@@ -530,7 +786,7 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
           </button>
           <nav aria-label="Marketplace navigation" className="hidden md:flex items-center gap-6">
             <button onClick={() => navigate("/salons")} className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#594047] hover:text-[#26181c] transition-colors">Explore</button>
-            <button onClick={() => navigate("/salons")} className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#594047] hover:text-[#26181c] transition-colors">Categories</button>
+            <button type="button" onClick={() => scrollToCategoriesSection()} aria-label="Beauty Categories section par jaayein" className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#594047] hover:text-[#26181c] transition-colors">Categories</button>
             <button onClick={() => navigate("/salons")} className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#594047] hover:text-[#26181c] transition-colors">Services</button>
             <button onClick={() => window.location.assign("/job-portal")} className="text-[11px] font-semibold tracking-[0.08em] uppercase text-[#594047] hover:text-[#26181c] transition-colors">Jobs</button>
           </nav>
@@ -578,20 +834,21 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
               id="hero-heading"
               className="hero2-rise hero2-d1 mt-6 text-[34px] font-semibold leading-[1.08] tracking-[-0.02em] text-[#26181c] sm:text-[42px] lg:text-[56px]"
             >
-              Book Jaipur&rsquo;s best salons,
-              <br className="hidden sm:block" />{" "}
-              <span className="font-light italic text-[#8e004b]">all in one place</span>
+              Beauty Services Se Business Growth Tak
+              <br />
+              <span className="font-light italic text-[#8e004b]">
+                &mdash; Sab Kuch Ek Platform Par
+              </span>
             </h1>
 
             <p className="hero2-rise hero2-d2 mt-5 max-w-xl text-[16px] leading-[1.65] text-[#594047] sm:text-[18px]">
-              Nexora connects customers, salon owners, growth partners and beauty
-              professionals on one platform. Browse verified salon websites, see
-              real services and prices, and book directly with the salon.
+              Salon book karein, apna business manage karein, beauty jobs paayein,
+              distributors se connect karein aur apni website launch karein.
             </p>
 
             {/* ── Calls to action ──────────────────────────────────────── */}
             <div className="hero2-rise hero2-d3 mt-8 flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
-              {/* PRIMARY — the marketplace itself. */}
+              {/* PRIMARY — the marketplace itself (route `/salons`). */}
               <button
                 type="button"
                 onClick={() => navigate("/salons")}
@@ -601,28 +858,26 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
                 <span aria-hidden="true">&rarr;</span>
               </button>
 
-              {/* SECONDARY — in-page jump to the Apps section (Section 02 scope). */}
+              {/* SECONDARY — labelled jump to the apps section ("Aap Nexora Par
+                  Kya Karna Chahte Hain?" — id=nexora-apps). Smooth-scrolls for
+                  pointer/keyboard users and honours prefers-reduced-motion. */}
               <a
                 href="#nexora-apps"
+                onClick={(event) => scrollToAppsSection(event)}
                 className="hero2-cta inline-flex h-[52px] w-full items-center justify-center gap-2 rounded-[14px] border border-[#e9c9d3] bg-white px-7 text-[14px] font-bold text-[#26181c] transition-colors hover:border-[#d8a9b8] hover:bg-[#fff0f2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b] sm:w-auto"
               >
-                See the Nexora apps
+                Nexora Apps Dekhein
                 <span aria-hidden="true">&darr;</span>
               </a>
             </div>
 
             {/* ── Trust indicators ─────────────────────────────────────────
-                Honest by construction: each item states a platform rule or
-                guarantee that is enforced in code/RLS, not a metric we would
-                have to invent. No counts, no star ratings, no testimonials.
+                Every claim comes from HERO_TRUST_CLAIMS (app/lib/heroTrustClaims.ts),
+                where each one carries the backend gate / RPC / code contract that
+                verifies it. Unsupported claims are removed there, never softened here.
             */}
             <ul className="hero2-rise hero2-d4 mt-9 grid w-full grid-cols-1 gap-x-6 gap-y-3 border-t border-[#f6dce2] pt-7 sm:grid-cols-2 lg:max-w-xl">
-              {[
-                "Only salon-owner approved, published websites are listed",
-                "Real services, prices and timings set by each salon",
-                "Book directly with the salon — no hidden markup",
-                "One Nexora account across every Nexora app",
-              ].map((claim) => (
+              {HERO_TRUST_CLAIMS.map(({ claim }) => (
                 <li key={claim} className="flex items-start gap-2.5 text-[13px] leading-[1.5] text-[#594047]">
                   <svg aria-hidden="true" viewBox="0 0 20 20" className="mt-[2px] h-4 w-4 shrink-0 text-[#8e004b]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="m4 10.5 4 4 8-9" />
@@ -686,7 +941,7 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
           </p>
           <div className="mt-5 flex w-full flex-col gap-3 lg:flex-row lg:items-center">
             <div className="flex w-full gap-2 lg:max-w-xl">
-              <div className="flex h-[52px] flex-1 items-center gap-2 rounded-[16px] border border-[#f6dce2] bg-white px-4 shadow-[0_8px_25px_rgba(62,24,43,0.06)] focus-within:border-[#d8a9b8]">
+              <div className="hero2-search-input flex h-[52px] flex-1 items-center gap-2 rounded-[16px] border border-[#f6dce2] bg-white px-4 shadow-[0_8px_25px_rgba(62,24,43,0.06)] focus-within:border-[#d8a9b8]">
                 <span aria-hidden="true" className="text-[#8c7077]">&#8981;</span>
                 <input
                   id="home-search"
@@ -710,11 +965,21 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
               value={homeLocation}
               onChange={(e) => { setHomeLocation(e.target.value); navigate(e.target.value ? `/salons?area=${encodeURIComponent(e.target.value)}` : "/salons"); }}
               aria-label="Choose your area in Jaipur"
-              className="h-[52px] w-full rounded-[12px] border border-[#f6dce2] bg-white px-4 text-[13px] lg:w-auto lg:max-w-[220px]"
+              className="hero2-area-select h-[52px] w-full rounded-[12px] border border-[#f6dce2] bg-white px-4 text-[13px] lg:w-auto lg:max-w-[220px]"
             >
               <option value="">📍 All Jaipur</option>
               {JAIPUR_ZONES.map((z) => <optgroup key={z.zone} label={z.zone}>{z.areas.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>)}
             </select>
+            {/* Section 03 — GPS entry point. User-action only: this click is
+                what starts the shared location singleton (never page load),
+                then opens Smart Search with the 5 km distance filter. */}
+            <button
+              type="button"
+              onClick={() => { locationService.start(); navigate("/salons?dist=5"); }}
+              className="h-[52px] w-full shrink-0 rounded-[14px] border border-[#e9c9d3] bg-white px-5 text-[13px] font-bold text-[#26181c] transition-colors hover:border-[#d8a9b8] hover:bg-[#fff0f2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b] lg:w-auto"
+            >
+              Salons near me
+            </button>
           </div>
         </div>
       </section>
@@ -728,27 +993,92 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         <CatalogStrip navigate={navigate} online={online} statsBySalon={statsBySalon} />
       </section>
 
-<section className="section">
-        <div className="section-heading">
-          <span className="eyebrow">Live marketplace</span>
-          <h2>Published salons</h2>
-          <p>Only owner-approved, active salon websites appear here. Verified=true, is_active=true, is_published=true, deleted_at null.</p>
-        </div>
-        <CatalogStrip navigate={navigate} online={online} statsBySalon={statsBySalon} />
-      </section>
-
+{/*
+        ── HOMEPAGE PHASE 1 · SECTION 05 — BEAUTY CATEGORIES ──────────────
+        Upgraded in place (stable id=categories, no duplicate section).
+        Data source unchanged: live admin-approved categories from the
+        `marketplace_categories` RPC (useMarketplaceCategories) with REAL
+        salon/service counts and the admin's sort order preserved. Icons are
+        resolved through the approved SVG library — raw emoji are never
+        rendered. Copy is public-safe (no database/RLS internals).
+      */}
 {visible('category_grid') && (
-<section className="section" style={{background:"var(--cream)"}}>
-        <div className="section-heading"><span className="eyebrow">Browse by category</span><h2>Categories</h2><p>Business categories from salons.business_category – smart search filter.</p></div>
-        {categoriesLoading ? <div className="loader" /> : adminCategories.length ? <div className="salon-grid">{adminCategories.map((c) => <article key={c.slug} className="role-card" onClick={() => navigate(`/salons?category=${encodeURIComponent(c.name)}`)} style={{ cursor: "pointer" }}><span className="role-icon">{(c.icon && c.icon !== "star") ? c.icon : "🗂"}</span><h3>{c.name}</h3><p>{c.salon_count} salon{c.salon_count === 1 ? "" : "s"} · {c.service_count} services</p></article>)}</div> : <StateCard title="No categories yet" text="Approved categories will appear here when set by the admin panel." />}
-        {error && <div className="form-message">{error}</div>}
+<section id="categories" aria-labelledby="categories-heading" className="section scroll-mt-24" style={{background:"var(--cream)"}}>
+        <div className="section-heading"><span className="eyebrow">Browse by category</span><h2 id="categories-heading">Beauty Categories Explore Karein</h2><p>Salon, spa, makeup, hair, nails aur doosri beauty services apni zaroorat ke hisaab se dhoondhein.</p></div>
+        {/* Screen-reader live region: announces loading / error / empty / offline
+            transitions without a visual spinner taking over the section. */}
+        <p className="sr-only" role="status" aria-live="polite">
+          {categoriesLoading
+            ? "Beauty categories load ho rahi hain…"
+            : !online
+              ? "Aap offline hain. Live categories dekhne ke liye internet connection check karein."
+              : categoriesError
+                ? "Categories load nahi ho saki. Dobara try karein."
+                : !adminCategories.length
+                  ? "Categories abhi available nahi hain."
+                  : `${adminCategories.length} beauty categories available.`}
+        </p>
+        {categoriesLoading ? (
+          /* Skeleton grid mirrors the real category cards (icon + 2 lines), so
+             the section keeps its shape — no single spinner, no layout jump. */
+          <div className="categories-grid" aria-hidden="true">
+            {Array.from({ length: CATEGORIES_INITIAL_COUNT }, (_, i) => (
+              <div key={i} className="role-card category-card category-card-skeleton">
+                <div className="category-skeleton-icon" />
+                <div className="category-skeleton-line category-skeleton-line-long" />
+                <div className="category-skeleton-line category-skeleton-line-short" />
+              </div>
+            ))}
+          </div>
+        ) : !online ? (
+          /* Offline: show cached approved categories with an honest "Saved
+             results" label when available; otherwise the offline message.
+             Never generate fake categories. */
+          adminCategories.length ? (
+            <>
+              <p className="saved-results-label">Saved results</p>
+              <CategoriesGrid categories={adminCategories} showAll={showAllCategories} navigate={navigate} />
+              <CategoriesMoreControl total={adminCategories.length} showAll={showAllCategories} onToggle={() => setShowAllCategories((v) => !v)} />
+              <div className="categories-cta">
+                <button type="button" className="primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b]" onClick={() => navigate("/salons")}>Sabhi Salons Dekhein</button>
+              </div>
+            </>
+          ) : (
+            <div className="state-card"><span>✦</span><h3>Aap offline hain</h3><p>Aap offline hain. Live categories dekhne ke liye internet connection check karein.</p><div className="button-row"><button className="secondary" onClick={() => navigate("/salons")}>Sabhi Salons Dekhein</button></div></div>
+          )
+        ) : categoriesError ? (
+          /* Error: public-safe message only — no internal diagnostics leak.
+             Retry + discovery escape hatch. */
+          <div className="state-card"><span>✦</span><h3>Categories load nahi ho saki</h3><p>Categories load nahi ho saki. Dobara try karein.</p><div className="button-row"><button className="secondary" onClick={() => void loadCategories()}>Retry</button><button className="secondary" onClick={() => navigate("/salons")}>Sabhi Salons Dekhein</button></div></div>
+        ) : adminCategories.length ? (
+          <>
+            <CategoriesGrid categories={adminCategories} showAll={showAllCategories} navigate={navigate} />
+            <CategoriesMoreControl total={adminCategories.length} showAll={showAllCategories} onToggle={() => setShowAllCategories((v) => !v)} />
+            <div className="categories-cta">
+              <button type="button" className="primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b]" onClick={() => navigate("/salons")}>Sabhi Salons Dekhein</button>
+            </div>
+          </>
+        ) : (
+          /* Empty: public-safe copy only — no internal system instructions. */
+          <div className="state-card"><span>✦</span><h3>Categories abhi available nahi hain</h3><p>Categories abhi available nahi hain.</p><div className="button-row"><button className="secondary" onClick={() => void loadCategories()}>Retry</button><button className="secondary" onClick={() => navigate("/salons")}>Sabhi Salons Dekhein</button></div></div>
+        )}
       </section>)}
 
+{/*
+        ── HOMEPAGE PHASE 1 · SECTION 10 — JAIPUR'S TOP 5 SALONS ──────────
+        (Renumbered from "SECTION 08" per the locked MEMORY.md order — the
+        authoritative contract is PHASE1_SECTION10.md. The implementation is
+        reused in place: no duplicate section, stable id=top-jaipur-salons,
+        admin gate preserved, all ranking data/hooks preserved.)
+        Ranking stays the backend marketplace_top_rated order (Bayesian /
+        review-confidence weighted, p_min_reviews: 1); the frontend only
+        applies Jaipur-city + valid-aggregate eligibility and caps at five.
+        Distance reuses Section 06 location state; open/closed reuses the
+        Section 07 hours contract. No sponsored data enters this section.
+      */}
 {visible('top_rated') && (
-<section className="section">
-        <div className="section-heading"><span className="eyebrow">Top rated</span><h2>Top Rated Salons</h2><p>Sorted by rating_average desc – highest rated first.</p></div>
-        {topRatedLoading ? <SalonSkeletons count={3} /> : topRatedRows.length ? <div className="salon-grid">{topRatedRows.map((r) => <TopRatedCard key={r.id} row={r} navigate={navigate} />)}</div> : <StateCard title="Not enough reviews yet" text="Salons with at least 1 approved review appear here, ranked by a weighted rating." />}
-      </section>)}
+        <TopJaipurSection online={online} loading={topRatedLoading} error={topRatedError} onRetry={() => void loadTopRated()} rows={topRatedRows} items={items} fixUsable={nearbyFixUsable} gpsFix={gpsFix} navigate={navigate} />
+      )}
 
 {visible('trending') && (
 <section className="section" style={{background:"var(--cream)"}}>
@@ -756,45 +1086,137 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         {trendingLoading ? <SalonSkeletons count={3} /> : trendingRows.length ? <div className="salon-grid">{trendingRows.map((r) => <TrendingCard key={r.id} row={r} navigate={navigate} />)}</div> : <StateCard title="No trending activity yet" text="Salons rise here from recent bookings, views and reviews (time-decayed). Admin overrides can boost any salon." />}
       </section>)}
 
+{/*
+        ── HOMEPAGE PHASE 1 · SECTION 06 — NEARBY SHOPS ───────────────────
+        Upgraded in place (stable id=nearby-shops, no duplicate section).
+        Reuses the existing live contracts only: useNearby()/useNearbySalons()
+        + on-device Haversine ranking, the published catalog, salon_hours
+        (Asia/Kolkata) and the /salons parameter names. GPS permission is
+        requested ONLY on the explicit "Use My Current Location" action; the
+        default is an honest, clearly-labelled Jaipur fallback. No fake
+        salon/distance/rating/price/availability anywhere.
+      */}
 {visible('nearby') && (
-<section className="section">
-        <div className="section-heading"><span className="eyebrow">Nearby</span><h2>Salons near you</h2><p>{locationHeadline(location)}</p></div>
-        <LocationNotice location={location} />
-        {location.isImproving && !location.fix && (
-          <div className="state-card" style={{ padding: 20, marginBottom: 18 }} role="status" aria-live="polite">
-            <p style={{ margin: 0 }}>{location.status === "improving" ? "Improving your location…" : "Locating you…"}{location.candidateAccuracy != null ? ` (best so far ${formatAccuracy(location.candidateAccuracy)})` : ""}</p>
+<section id="nearby-shops" aria-labelledby="nearby-shops-heading" className="section scroll-mt-24">
+        <div className="section-heading"><span className="eyebrow">Near you</span><h2 id="nearby-shops-heading">Aapke Paas Ke Salons</h2><p>Apni location ya selected area ke aas-paas available salons, services aur prices explore karein.</p></div>
+
+        {/* Location controls — default Jaipur (clearly labelled), manual
+            city/area selection, user-action GPS only. */}
+        <div className="nearby-controls">
+          <label>City<select value={nearbyCity} onChange={(e) => setNearbyCity(e.target.value)} aria-label="City"><option value="Jaipur">Jaipur</option></select></label>
+          <label>Area<select ref={nearbyAreaSelectRef} value={nearbyArea} onChange={(e) => setNearbyArea(e.target.value)} aria-label="Jaipur area"><option value="">All Jaipur</option>{JAIPUR_ZONES.map((z) => <optgroup key={z.zone} label={z.zone}>{z.areas.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>)}</select></label>
+          <button type="button" className="secondary compact focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b]" disabled={location.isImproving} onClick={() => { if (!location.isImproving) location.start(); }}>
+            {location.isImproving ? "Location detect ho rahi hai…" : "Use My Current Location"}
+          </button>
+          <button ref={nearbyFilterToggleRef} type="button" className="secondary compact focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b]" aria-expanded={nearbyPanelOpen} onClick={() => setNearbyPanelOpen((v) => !v)}>
+            Filters{nearbyActiveFilterCount > 0 ? ` (${nearbyActiveFilterCount})` : ""}
+          </button>
+        </div>
+        <p className="nearby-gps-note">Nearby salons aur distance dikhane ke liye location access use hoga. Jaipur default location hai — bina GPS ke bhi results milte hain.</p>
+        <p className="nearby-status" role="status" aria-live="polite">{nearbyStatus}{!online ? " Aap offline hain." : ""}{location.isImproving && location.candidateAccuracy != null ? ` (best so far ${formatAccuracy(location.candidateAccuracy)})` : ""}</p>
+
+        {/* GPS fallback actions — denied / timeout / unavailable / outside Jaipur. */}
+        {(nearbyGpsState === "denied" || nearbyGpsState === "unavailable" || nearbyGpsState === "outside") && (
+          <div className="nearby-actions">
+            {nearbyGpsState === "unavailable" && <button type="button" className="secondary compact" onClick={() => location.retry()}>Retry Location</button>}
+            <button type="button" className="secondary compact" onClick={focusNearbyAreaSelect}>{nearbyGpsState === "unavailable" ? "Select Area Manually" : "Select Area"}</button>
+            <button type="button" className="secondary compact" onClick={continueWithJaipur}>Continue with Jaipur</button>
           </div>
         )}
-        {nearbyLoading ? <SalonSkeletons count={3} /> : !nearbyRanked.length ? (
-          <StateCard title="No salons nearby yet" text="Salons with approved business coordinates appear here, sorted by distance calculated on your device." />
-        ) : !location.fix ? (
-          <div className="salon-grid">{nearbyRanked.slice(0, 6).map((row) => <NearbyDistanceCard key={row.id} row={row} navigate={navigate} />)}</div>
-        ) : (
-          nearbyBuckets.map((bucket) => (
-            <div key={bucket.key} style={{ marginBottom: 26 }}>
-              <div className="section-heading" style={{ marginBottom: 16 }}><h3 style={{ fontSize: 22, marginBottom: 4 }}>{bucket.title}</h3><p style={{ margin: 0, fontSize: 13 }}>{bucket.subtitle} · {bucket.items.length} salon{bucket.items.length === 1 ? "" : "s"}</p></div>
-              <div className="salon-grid">{bucket.items.slice(0, 6).map((row) => <NearbyDistanceCard key={row.id} row={row} navigate={navigate} />)}</div>
+        {nearbyGpsState === "denied" && <LocationNotice location={location} />}
+
+        {/* Filter panel: inline on desktop, bottom sheet on mobile (CSS).
+            Focus trap + Escape + return-focus handled in the effect above. */}
+        {nearbyPanelOpen && (
+          <div className="nearby-filter-panel" ref={nearbyPanelRef} role="dialog" aria-modal="true" aria-label="Nearby salon filters">
+            <div className="nearby-filter-grid">
+              <label>Distance<select value={nearbyDraft.radius} onChange={(e) => setNearbyDraft({ ...nearbyDraft, radius: e.target.value })} disabled={!nearbyFixUsable}><option value="">Any distance</option><option value="nearest">Nearest</option><option value="2">Within 2 km</option><option value="5">Within 5 km</option><option value="10">Within 10 km</option></select></label>
+              <label>Rating<select value={nearbyDraft.rating} onChange={(e) => setNearbyDraft({ ...nearbyDraft, rating: e.target.value })}><option value="">Any rating</option><option value="4.5">4.5+</option><option value="4">4.0+</option><option value="3.5">3.5+</option></select></label>
+              <label>Price<select value={nearbyDraft.price} onChange={(e) => setNearbyDraft({ ...nearbyDraft, price: e.target.value })}><option value="">Any price</option><option value="50000">Under ₹500</option><option value="100000">Under ₹1,000</option><option value="200000">Under ₹2,000</option></select></label>
+              <label>Gender<select value={nearbyDraft.gender} onChange={(e) => setNearbyDraft({ ...nearbyDraft, gender: e.target.value })}><option value="">All</option><option value="unisex">Unisex</option><option value="female">Women</option><option value="male">Men</option></select></label>
+              <label className="nearby-check"><input type="checkbox" checked={nearbyDraft.openNow} disabled={!online} onChange={(e) => setNearbyDraft({ ...nearbyDraft, openNow: e.target.checked })} /> Open now</label>
+              {!nearbyFixUsable && <p className="nearby-filter-note">Distance radius filter ke liye pehle “Use My Current Location” se location detect karein.</p>}
             </div>
-          ))
+            <div className="nearby-filter-actions">
+              <button type="button" className="primary compact" onClick={() => setNearbyFilters(nearbyDraft)}>Apply Filters</button>
+              <button type="button" className="secondary compact" onClick={clearNearbyFilters}>Clear All</button>
+              <button type="button" className="secondary compact" onClick={() => { setNearbyPanelOpen(false); nearbyFilterToggleRef.current?.focus(); }}>Close</button>
+            </div>
+          </div>
         )}
-        <p className="section-hint" style={{ marginTop: 10 }}><button className="text-button" onClick={() => navigate("/salons")}>Open full search →</button></p>
+
+        {/* Cards + honest states. */}
+        {nearbyLoading ? (
+          <div className="nearby-grid" aria-hidden="true">
+            {Array.from({ length: NEARBY_DISPLAY_LIMIT }, (_, i) => <div key={i} className="salon-card skeleton"><div /><p /><p /><p /></div>)}
+          </div>
+        ) : !online ? (
+          nearbyRanked.length ? (
+            <>
+              <p className="saved-results-label">Saved results</p>
+              <div className="nearby-grid">{nearbyRanked.slice(0, NEARBY_DISPLAY_LIMIT).map((row) => <NearbyDistanceCard key={row.id} row={row} navigate={navigate} />)}</div>
+            </>
+          ) : (
+            <div className="state-card"><span>✦</span><h3>Aap offline hain</h3><p>Aap offline hain. Live nearby results ke liye internet connection check karein.</p><div className="button-row"><button className="secondary" onClick={() => navigate("/salons")}>View All Salons</button></div></div>
+          )
+        ) : catalogError && !items.length ? (
+          <div className="state-card"><span>✦</span><h3>Nearby salons load nahi ho sake</h3><p>Nearby salons load nahi ho sake. Dobara try karein.</p><div className="button-row"><button className="secondary" onClick={() => window.location.reload()}>Retry</button><button className="secondary" onClick={focusNearbyAreaSelect}>Select Area</button><button className="secondary" onClick={() => navigate("/salons")}>View All Salons</button></div></div>
+        ) : nearbyModeIsFiltered ? (
+          nearbyPipelineRows.length ? (
+            <div className="nearby-grid">{nearbyPipelineRows.map((row) => <NearbyShopCard key={row.item.id} row={row} openState={salonOpenState(row.item, nearbyHours[row.item.id])} navigate={navigate} />)}</div>
+          ) : (
+            <div className="state-card"><span>✦</span><h3>In filters ke saath koi salon nahi mila</h3><p>In filters ke saath koi salon nahi mila.</p><div className="button-row"><button className="secondary" onClick={clearNearbyFilters}>Clear Filters</button><button className="secondary" onClick={focusNearbyAreaSelect}>Change Area</button><button className="secondary" onClick={() => navigate("/salons")}>View All Salons</button></div></div>
+          )
+        ) : nearbyFixUsable && nearbyRanked.length ? (
+          /* GPS mode: existing distance-bucket ranking (flattened + capped) —
+             nearest-first live order preserved. */
+          <div className="nearby-grid">{nearbyBuckets.flatMap((bucket) => bucket.items).slice(0, NEARBY_DISPLAY_LIMIT).map((row) => <NearbyDistanceCard key={row.id} row={row} navigate={navigate} />)}</div>
+        ) : nearbyRanked.length ? (
+          /* No GPS yet: existing ranked list, honest "Distance unavailable". */
+          <div className="nearby-grid">{nearbyRanked.slice(0, NEARBY_DISPLAY_LIMIT).map((row) => <NearbyDistanceCard key={row.id} row={row} navigate={navigate} />)}</div>
+        ) : (
+          <div className="state-card"><span>✦</span><h3>Is area mein abhi koi salon nahi mila</h3><p>Is area mein abhi koi salon nahi mila.</p><div className="button-row"><button className="secondary" onClick={focusNearbyAreaSelect}>Change Area</button><button className="secondary" onClick={clearNearbyFilters}>Clear Filters</button><button className="secondary" onClick={() => navigate("/salons")}>View All Salons</button></div></div>
+        )}
+
+        <div className="categories-cta">
+          <button type="button" className="primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b]" onClick={openAllNearbySalons}>Sabhi Nearby Salons Dekhein</button>
+        </div>
       </section>)}
 
-{visible('recommended') && (
-<section className="section" style={{background:"var(--cream)"}}>
-        <div className="section-heading"><span className="eyebrow">Recommended</span><h2>Recommended For You</h2><p>Sorted by rating_average * review_count – recommended ranking.</p></div>
-        {recommended.length ? <div className="salon-grid">{recommended.map(item=><SalonCard key={item.id} item={item} navigate={navigate} stats={statsBySalon[item.id]} />)}</div> : <SalonSkeletons count={3} />}
-      </section>)}
-
-      {/* Recommended — personalized for logged-in customers; deterministic
-          fallback (popular + top rated + active offers) for guests */}
-      <section className="section">
-        <div className="section-heading"><span className="eyebrow">Recommended</span><h2>Recommended For You</h2><p>{isPersonalized ? "Picked from your bookings, favourites and preferences." : "Popular, top-rated and trending salons — plus active offers."}</p></div>
-        {recommendationsLoading ? <SalonSkeletons count={3} /> : recommendationRows.length ? <div className="salon-grid">{recommendationRows.map((row) => <RecommendationCard key={row.id} row={row} navigate={navigate} />)}</div> : <StateCard title="No recommendations yet" text="Salons will appear here as they get bookings, reviews and offers." />}
-        {isPersonalized && (
+{/* Section 11 — Smart Picks (renumbered from "Section 09" per locked MEMORY.md
+    order — PHASE1_SECTION11.md). Consolidates the two earlier "Recommended For
+    You" sections into ONE section (stable id=smart-picks): the personalized
+    marketplace_recommendations ranking is primary, and the legacy
+    rating*reviews+bookings ranking survives as the honest "Popular Picks"
+    limited-data fallback under its existing admin gate. No duplicate
+    recommendation section, no parallel system, no deleted data source. */}
+{(() => {
+        const favLink = isPersonalized ? (
           <p className="section-hint"><button className="text-button" onClick={() => navigate(PORTAL_PATHS.customer)}>Open your favourites in the Customer app →</button></p>
-        )}
-      </section>
+        ) : null;
+        return (
+          <>
+            <SmartPicksSection
+              online={online}
+              authLoading={authState.loading}
+              isCustomer={Boolean(authState.session && authState.role === "customer")}
+              rows={recommendationRows}
+              loading={recommendationsLoading}
+              error={recommendationsError}
+              isPersonalized={isPersonalized}
+              onRefresh={() => void refreshRecommendations()}
+              fallbackItems={recommended}
+              fallbackAllowed={visible('recommended')}
+              area={nearbyArea}
+              items={items}
+              fixUsable={nearbyFixUsable}
+              gpsFix={gpsFix}
+              navigate={navigate}
+            />
+            {favLink}
+          </>
+        );
+      })()}
 
 {visible('offers') && (
 <section className="section">
@@ -808,11 +1230,23 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         <PartnerPromosStrip navigate={navigate} />
       </section>
 
+{/*
+        ── HOMEPAGE PHASE 1 · SECTION 07 — OPEN NOW ───────────────────────
+        Upgraded in place from the old "Open Today" block (stable id=open-now,
+        no duplicate section). Only genuinely-open published salons render —
+        real salon_hours data evaluated in Asia/Kolkata with midnight-crossing
+        support; missing/invalid hours never claim open. Reuses Section 06's
+        selected-area base + shared hours fetch (no duplicate requests, no new
+        GPS prompt). The preserved OpenTodayStrip follows, fed the same data.
+      */}
 {visible('available_today') && (
-<section className="section" style={{background:"var(--cream)"}}>
-        <div className="section-heading"><span className="eyebrow">Slots</span><h2>Open Today</h2><p>Real opening hours from salon_hours (owner managed) with config fallback — no mock slots.</p></div>
-        <OpenTodayStrip items={items} navigate={navigate} />
-      </section>)}
+<>
+        <OpenNowSection online={online} baseLoading={nearbyLoading} catalogError={catalogError} baseItems={nearbyBaseItems} hoursById={nearbyHours} area={nearbyArea} fixUsable={nearbyFixUsable} gpsFix={gpsFix} navigate={navigate} />
+        <div className="section" style={{ background: "var(--cream)", paddingTop: 6 }}>
+          <div className="section-heading" style={{ marginBottom: 10 }}><span className="eyebrow">Hours</span><h3>Aaj ke hours</h3><p>Salons ke aaj ke published opening hours — real data only.</p></div>
+          <OpenTodayStrip items={nearbyBaseItems} navigate={navigate} preloaded={openTodayPreloaded} />
+        </div>
+      </>)}
 
 {visible('sponsored_shops') && (
 <section className="section">
@@ -881,25 +1315,181 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         {isCustomer && <p className="section-hint"><button className="text-button" onClick={() => navigate(PORTAL_PATHS.customer)}>View your rewards &amp; loyalty points in the Customer app →</button></p>}
       </section>)}
 
-      {/* About — also the Nexora apps directory. `id` is the scroll target for
-          the Hero secondary CTA (Section 02); `scroll-mt` keeps the heading
-          clear of the sticky header after the jump. Content is unchanged. */}
+      {/*
+        ── HOMEPAGE PHASE 1 · SECTION 04 — APP DIRECTORY ──────────────────
+        "Aap Nexora Par Kya Karna Chahte Hain?" — the scroll target of the
+        Hero secondary CTA (`scroll-mt` keeps the heading clear of the sticky
+        header after the jump; id=nexora-apps is STABLE for Section 02).
+
+        Upgraded in place (no duplicate section): exactly SIX cards — the
+        four role portals, the Template Builder, Distributors and the Job
+        Portal. Cards are auth-aware:
+          • signed out  → protected apps open through the existing login gate
+                          (PortalGateway / legacy entry) with a safe returnTo;
+          • loading     → protected cards pause, so no role-gated flash;
+          • signed in   → apps open directly (GP continues on /app/partner).
+        Public apps (Jobs, Distributors) always open. Copy is public-safe —
+        RLS/commission internals stay in the backend, never in this UI.
+      */}
       <section id="nexora-apps" className="section scroll-mt-24">
-        <div className="section-heading"><span className="eyebrow">About Nexora</span><h2>One connected platform</h2><p>Customers discover published salons, Shop Owners manage own shop data under RLS, Growth Partners submit proposals, commissions 10% of platform fee held 7 days, owner payout daily 22:00 IST. All 6 locked business rules verifiable via verify_business_rules().</p></div>
+        <div className="section-heading"><span className="eyebrow">About Nexora</span><h2>Aap Nexora Par Kya Karna Chahte Hain?</h2><p>Choose what you want to do — book a salon, manage your business, grow brands, launch your salon website, browse wholesale distributors or find beauty jobs. One Nexora account works across every app.</p></div>
+
+        {/* Auth-aware status line: logged-out / loading / logged-in (+offline). */}
+        <p role="status" aria-live="polite" className="apps-status">
+          {authState.loading
+            ? "Checking your Nexora account…"
+            : authState.session && authState.role
+              ? `Signed in as ${ROLE_LABELS[authState.role] ?? "a Nexora member"} — protected apps open directly.`
+              : "You are signed out. Protected apps will take you to secure Nexora login first — and bring you right back."}
+          {!online && " You are offline — account checks and protected apps may be unavailable."}
+        </p>
+
         <div className="role-grid">
-          <RoleCard title="For Customers" text="Find published salons, book services, and follow payment or refund status." path={PORTAL_PATHS.customer} navigate={navigate} />
-          <RoleCard title="For Shop Owners" text="Review website proposals, publish your storefront, manage bookings, services, staff, offers, wallet and earnings under RLS own only." path={PORTAL_PATHS.business_user} navigate={navigate} />
-          <RoleCard title="For Growth Partners" text="Prepare salon websites, track attribution, and view commission hold status – 10% of platform fee, held 7 days." path={PORTAL_PATHS.growth_partner} navigate={navigate} />
-          <RoleCard title="For Website Templates" text="Open the Owner website builder after the same Shop Owner identity and salon workspace are verified." path={TEMPLATE_PATH} navigate={navigate} />
-          <RoleCard title="Distributors Beauty Industry" text="Browse verified wholesale distributors, brands and professional beauty products across India." path="/distributors-beauty-industry/" navigate={navigate} external />
+          <RoleCard title="Customer App" icon="🧖‍♀️" text="Book published salons, pay securely, and track your bookings, payments and refunds." path={PORTAL_PATHS.customer} navigate={navigate} authLoading={authState.loading} isAuthenticated={Boolean(authState.session && authState.role)} protectedApp />
+          <RoleCard title="Shop Owner App" icon="💈" text="Manage your salon — services, staff, bookings, offers, wallet and earnings." path={PORTAL_PATHS.business_user} navigate={navigate} authLoading={authState.loading} isAuthenticated={Boolean(authState.session && authState.role)} protectedApp />
+          {/* Growth Partner contract route is the /growth-partner entry (safe
+              login → returnTo); signed-in partners continue on the canonical
+              /app/partner mount. */}
+          <RoleCard title="Growth Partner App" icon="🚀" text="Onboard salons, prepare salon websites and track your commissions." path={PORTAL_PATHS.growth_partner} entryPath="/growth-partner" navigate={navigate} authLoading={authState.loading} isAuthenticated={Boolean(authState.session && authState.role)} protectedApp />
+          <RoleCard title="Template Builder" icon="🎨" text="Design and launch your salon website once your Shop Owner account is verified." path={TEMPLATE_PATH} navigate={navigate} authLoading={authState.loading} isAuthenticated={Boolean(authState.session && authState.role)} protectedApp />
+          <RoleCard title="Beauty Distributor" icon="🛍️" text="Browse verified wholesale distributors, brands and professional beauty products." path="/distributors-beauty-industry" navigate={navigate} external />
+          <RoleCard title="Job Portal" icon="💼" text="Explore beauty-industry jobs and apply directly — across salons and brands." path="/job-portal" navigate={navigate} external />
         </div>
       </section>
     </main>
   );
 }
 
-function RoleCard({ title, text, path, navigate, external }: { title: string; text: string; path: string; navigate: (path: string) => void; external?: boolean }) {
-  return <article className="role-card"><span className="role-icon">✦</span><h3>{title}</h3><p>{text}</p><button onClick={() => (external ? window.location.assign(path) : navigate(path))}>Open portal →</button></article>;
+/**
+ * Section 04 app card — auth-aware upgrade of the original RoleCard (same
+ * component, same canonical `path` props; no duplicate section, no deleted
+ * functionality).
+ *
+ *  • Signed out + protected app → opens `entryPath` when set (Growth Partner:
+ *    the /growth-partner entry with its safe login → returnTo flow) or the
+ *    canonical /app/* route, whose PortalGateway routes through secure login
+ *    and returns the visitor right back (safe same-origin returnTo).
+ *  • Signed in → the canonical portal mount opens directly.
+ *  • Auth still loading → protected cards pause (no role-gated flash); public
+ *    apps (Job Portal, Distributors) always open.
+ *  • External static mounts leave the SPA router via full navigation — no
+ *    iframe, no hardcoded origin, no parallel auth.
+ */
+/**
+ * Section 05 — live category grid. Admin order preserved (never re-sorted);
+ * only CATEGORIES_INITIAL_COUNT rows render until expanded. Cards are semantic
+ * articles with a real button (keyboard + screen-reader safe); counts come
+ * from the live RPC only — unavailable counts are never faked as 0.
+ */
+function CategoriesGrid({ categories, showAll, navigate }: { categories: readonly CategoryRow[]; showAll: boolean; navigate: (path: string) => void }) {
+  const visibleRows = showAll ? categories : categories.slice(0, CATEGORIES_INITIAL_COUNT);
+  return (
+    <div className="categories-grid">
+      {visibleRows.map((c) => {
+        const counts = categoryCountsCopy(c.salon_count, c.service_count);
+        return (
+          <article key={c.slug} className="role-card category-card">
+            <span className="role-icon"><CategoryIcon name={c.icon} className="category-icon" /></span>
+            <h3>{c.name}</h3>
+            <p>{counts}</p>
+            {/* Real button (keyboard + screen-reader accessible); the stretched
+                hit area makes the whole card clickable. */}
+            <button
+              type="button"
+              className="category-open focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b]"
+              onClick={() => navigate(`/salons?category=${encodeURIComponent(c.name)}`)}
+              aria-label={`Browse ${c.name} — ${counts}`}
+            >
+              Explore →
+            </button>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Section 05 — "Sabhi Categories Dekhein" expandable control. Rendered only
+ * when the live list exceeds the initial cap; admin order stays untouched.
+ */
+function CategoriesMoreControl({ total, showAll, onToggle }: { total: number; showAll: boolean; onToggle: () => void }) {
+  if (total <= CATEGORIES_INITIAL_COUNT) return null;
+  return (
+    <div className="categories-more">
+      <button
+        type="button"
+        className="secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b]"
+        aria-expanded={showAll}
+        onClick={onToggle}
+      >
+        {showAll ? "Kam categories dekhein" : "Sabhi Categories Dekhein"}
+      </button>
+    </div>
+  );
+}
+
+function RoleCard({
+  title,
+  text,
+  icon,
+  path,
+  entryPath,
+  navigate,
+  external,
+  protectedApp,
+  authLoading,
+  isAuthenticated,
+}: {
+  title: string;
+  text: string;
+  icon: string;
+  path: string;
+  entryPath?: string;
+  navigate: (path: string) => void;
+  external?: boolean;
+  protectedApp?: boolean;
+  authLoading?: boolean;
+  isAuthenticated?: boolean;
+}) {
+  const waiting = Boolean(protectedApp) && Boolean(authLoading);
+  const open = () => {
+    if (waiting) return;
+    const target = isAuthenticated || !protectedApp ? path : (entryPath ?? path);
+    if (external) window.location.assign(target);
+    else navigate(target);
+  };
+  const badge = !protectedApp
+    ? "Open to everyone"
+    : waiting
+      ? "Checking your account…"
+      : isAuthenticated
+        ? "Signed in — opens directly"
+        : "Nexora login required";
+  const action = !protectedApp
+    ? "Open"
+    : waiting
+      ? "One moment…"
+      : isAuthenticated
+        ? "Open app"
+        : "Log in to open";
+  return (
+    <article className="role-card app-card">
+      <span className="role-icon" aria-hidden="true">{icon}</span>
+      <h3>{title}</h3>
+      <p>{text}</p>
+      <p className="app-card-badge">{badge}</p>
+      <button
+        type="button"
+        onClick={open}
+        disabled={waiting}
+        aria-label={`${action} — ${title}`}
+        className="focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b]"
+      >
+        {action} →
+      </button>
+    </article>
+  );
 }
 
 function RoleEntry({ path, navigate }: { path: string; navigate: (path: string) => void }) {
@@ -1113,17 +1703,23 @@ function CatalogStrip({ navigate, online, statsBySalon }: { navigate: (path: str
  * website config opening_hours (proposal payload) when the table is empty.
  * Shows the earliest opening salon first; never fabricates slots.
  */
-function OpenTodayStrip({ items, navigate }: { items: CatalogItem[]; navigate: (path: string) => void }) {
-  const [todayRows, setTodayRows] = useState<Record<string, { opens: string | null; closes: string | null; closed: boolean }>>({});
-  const [loading, setLoading] = useState(true);
+function OpenTodayStrip({ items, navigate, preloaded }: {
+  items: CatalogItem[];
+  navigate: (path: string) => void;
+  /** Shared hours data (Section 07) — when provided, no duplicate fetch runs. */
+  preloaded?: { todayRows: Record<string, { opens: string | null; closes: string | null; closed: boolean }>; loading: boolean };
+}) {
+  const [ownRows, setOwnRows] = useState<Record<string, { opens: string | null; closes: string | null; closed: boolean }>>({});
+  const [ownLoading, setOwnLoading] = useState(true);
 
   useEffect(() => {
+    if (preloaded) return; // Shared data provided — avoid a duplicate request.
     let active = true;
     const load = async () => {
       try {
         const client = getClient();
-        if (!client || !items.length) { setLoading(false); return; }
-        const today = new Date().getDay(); // JS: 0=Sunday — same as Postgres day_of_week
+        if (!client || !items.length) { setOwnLoading(false); return; }
+        const today = dayOfWeekIST(); // Asia/Kolkata weekday — Postgres day_of_week convention
         const { data } = await client
           .from("salon_hours")
           .select("salon_id,day_of_week,opens_at,closes_at,is_closed")
@@ -1141,16 +1737,19 @@ function OpenTodayStrip({ items, navigate }: { items: CatalogItem[]; navigate: (
           const cfg = (item.website.config as { profile?: { opening_hours?: { opens?: string; closes?: string } } })?.profile?.opening_hours;
           if (cfg?.opens) map[item.id] = { opens: cfg.opens, closes: cfg.closes ?? null, closed: false };
         }
-        setTodayRows(map);
-      } catch { /* degrade to empty */ } finally { if (active) setLoading(false); }
+        setOwnRows(map);
+      } catch { /* degrade to empty */ } finally { if (active) setOwnLoading(false); }
     };
     const t = setTimeout(() => void load(), 0);
     return () => { active = false; clearTimeout(t); };
-  }, [items]);
+  }, [items, preloaded]);
+
+  const todayRows = preloaded ? preloaded.todayRows : ownRows;
+  const loading = preloaded ? preloaded.loading : ownLoading;
 
   if (loading) return <SalonSkeletons count={3} />;
   const openNow = items.filter((i) => todayRows[i.id] && !todayRows[i.id].closed);
-  if (!openNow.length) return <StateCard title="No opening hours yet" text="Shop owners set weekly hours in the Owner PWA (salon_hours table). They appear here as soon as they are published." />;
+  if (!openNow.length) return <StateCard title="No opening hours yet" text="Salons ke published opening hours yahan dikhenge." />;
   return (
     <div className="button-row">
       {openNow.slice(0, 8).map((item) => (
@@ -1236,6 +1835,797 @@ function OfferDetailCard({ offer, navigate }: { offer: OfferDetail; navigate: (p
 }
 
 
+// ---------------------------------------------------------------------------
+// Section 03 — Smart Search helpers.
+// "Open now" is computed from REAL owner-managed opening data: salon_hours
+// rows for today, with the same website-config fallback the homepage
+// OpenTodayStrip already uses. Salons with no opening data at all are
+// treated as unknown and never marked open. All times are Asia/Kolkata.
+// ---------------------------------------------------------------------------
+
+/** Current minutes since midnight in Asia/Kolkata. */
+function minutesNowIST(): number {
+  const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  return nowIST.getHours() * 60 + nowIST.getMinutes();
+}
+
+function parseClockMinutes(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const [h, m] = String(value).split(":").map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+
+/** True when `now` falls inside the opens–closes window for the day. */
+function isOpenAtMinutes(opens: string | null | undefined, closes: string | null | undefined, nowMinutes: number): boolean {
+  const opensAt = parseClockMinutes(opens);
+  const closesAt = parseClockMinutes(closes);
+  if (opensAt == null || closesAt == null) return false;
+  return nowMinutes >= opensAt && nowMinutes <= closesAt;
+}
+
+/**
+ * Ids of the given published salons that are open RIGHT NOW.
+ * Source of truth: salon_hours (today's row); fallback: the website config
+ * opening_hours published with the salon proposal. No rows + no config ⇒
+ * unknown ⇒ excluded. Never invents an "open" state.
+ */
+async function fetchOpenNowIds(client: SupabaseClient, items: Array<{ id: string; website: Website }>): Promise<Set<string>> {
+  const open = new Set<string>();
+  if (!items.length) return open;
+  const nowMinutes = minutesNowIST();
+  const today = new Date().getDay(); // JS 0=Sunday — same as Postgres day_of_week
+  const { data, error } = await client
+    .from("salon_hours")
+    .select("salon_id,opens_at,closes_at,is_closed")
+    .in("salon_id", items.map((item) => item.id))
+    .eq("day_of_week", today);
+  if (error) return open; // Unknown hours ⇒ nothing is claimed to be open.
+  const todayHoursBySalon = new Map<string, { opens_at: string | null; closes_at: string | null; is_closed: boolean }>();
+  for (const row of (data ?? []) as Array<{ salon_id: string; opens_at: string | null; closes_at: string | null; is_closed: boolean }>) {
+    todayHoursBySalon.set(row.salon_id, row);
+  }
+  for (const item of items) {
+    const hours = todayHoursBySalon.get(item.id);
+    if (hours) {
+      if (!hours.is_closed && isOpenAtMinutes(hours.opens_at, hours.closes_at, nowMinutes)) open.add(item.id);
+      continue;
+    }
+    const cfg = (item.website.config as { profile?: { opening_hours?: { opens?: string; closes?: string } } })?.profile?.opening_hours;
+    if (cfg?.opens && isOpenAtMinutes(cfg.opens, cfg.closes ?? null, nowMinutes)) open.add(item.id);
+  }
+  return open;
+}
+
+// ---------------------------------------------------------------------------
+// Section 06 — Nearby Shops helpers.
+// Everything reuses the existing live contracts: published catalog data,
+// salon_hours (Asia/Kolkata), on-device Haversine distances from the shared
+// location singleton, and the /salons parameter names. Nothing is faked:
+// missing distance/rating/price/hours always render an honest fallback.
+// ---------------------------------------------------------------------------
+
+/** Weekday window check that safely handles midnight-crossing schedules. */
+function isOpenWindowActiveIST(opens: string | null | undefined, closes: string | null | undefined): boolean | null {
+  const opensAt = parseClockMinutes(opens);
+  const closesAt = parseClockMinutes(closes);
+  if (opensAt == null || closesAt == null) return null;
+  const now = minutesNowIST();
+  if (closesAt >= opensAt) return now >= opensAt && now <= closesAt;
+  return now >= opensAt || now <= closesAt; // crosses midnight
+}
+
+/** Section 06 homepage display cap (spec: maximum 4–6 cards). */
+const NEARBY_DISPLAY_LIMIT = 4;
+
+type NearbyFilters = {
+  radius: string;   // "", "nearest", "2", "5", "10"
+  rating: string;   // "", "4.5", "4", "3.5"
+  price: string;    // "", "50000", "100000", "200000" (existing /salons bands)
+  gender: string;   // "", "unisex", "female", "male"
+  openNow: boolean;
+};
+const NEARBY_FILTERS_EMPTY: NearbyFilters = { radius: "", rating: "", price: "", gender: "", openNow: false };
+
+function countActiveNearbyFilters(f: NearbyFilters): number {
+  return (f.radius ? 1 : 0) + (f.rating ? 1 : 0) + (f.price ? 1 : 0) + (f.gender ? 1 : 0) + (f.openNow ? 1 : 0);
+}
+
+/**
+ * Gender hint derived from the business category text — the same documented
+ * heuristic the /salons client-side path uses. Unknown stays null (neutral),
+ * never deleted and never guessed as a specific gender.
+ */
+function genderHintFromCategory(category: string | null): "female" | "male" | "unisex" | null {
+  const c = (category ?? "").toLowerCase();
+  if (/unisex/.test(c)) return "unisex";
+  if (/women|female|ladies/.test(c)) return "female";
+  if (/men|male|gents/.test(c)) return "male";
+  return null;
+}
+
+function nearbyGenderMatches(filter: string, category: string | null): boolean {
+  if (!filter) return true;
+  return genderHintFromCategory(category) === filter;
+}
+
+/** Honest rating copy — never a fake 5.0. */
+function nearbyRatingCopy(rating: number | null | undefined, reviewCount: number | null | undefined): string | null {
+  const r = Number(rating ?? 0);
+  const n = Number(reviewCount ?? 0);
+  if (!(r > 0) || !(n > 0)) return null;
+  return `★ ${r.toFixed(1)} (${n})`;
+}
+
+/** Honest price copy using the existing currency utility. */
+function nearbyPriceCopy(pricePaise: number | null | undefined): string {
+  const p = typeof pricePaise === "number" && Number.isFinite(pricePaise) && pricePaise > 0 ? pricePaise : null;
+  return p == null ? "View services for pricing" : `Starts from ${money(p)}`;
+}
+
+/**
+ * Today's salon_hours rows for a set of salons (live, owner-managed).
+ * Keyed by idsKey so the effect re-runs only when the visible set changes.
+ */
+function useTodayHours(online: boolean, ids: string[], idsKey: string) {
+  const [hoursById, setHoursById] = useState<Record<string, { opens_at: string | null; closes_at: string | null; is_closed: boolean }>>({});
+  const idsRef = useRef(ids);
+  useEffect(() => { idsRef.current = ids; });
+  useEffect(() => {
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      const list = idsRef.current;
+      if (!online || !list.length) { setHoursById({}); return; }
+      try {
+        const client = getClient();
+        if (!client) { setHoursById({}); return; }
+        const { data } = await client
+          .from("salon_hours")
+          .select("salon_id,opens_at,closes_at,is_closed")
+          .in("salon_id", list)
+          .eq("day_of_week", dayOfWeekIST());
+        if (!active) return;
+        const map: Record<string, { opens_at: string | null; closes_at: string | null; is_closed: boolean }> = {};
+        for (const row of (data ?? []) as Array<{ salon_id: string; opens_at: string | null; closes_at: string | null; is_closed: boolean }>) {
+          map[row.salon_id] = row;
+        }
+        setHoursById(map);
+      } catch {
+        if (active) setHoursById({});
+      }
+    }, 0);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [online, idsKey]);
+  return hoursById;
+}
+
+/**
+ * Open/closed for one published salon right now (Asia/Kolkata).
+ * salon_hours first; published website-config hours as the same fallback the
+ * OpenTodayStrip uses; null when no real hours exist ("Hours unavailable").
+ */
+function salonOpenState(item: CatalogItem, hours: { opens_at: string | null; closes_at: string | null; is_closed: boolean } | undefined): boolean | null {
+  if (hours) {
+    if (hours.is_closed) return false;
+    return isOpenWindowActiveIST(hours.opens_at, hours.closes_at);
+  }
+  const cfg = (item.website.config as { profile?: { opening_hours?: { opens?: string; closes?: string } } })?.profile?.opening_hours;
+  if (cfg?.opens) return isOpenWindowActiveIST(cfg.opens, cfg.closes ?? null);
+  return null;
+}
+
+/**
+ * Verified badge with an accessible tooltip. Meaning is only the backend
+ * truth (published/approved profile) — no licence/government claims.
+ * Hover, focus, click/tap toggle; Escape and outside click close it.
+ */
+function VerifiedBadge({ salonName }: { salonName: string }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLSpanElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    const onPointer = (event: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("click", onPointer);
+    return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("click", onPointer); };
+  }, [open]);
+  return (
+    <span className="verified-badge-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className="verified-badge focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b]"
+        aria-expanded={open}
+        aria-label={`Verified: ${salonName}. What does this mean?`}
+        onClick={() => setOpen((v) => !v)}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+      >
+        ✓ Verified
+      </button>
+      {open && (
+        <span role="tooltip" className="verified-tooltip">
+          This salon profile is approved for publishing on Nexora.
+        </span>
+      )}
+    </span>
+  );
+}
+
+type NearbyShopRow = { item: CatalogItem; distanceKm: number | null };
+
+/**
+ * Section 06 salon card — real published data only. Every field has an
+ * honest fallback (Distance unavailable / No ratings yet / View services for
+ * pricing / Hours unavailable). No coordinates are ever rendered.
+ */
+function NearbyShopCard({
+  row,
+  openState,
+  navigate,
+}: {
+  row: NearbyShopRow;
+  openState: boolean | null;
+  navigate: (path: string) => void;
+}) {
+  const { item, distanceKm } = row;
+  const cover = item.cover_image_path?.startsWith("http") ? item.cover_image_path : null;
+  const rating = nearbyRatingCopy(item.rating_average, item.review_count);
+  const gender = genderHintFromCategory(item.business_category);
+  const openLabel = openState === null ? "Hours unavailable" : openState ? "Open now" : "Closed now";
+  return (
+    <article className="salon-card nearby-card">
+      <div
+        className="salon-visual"
+        role="img"
+        aria-label={`${item.name} salon photo`}
+        style={cover ? { backgroundImage: `url("${cover.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
+      >
+        {!cover && <span aria-hidden="true">✦</span>}
+      </div>
+      <div className="salon-body">
+        <div className="salon-meta">
+          <span>{item.business_category ?? "Salon"}{gender ? ` · ${gender === "female" ? "Women" : gender === "male" ? "Men" : "Unisex"}` : ""}</span>
+          <span>{distanceKm != null ? `📍 ${formatDistance(distanceKm)} away` : "Distance unavailable"}</span>
+        </div>
+        <h3>{item.name}</h3>
+        <p>{item.area ?? item.city}, {item.city}</p>
+        <div className="salon-meta">
+          <span>{rating ?? "No ratings yet"}</span>
+          <span>{openLabel}</span>
+        </div>
+        <div className="salon-bottom">
+          <b>{nearbyPriceCopy(item.starting_price_paise)}</b>
+          <VerifiedBadge salonName={item.name} />
+        </div>
+        <div className="button-row" style={{ marginTop: 10 }}>
+          <button className="secondary compact" disabled={!item.website.slug} onClick={() => item.website.slug && navigate(`/salons/${item.website.slug}`)}>View Salon</button>
+          <button className="secondary compact" disabled={!item.website.slug} onClick={() => item.website.slug && navigate(`/app/customer/?salon=${item.id}&returnTo=${encodeURIComponent(`/salons/${item.website.slug}`)}`)}>Book Now</button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section 07 — Open Now.
+// Truth rule: a salon is shown ONLY when a valid hours record exists for the
+// current Asia/Kolkata weekday, the day is not marked closed, and the current
+// IST minute is inside the window (midnight-crossing safe). Missing/invalid
+// hours never produce an open claim. One shared minute-level clock drives the
+// whole section (never one timer per card); live results refresh as time
+// passes and the timer is cleaned up on unmount.
+// ---------------------------------------------------------------------------
+
+/** Section 07 homepage display cap (spec: maximum 4–6 open salons). */
+const OPEN_NOW_DISPLAY_LIMIT = 6;
+
+/**
+ * Shared Asia/Kolkata minute clock. Aligns to the next minute boundary, then
+ * ticks once per minute; re-syncs when the tab becomes visible; cleans up on
+ * unmount. Returns null until the first client tick so SSR/first render never
+ * prints a time-dependent Open Now claim (no hydration mismatch).
+ */
+function useMinutesNowIST(): number | null {
+  const [minutes, setMinutes] = useState<number | null>(null);
+  useEffect(() => {
+    let interval: number | null = null;
+    const tick = () => setMinutes(minutesNowISTShared());
+    tick();
+    const msUntilNextMinute = 60_000 - (Date.now() % 60_000);
+    const align = window.setTimeout(() => {
+      tick();
+      interval = window.setInterval(tick, 60_000);
+    }, msUntilNextMinute);
+    const onVisibility = () => { if (!document.hidden) tick(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearTimeout(align);
+      if (interval != null) window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+  return minutes;
+}
+
+/** Config-published opening hours fallback (same contract Section 06 uses). */
+function configOpeningHours(item: CatalogItem): { opens_at: string | null; closes_at: string | null; is_closed: boolean } | null {
+  const cfg = (item.website.config as { profile?: { opening_hours?: { opens?: string; closes?: string } } })?.profile?.opening_hours;
+  if (cfg?.opens) return { opens_at: cfg.opens, closes_at: cfg.closes ?? null, is_closed: false };
+  return null;
+}
+
+/** "Check Nearby Shops" — smooth-scroll to Section 06 (reduced-motion aware). */
+function scrollToNearbyShops(event?: { preventDefault: () => void }) {
+  const target = document.getElementById("nearby-shops");
+  if (!target) return;
+  event?.preventDefault();
+  let reduced = false;
+  try { reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { reduced = false; }
+  target.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+  target.setAttribute("tabindex", "-1");
+  target.focus({ preventScroll: true });
+  window.history.replaceState(window.history.state, "", "#nearby-shops");
+}
+
+type OpenNowEntry = {
+  item: CatalogItem;
+  closesLabel: string | null;
+  closingSoon: boolean;
+  distanceKm: number | null;
+};
+
+/**
+ * Section 07 card — a genuinely-open salon. The Open Now badge is always a
+ * visible text label (never color-only), the closing time is real data only,
+ * and offline cached rows never claim a live status.
+ */
+function OpenNowCard({ entry, navigate, offline }: { entry: OpenNowEntry; navigate: (path: string) => void; offline?: boolean }) {
+  const { item, closesLabel, closingSoon, distanceKm } = entry;
+  const cover = item.cover_image_path?.startsWith("http") ? item.cover_image_path : null;
+  const rating = nearbyRatingCopy(item.rating_average, item.review_count);
+  return (
+    <article className="salon-card nearby-card">
+      <div
+        className="salon-visual"
+        role="img"
+        aria-label={`${item.name} salon photo`}
+        style={cover ? { backgroundImage: `url("${cover.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
+      >
+        {!cover && <span aria-hidden="true">✦</span>}
+      </div>
+      <div className="salon-body">
+        <div className="salon-meta">
+          <span>{item.business_category ?? "Salon"}</span>
+          <span>{distanceKm != null ? `📍 ${formatDistance(distanceKm)} away` : "Distance unavailable"}</span>
+        </div>
+        <h3>{item.name}</h3>
+        <p>{item.area ?? item.city}, {item.city}</p>
+        <div className="open-now-badges">
+          {offline ? (
+            <span className="open-badge open-badge-offline">Status unavailable offline</span>
+          ) : (
+            <>
+              <span className="open-badge">Open Now</span>
+              {closesLabel && <span className="open-until">Open until {closesLabel}</span>}
+              {closingSoon && <span className="closing-soon">Closing Soon</span>}
+            </>
+          )}
+        </div>
+        <div className="salon-meta">
+          <span>{rating ?? "No ratings yet"}</span>
+          <span>{nearbyPriceCopy(item.starting_price_paise)}</span>
+        </div>
+        <div className="salon-bottom">
+          <VerifiedBadge salonName={item.name} />
+        </div>
+        <div className="button-row" style={{ marginTop: 10 }}>
+          <button className="secondary compact" disabled={!item.website.slug} onClick={() => item.website.slug && navigate(`/salons/${item.website.slug}`)}>View Salon</button>
+          <button className="secondary compact" disabled={!item.website.slug} onClick={() => item.website.slug && navigate(`/app/customer/?salon=${item.id}&returnTo=${encodeURIComponent(`/salons/${item.website.slug}`)}`)}>Book Now</button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+/**
+ * Section 07 — Open Now section. Reuses Section 06's selected-area base and
+ * the shared salon_hours fetch (no duplicate requests, no second GPS prompt):
+ * Open Now calculation never depends on location permission.
+ */
+function OpenNowSection({
+  online,
+  baseLoading,
+  catalogError,
+  baseItems,
+  hoursById,
+  area,
+  fixUsable,
+  gpsFix,
+  navigate,
+}: {
+  online: boolean;
+  baseLoading: boolean;
+  catalogError: string;
+  baseItems: CatalogItem[];
+  hoursById: Record<string, { opens_at: string | null; closes_at: string | null; is_closed: boolean }>;
+  area: string;
+  fixUsable: boolean;
+  gpsFix: { latitude: number; longitude: number } | null;
+  navigate: (path: string) => void;
+}) {
+  const minutes = useMinutesNowIST();
+  const [sortMode, setSortMode] = useState<"default" | "nearest" | "rating">("default");
+  const [priceBand, setPriceBand] = useState("");
+  const [genderFilter, setGenderFilter] = useState("");
+
+  // Honest open computation over the live area base — memoized on the minute.
+  const { openEntries, anyHours } = useMemo(() => {
+    let sawHours = false;
+    const list: OpenNowEntry[] = [];
+    if (minutes == null) return { openEntries: list, anyHours: false };
+    for (const item of baseItems) {
+      const hours = hoursById[item.id] ?? configOpeningHours(item);
+      if (hours) sawHours = true;
+      const verdict: OpenNowVerdict = openNowVerdict(hours, minutes);
+      if (verdict.status !== "open") continue;
+      const distanceKm = fixUsable && gpsFix && item.approval_status === "approved" &&
+        typeof item.latitude === "number" && typeof item.longitude === "number"
+        ? haversineKm(gpsFix.latitude, gpsFix.longitude, Number(item.latitude), Number(item.longitude))
+        : null;
+      list.push({ item, closesLabel: verdict.closesLabel, closingSoon: verdict.closingSoon, distanceKm });
+    }
+    // Default order: open+nearest first, then rating, reviews, live order.
+    list.sort((a, b) => {
+      const ad = a.distanceKm, bd = b.distanceKm;
+      if (ad != null && bd != null && ad !== bd) return ad - bd;
+      if (ad != null && bd == null) return -1;
+      if (ad == null && bd != null) return 1;
+      const ar = Number(a.item.rating_average ?? 0), br = Number(b.item.rating_average ?? 0);
+      if (ar !== br) return br - ar;
+      const an = Number(a.item.review_count ?? 0), bn = Number(b.item.review_count ?? 0);
+      if (an !== bn) return bn - an;
+      return 0;
+    });
+    return { openEntries: list, anyHours: sawHours };
+  }, [baseItems, hoursById, minutes, fixUsable, gpsFix]);
+
+  const filtersActive = sortMode !== "default" || priceBand !== "" || genderFilter !== "";
+
+  const visibleEntries = useMemo(() => {
+    let list = openEntries;
+    if (sortMode === "nearest") {
+      list = [...list].sort((a, b) => {
+        if (a.distanceKm != null && b.distanceKm != null) return a.distanceKm - b.distanceKm;
+        if (a.distanceKm != null) return -1;
+        if (b.distanceKm != null) return 1;
+        return 0;
+      });
+    } else if (sortMode === "rating") {
+      list = [...list].sort((a, b) =>
+        Number(b.item.rating_average ?? 0) - Number(a.item.rating_average ?? 0) ||
+        Number(b.item.review_count ?? 0) - Number(a.item.review_count ?? 0));
+    }
+    if (priceBand) {
+      const maxPaise = Number(priceBand);
+      list = list.filter((entry) =>
+        typeof entry.item.starting_price_paise === "number" &&
+        entry.item.starting_price_paise > 0 &&
+        entry.item.starting_price_paise <= maxPaise);
+    }
+    if (genderFilter) {
+      list = list.filter((entry) => nearbyGenderMatches(genderFilter, entry.item.business_category));
+    }
+    return list.slice(0, OPEN_NOW_DISPLAY_LIMIT);
+  }, [openEntries, sortMode, priceBand, genderFilter]);
+
+  const clearFilters = () => { setSortMode("default"); setPriceBand(""); setGenderFilter(""); };
+
+  // "Change Area" hands over to Section 06's area selector (single source of
+  // truth for manual location — no second selector, no duplicate state).
+  const changeArea = () => {
+    const select = document.querySelector('#nearby-shops select[aria-label="Jaipur area"]') as HTMLSelectElement | null;
+    if (!select) return;
+    let reduced = false;
+    try { reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch { reduced = false; }
+    select.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "center" });
+    select.focus({ preventScroll: true });
+  };
+
+  // CTA → existing /salons route; the supported Open Now param is `open=1`.
+  const openAllOpenSalons = () => {
+    const params = new URLSearchParams();
+    params.set("open", "1");
+    if (area) params.set("area", area);
+    if (priceBand) params.set("price", priceBand);
+    if (genderFilter) params.set("gender", genderFilter);
+    if (sortMode === "rating") params.set("sort", "rating");
+    const qs = params.toString();
+    navigate(qs ? `/salons?${qs}` : "/salons");
+  };
+
+  const statusLine = !online
+    ? "Aap offline hain. Live Open Now status verify nahi kiya ja sakta."
+    : minutes == null || baseLoading
+      ? "Open salons check ho rahe hain…"
+      : `${visibleEntries.length || openEntries.length} salon${openEntries.length === 1 ? "" : "s"} abhi open hain${area ? ` — ${area}` : " — Jaipur"} (Asia/Kolkata time).`;
+
+  return (
+    <section id="open-now" aria-labelledby="open-now-heading" className="section scroll-mt-24" style={{ background: "var(--cream)" }}>
+      <div className="section-heading"><span className="eyebrow">Available now</span><h2 id="open-now-heading">Abhi Open Salons</h2><p>Current salon timings ke hisaab se abhi available salons explore karein.</p></div>
+      <p className="nearby-status" role="status" aria-live="polite">{statusLine}</p>
+
+      {/* Compact filters — Open Now is the mandatory core rule (not clearable). */}
+      <div className="open-now-filters" role="group" aria-label="Open salon filters">
+        <span className="open-now-mandatory">Open Now · required</span>
+        <button type="button" className={`open-now-chip${sortMode === "nearest" ? " active" : ""}`} aria-pressed={sortMode === "nearest"} disabled={!fixUsable} onClick={() => setSortMode((m) => (m === "nearest" ? "default" : "nearest"))} title={fixUsable ? undefined : "Nearest sort ke liye Section 06 me location detect karein"}>Nearest</button>
+        <button type="button" className={`open-now-chip${sortMode === "rating" ? " active" : ""}`} aria-pressed={sortMode === "rating"} onClick={() => setSortMode((m) => (m === "rating" ? "default" : "rating"))}>Top Rated</button>
+        <select className="open-now-select" aria-label="Price" value={priceBand} onChange={(e) => setPriceBand(e.target.value)}>
+          <option value="">Any price</option>
+          <option value="50000">Under ₹500</option>
+          <option value="100000">Under ₹1,000</option>
+          <option value="200000">Under ₹2,000</option>
+        </select>
+        <button type="button" className={`open-now-chip${genderFilter === "unisex" ? " active" : ""}`} aria-pressed={genderFilter === "unisex"} onClick={() => setGenderFilter((g) => (g === "unisex" ? "" : "unisex"))}>Unisex</button>
+        <button type="button" className={`open-now-chip${genderFilter === "female" ? " active" : ""}`} aria-pressed={genderFilter === "female"} onClick={() => setGenderFilter((g) => (g === "female" ? "" : "female"))}>Women</button>
+        <button type="button" className={`open-now-chip${genderFilter === "male" ? " active" : ""}`} aria-pressed={genderFilter === "male"} onClick={() => setGenderFilter((g) => (g === "male" ? "" : "male"))}>Men</button>
+        <button type="button" className="open-now-chip open-now-clear" onClick={clearFilters} disabled={!filtersActive}>Clear All</button>
+      </div>
+
+      {baseLoading || minutes == null ? (
+        <div className="nearby-grid" aria-hidden="true">
+          {Array.from({ length: 4 }, (_, i) => <div key={i} className="salon-card skeleton"><div /><p /><p /><p /></div>)}
+        </div>
+      ) : !online ? (
+        baseItems.length ? (
+          <>
+            <p className="saved-results-label">Saved results</p>
+            <div className="nearby-grid">
+              {baseItems.slice(0, OPEN_NOW_DISPLAY_LIMIT).map((item) => (
+                <OpenNowCard key={item.id} offline entry={{ item, closesLabel: null, closingSoon: false, distanceKm: null }} navigate={navigate} />
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="state-card"><span>✦</span><h3>Aap offline hain</h3><p>Aap offline hain. Live Open Now status verify nahi kiya ja sakta.</p><div className="button-row"><button className="secondary" onClick={() => navigate("/salons")}>View All Salons</button></div></div>
+        )
+      ) : catalogError && !baseItems.length ? (
+        <div className="state-card"><span>✦</span><h3>Open salons load nahi ho sake</h3><p>Open salons load nahi ho sake. Dobara try karein.</p><div className="button-row"><button className="secondary" onClick={() => window.location.reload()}>Retry</button><button className="secondary" onClick={() => navigate("/salons")}>View All Salons</button></div></div>
+      ) : baseItems.length && !anyHours ? (
+        <div className="state-card"><span>✦</span><h3>Verified salon timings abhi available nahi hain</h3><p>Verified salon timings abhi available nahi hain.</p><div className="button-row"><button className="secondary" onClick={() => navigate("/salons")}>Sabhi Salons Dekhein</button></div></div>
+      ) : filtersActive && !visibleEntries.length ? (
+        <div className="state-card"><span>✦</span><h3>Selected filters ke saath abhi koi open salon nahi mila</h3><p>Selected filters ke saath abhi koi open salon nahi mila.</p><div className="button-row"><button className="secondary" onClick={clearFilters}>Clear Filters</button><button className="secondary" onClick={changeArea}>Change Area</button><button className="secondary" onClick={() => navigate("/salons")}>View All Salons</button></div></div>
+      ) : !visibleEntries.length ? (
+        <div className="state-card"><span>✦</span><h3>Is area mein abhi koi salon open nahi hai</h3><p>Is area mein abhi koi salon open nahi hai.</p><div className="button-row"><button className="secondary" onClick={() => navigate("/salons")}>View All Salons</button><button className="secondary" onClick={changeArea}>Change Area</button><button className="secondary" onClick={() => scrollToNearbyShops()}>Check Nearby Shops</button></div></div>
+      ) : (
+        <div className="nearby-grid">
+          {visibleEntries.map((entry) => <OpenNowCard key={entry.item.id} entry={entry} navigate={navigate} />)}
+        </div>
+      )}
+
+      <div className="categories-cta">
+        <button type="button" className="primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b]" onClick={openAllOpenSalons}>Sabhi Open Salons Dekhein</button>
+      </div>
+    </section>
+  );
+}
+
+/** Section 11 display cap (spec: maximum 4–6 recommendations). */
+const SMART_PICKS_DISPLAY_LIMIT = 6;
+
+/**
+ * Section 11 — AI Smart Picks (INTERNAL name).
+ * (Renumbered from "Section 09" per locked MEMORY.md order — PHASE1_SECTION11.md.)
+ *
+ * Public label honesty: the existing recommendation contract is server-side
+ * rule-based scoring (`marketplace_recommendations` RPC — SQL scoring, no
+ * AI/ML model exists in this codebase), so the public UI says "Smart Picks"
+ * and NEVER claims AI personalization.
+ *
+ * Modes: (1) Personalized — authenticated customer + trusted isPersonalized;
+ * (2) Location-based — selected Section 08 (Nearby Shops) area rows; (3) Popular Jaipur —
+ * generic ranking, never labelled personalized; (4) Limited data — existing
+ * safe marketplace ranking labelled "Popular Picks".
+ *
+ * Privacy: only backend-provided reasons render (never invented); user ids
+ * never reach the DOM/URLs; the hook clears personalized rows on session
+ * change, so nothing leaks across users.
+ */
+function SmartPicksSection({
+  online,
+  authLoading,
+  isCustomer,
+  rows,
+  loading,
+  error,
+  isPersonalized,
+  onRefresh,
+  fallbackItems,
+  fallbackAllowed,
+  area,
+  items,
+  fixUsable,
+  gpsFix,
+  navigate,
+}: {
+  online: boolean;
+  authLoading: boolean;
+  isCustomer: boolean;
+  rows: RecommendationRow[];
+  loading: boolean;
+  error: string;
+  isPersonalized: boolean;
+  onRefresh: () => void;
+  fallbackItems: CatalogItem[];
+  fallbackAllowed: boolean;
+  area: string;
+  items: CatalogItem[];
+  fixUsable: boolean;
+  gpsFix: { latitude: number; longitude: number } | null;
+  navigate: (path: string) => void;
+}) {
+  const minutes = useMinutesNowIST();
+
+  // Duplicate prevention: same salon never twice; invalid ids dropped;
+  // backend order preserved; capped for the homepage.
+  const deduped = useMemo(() => {
+    const seen = new Set<string>();
+    const out: RecommendationRow[] = [];
+    for (const row of rows) {
+      if (!row || !row.id || seen.has(row.id)) continue;
+      seen.add(row.id);
+      out.push(row);
+      if (out.length >= SMART_PICKS_DISPLAY_LIMIT) break;
+    }
+    return out;
+  }, [rows]);
+
+  // Mode 2 candidates: recommended rows in the Section 06 selected area.
+  const areaRows = useMemo(() => {
+    const needle = area.trim().toLowerCase();
+    if (!needle) return [] as RecommendationRow[];
+    return deduped.filter((row) =>
+      (row.area ?? "").toLowerCase() === needle || (row.city ?? "").toLowerCase() === needle);
+  }, [deduped, area]);
+
+  // Mode 4 (limited data): existing safe deterministic marketplace ranking,
+  // mapped onto the shared card shape — real fields only, nothing invented.
+  const limitedRows = useMemo<RecommendationRow[]>(() => {
+    if (!fallbackAllowed) return [];
+    return fallbackItems.slice(0, SMART_PICKS_DISPLAY_LIMIT).map((item) => ({
+      id: item.id,
+      slug: item.website.slug,
+      name: item.name,
+      business_category: item.business_category,
+      area: item.area,
+      city: item.city,
+      rating_avg: Number(item.rating_average ?? 0),
+      review_count: Number(item.review_count ?? 0),
+      booking_count: 0,
+      starting_price_paise: item.starting_price_paise,
+      cover_image_path: item.cover_image_path,
+      score: 0,
+      reason: "",
+      personalized: false,
+    }));
+  }, [fallbackItems, fallbackAllowed]);
+
+  const mode: "personalized" | "location" | "popular" | "limited" =
+    isCustomer && isPersonalized && deduped.length > 0 ? "personalized"
+      : !isPersonalized && areaRows.length > 0 ? "location"
+        : deduped.length > 0 ? "popular"
+          : limitedRows.length > 0 ? "limited"
+            : "popular";
+
+  const displayRows = mode === "personalized" ? deduped
+    : mode === "location" ? areaRows.slice(0, SMART_PICKS_DISPLAY_LIMIT)
+      : mode === "limited" ? limitedRows
+        : deduped;
+
+  // Section 09 (Open Now) hours contract + Section 08 (Nearby Shops) location state reused.
+  const displayIdsKey = displayRows.map((row) => row.id).join(",");
+  const hoursById = useTodayHours(online && !loading, displayRows.map((row) => row.id), displayIdsKey);
+  const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+
+  const distanceFor = (rowId: string): number | null => {
+    if (!fixUsable || !gpsFix) return null;
+    const item = itemsById.get(rowId);
+    if (!item || item.approval_status !== "approved" || typeof item.latitude !== "number" || typeof item.longitude !== "number") return null;
+    return haversineKm(gpsFix.latitude, gpsFix.longitude, Number(item.latitude), Number(item.longitude));
+  };
+  const openLabelFor = (rowId: string): string => {
+    if (!online || minutes == null) return "Timings unavailable";
+    const item = itemsById.get(rowId);
+    const hours = hoursById[rowId] ?? (item ? configOpeningHours(item) : null);
+    if (!hours) return "Timings unavailable";
+    const verdict: OpenNowVerdict = openNowVerdict(hours, minutes);
+    return verdict.status === "open" ? "Open now" : verdict.status === "closed" ? "Closed now" : "Timings unavailable";
+  };
+
+  const heading = mode === "personalized"
+    ? { eyebrow: "Smart picks for you", title: "Aapke Liye Recommended", copy: "Aapki preferences, selected location aur Nexora activity ke आधार पर relevant salons explore करें।" }
+    : mode === "location"
+      ? { eyebrow: "Smart picks near you", title: "Aapke Area Ke Smart Picks", copy: "Aapke selected area ke popular published salons — real ratings aur reviews ke saath." }
+      : { eyebrow: "Popular picks", title: "Nexora Par Popular Salons", copy: "Jaipur में customers द्वारा पसंद किए जा रहे published salons explore करें।" };
+
+  const statusLine = authLoading || loading
+    ? "Smart picks load ho rahe hain…"
+    : !online
+      ? "Aap offline hain. Live recommendations update nahi ki ja sakti."
+      : displayRows.length === 0
+        ? ""
+        : mode === "personalized"
+          ? `${displayRows.length} recommendations aapke liye ready hain.`
+          : mode === "location"
+            ? `${displayRows.length} popular salons ${area} mein.`
+            : `${displayRows.length} popular picks — generic ranking, personalized claim nahin.`;
+
+  const viewAll = () => navigate(mode === "personalized" ? "/salons" : "/salons?sort=popularity");
+
+  return (
+    <section id="smart-picks" aria-labelledby="smart-picks-heading" className="section scroll-mt-24">
+      <div className="section-heading"><span className="eyebrow">{heading.eyebrow}</span><h2 id="smart-picks-heading">{heading.title}</h2><p>{heading.copy}</p></div>
+      {statusLine && <p className="nearby-status" role="status" aria-live="polite">{statusLine}</p>}
+
+      <div className="smart-picks-actions">
+        <button type="button" className="secondary compact focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b]" onClick={onRefresh} disabled={authLoading || loading}>Refresh Picks</button>
+      </div>
+
+      {authLoading || loading ? (
+        displayRows.length > 0 && !authLoading ? (
+          /* Refreshing: keep previous valid results visible (no unnecessary
+             disappearance), skeletons only when nothing is on screen. */
+          <div className="nearby-grid">
+            {displayRows.map((row) => (
+              <RecommendationCard key={row.id} row={row} navigate={navigate} showReason={mode === "personalized"} reasonOverride={mode === "location" ? `Popular in ${area}` : undefined} distanceKm={distanceFor(row.id)} openLabel={openLabelFor(row.id)} />
+            ))}
+          </div>
+        ) : (
+          <div className="nearby-grid" aria-hidden="true">
+            {Array.from({ length: 4 }, (_, i) => <div key={i} className="salon-card skeleton"><div /><p /><p /><p /></div>)}
+          </div>
+        )
+      ) : !online ? (
+        displayRows.length ? (
+          <>
+            <p className="saved-results-label">Saved picks</p>
+            <div className="nearby-grid">
+              {displayRows.map((row) => (
+                <RecommendationCard key={row.id} row={row} navigate={navigate} showReason={mode === "personalized"} reasonOverride={mode === "location" ? `Popular in ${area}` : undefined} distanceKm={distanceFor(row.id)} openLabel="Timings unavailable" />
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="state-card"><span>✦</span><h3>Aap offline hain</h3><p>Aap offline hain. Live recommendations update nahi ki ja sakti.</p><div className="button-row"><button className="secondary" onClick={() => navigate("/salons")}>View All Salons</button></div></div>
+        )
+      ) : error && !displayRows.length ? (
+        <div className="state-card"><span>✦</span><h3>Smart picks load nahi ho sake</h3><p>Smart picks load nahi ho sake. Dobara try karein.</p><div className="button-row"><button className="secondary" onClick={onRefresh}>Retry</button><button className="secondary" onClick={() => navigate("/salons")}>View All Salons</button></div></div>
+      ) : !displayRows.length ? (
+        isCustomer ? (
+          <div className="state-card"><span>✦</span><h3>Aapke liye recommendations banane ke liye abhi enough activity nahi hai</h3><p>Aapke liye recommendations banane ke liye abhi enough activity nahi hai.</p><div className="button-row"><button className="secondary" onClick={() => navigate("/salons")}>Explore Salons</button><button className="secondary" onClick={() => scrollToCategoriesSection()}>Browse Categories</button></div></div>
+        ) : (
+          <div className="state-card"><span>✦</span><h3>Recommended salons abhi available nahi hain</h3><p>Recommended salons abhi available nahi hain.</p><div className="button-row"><button className="secondary" onClick={() => navigate("/salons")}>View All Salons</button><button className="secondary" onClick={() => scrollToCategoriesSection()}>Explore Categories</button></div></div>
+        )
+      ) : (
+        <>
+          {isCustomer && !isPersonalized && <p className="saved-results-label">Popular Picks</p>}
+          <div className="nearby-grid">
+            {displayRows.map((row) => (
+              <RecommendationCard key={row.id} row={row} navigate={navigate} showReason={mode === "personalized"} reasonOverride={mode === "location" ? `Popular in ${area}` : undefined} distanceKm={distanceFor(row.id)} openLabel={openLabelFor(row.id)} />
+            ))}
+          </div>
+        </>
+      )}
+
+      <div className="categories-cta">
+        <button type="button" className="primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b]" onClick={viewAll}>{mode === "personalized" ? "Aur Recommendations Dekhein" : "Popular Salons Dekhein"}</button>
+      </div>
+    </section>
+  );
+}
+
 function CatalogPage({ navigate, online }: { navigate: (path: string) => void; online: boolean }) {
   // ---- Smart search state ----
   const [query, setQuery] = useState("");
@@ -1249,6 +2639,10 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
   const [offerOnly, setOfferOnly] = useState(false);
   const [genderFilter, setGenderFilter] = useState("");
   const [sortBy, setSortBy] = useState<"relevance"|"rating"|"popularity"|"price"|"availability"|"name">("relevance");
+  // Section 03 — manual city selection + GPS-backed distance & Open Now.
+  const [cityFilter, setCityFilter] = useState("");
+  const [distanceKm, setDistanceKm] = useState(""); // "", "2", "5", "10"
+  const [openNow, setOpenNow] = useState(false);
   const [results, setResults] = useState<SearchRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -1257,11 +2651,147 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
     try { return JSON.parse(localStorage.getItem(RECENT_SEARCHES_KEY) ?? "[]"); } catch { return []; }
   });
 
-  const searchParams = useMemo(() => ({ q: debouncedQuery, category: categoryFilter, location: locationFilter, price: priceFilter, rating: ratingFilter, offer: offerOnly, gender: genderFilter, sort: sortBy }), [debouncedQuery, categoryFilter, locationFilter, priceFilter, ratingFilter, offerOnly, genderFilter, sortBy]);
+  // Section 03 GPS: OBSERVE only (`auto: false`) — the /salons page never
+  // requests location permission by itself. Acquisition starts exclusively
+  // from the user's click on "Use my location" (location.start() below) or
+  // the homepage "Salons near me" action.
+  const location = useLocation({ auto: false });
+  const gpsFix = location.fix;
+  const insideJaipur = isInsideJaipur(gpsFix);
+  /** Distance filter is applied only with a real fix inside Jaipur. */
+  const distanceUsable = distanceKm !== "" && gpsFix != null && insideJaipur;
+  /** Manual city options come from the LIVE published catalog — never invented. */
+  const [cities, setCities] = useState<string[]>([]);
+  useEffect(() => {
+    let active = true;
+    const timer = window.setTimeout(async () => {
+      try {
+        const catalog = await fetchCatalog();
+        if (!active) return;
+        setCities(Array.from(new Set(catalog.map((item) => item.city).filter(Boolean))).sort());
+      } catch { /* city list stays empty; manual area selection still works */ }
+    }, 0);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, []);
+
+  // Rounded fix key: distance re-ranking re-runs only after a real move
+  // (~110 m), never on GPS jitter. Raw coordinates stay off the URL/UI.
+  const fixKey = distanceUsable && gpsFix
+    ? `${Math.round(gpsFix.latitude * 1000)},${Math.round(gpsFix.longitude * 1000)}`
+    : "";
+
+  const searchParams = useMemo(() => ({
+    q: debouncedQuery, category: categoryFilter, location: locationFilter,
+    city: cityFilter, price: priceFilter, rating: ratingFilter, offer: offerOnly,
+    gender: genderFilter, sort: sortBy, dist: distanceKm, open: openNow, fixKey,
+  }), [debouncedQuery, categoryFilter, locationFilter, cityFilter, priceFilter, ratingFilter, offerOnly, genderFilter, sortBy, distanceKm, openNow, fixKey]);
 
   const runSearch = useCallback(async (offset: number) => {
     const client = getClient();
     if (!client) return { rows: [] as SearchRow[] };
+
+    // Section 03: distance and Open Now are device-side / opening-hours
+    // filters — the locked marketplace_search RPC has no parameters for them,
+    // and shared RPCs must not change. When either is active (distance only
+    // with a usable Jaipur fix), run the same safe catalog gates directly and
+    // rank/filter on the device. Everything else keeps the RPC path below.
+    // The rounded fixKey (from searchParams) is the only location input here,
+    // so this callback's dependency list stays exact and stable — GPS jitter
+    // (< ~110 m) never re-runs the search or leaks into distances.
+    const distanceActive = Boolean(searchParams.dist) && Boolean(searchParams.fixKey);
+    const [fixLat, fixLng] = searchParams.fixKey
+      ? searchParams.fixKey.split(",").map(Number)
+      : [Number.NaN, Number.NaN];
+    if (searchParams.open || distanceActive) {
+      const all = await fetchCatalog();
+      const q = (searchParams.q || "").toLowerCase();
+      const cat = (searchParams.category || "").toLowerCase();
+      const loc = (searchParams.location || "").toLowerCase();
+      const city = (searchParams.city || "").toLowerCase();
+      let filtered = all.filter((item) => {
+        if (cat && (item.business_category || "").toLowerCase() !== cat) return false;
+        if (city && (item.city || "").toLowerCase() !== city) return false;
+        if (loc) {
+          const matchLoc = (item.city || "").toLowerCase().includes(loc) ||
+                           (item.area || "").toLowerCase().includes(loc) ||
+                           (item.address || "").toLowerCase().includes(loc);
+          if (!matchLoc) return false;
+        }
+        if (q) {
+          const matchQ = (item.name || "").toLowerCase().includes(q) ||
+                         (item.business_category || "").toLowerCase().includes(q) ||
+                         (item.city || "").toLowerCase().includes(q) ||
+                         (item.area || "").toLowerCase().includes(q) ||
+                         (item.address || "").toLowerCase().includes(q) ||
+                         (item.description || "").toLowerCase().includes(q) ||
+                         (item.website.slug || "").toLowerCase().includes(q);
+          if (!matchQ) return false;
+        }
+        if (searchParams.rating > 0 && (item.rating_average || 0) < searchParams.rating) return false;
+        if (searchParams.price && Number(searchParams.price) > 0 && (item.starting_price_paise || 0) > Number(searchParams.price)) return false;
+        // Same audience heuristic the customer-suggestion ranking already uses
+        // (the catalog rows carry no gender column; never invents one).
+        if (searchParams.gender) {
+          const category = (item.business_category ?? "").toLowerCase();
+          if (searchParams.gender === "female" && !/women|female|ladies/.test(category)) return false;
+          if (searchParams.gender === "male" && !/men|male|gents/.test(category)) return false;
+          if (searchParams.gender === "unisex" && !/unisex/.test(category)) return false;
+        }
+        return true;
+      });
+      // Offers-only: real active offers rows (same public offers table the
+      // salon pages already read) — never a fabricated has_offer flag.
+      if (searchParams.offer && filtered.length) {
+        const { data: activeOffers } = await client
+          .from("offers")
+          .select("salon_id")
+          .in("salon_id", filtered.map((item) => item.id))
+          .eq("is_active", true);
+        const withOffer = new Set(((activeOffers ?? []) as Array<{ salon_id: string }>).map((row) => row.salon_id));
+        filtered = filtered.filter((item) => withOffer.has(item.id));
+      }
+      // Open Now: owner-managed salon_hours (config fallback), IST clock.
+      if (searchParams.open) {
+        const openIds = await fetchOpenNowIds(client, filtered);
+        filtered = filtered.filter((item) => openIds.has(item.id));
+      }
+      // Distance: approved coordinates only, Haversine on-device, then rank
+      // nearest first (ties by rating). No coordinates ⇒ not rankable ⇒ out.
+      const distanceBySalon = new Map<string, number>();
+      if (distanceActive && Number.isFinite(fixLat) && Number.isFinite(fixLng)) {
+        const maxKm = Number(searchParams.dist);
+        filtered = filtered.filter((item) =>
+          item.approval_status === "approved" &&
+          typeof item.latitude === "number" &&
+          typeof item.longitude === "number",
+        );
+        const ranked = filtered
+          .map((item) => ({ item, d: haversineKm(fixLat, fixLng, Number(item.latitude), Number(item.longitude)) }))
+          .filter((entry) => entry.d <= maxKm)
+          .sort((a, b) => a.d - b.d || (b.item.rating_average ?? 0) - (a.item.rating_average ?? 0));
+        filtered = ranked.map((entry) => { distanceBySalon.set(entry.item.id, entry.d); return entry.item; });
+      }
+      const rows: SearchRow[] = filtered.slice(offset, offset + 12).map((item) => ({
+        id: item.id,
+        slug: item.website.slug || item.slug || item.id,
+        name: item.name,
+        business_category: item.business_category || "hair",
+        area: item.area,
+        city: item.city,
+        landmark: null,
+        gender_category: null,
+        rating_avg: Number(item.rating_average || 0),
+        review_count: Number(item.review_count || 0),
+        booking_count: 0,
+        starting_price_paise: item.starting_price_paise ?? null,
+        cover_image_path: item.cover_image_path ?? null,
+        has_offer: false,
+        score: 1,
+        distanceKm: distanceBySalon.get(item.id) ?? null,
+      }));
+      return { rows };
+    }
+
     try {
       const { data, error: rpcError } = await client.rpc("marketplace_search", {
         p_query: searchParams.q,
@@ -1276,7 +2806,12 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
         p_offset: offset,
       });
       if (!rpcError && Array.isArray(data)) {
-        return { rows: data as SearchRow[] };
+        // The locked RPC has no city parameter; apply the manual city choice
+        // to the returned rows instead of touching the shared contract.
+        const rows = (data as SearchRow[]).filter((row) =>
+          !searchParams.city || (row.city ?? "").toLowerCase() === searchParams.city.toLowerCase(),
+        );
+        return { rows };
       }
     } catch {
       // fallback to direct catalog query
@@ -1287,9 +2822,11 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
     const q = (searchParams.q || '').toLowerCase();
     const cat = (searchParams.category || '').toLowerCase();
     const loc = (searchParams.location || '').toLowerCase();
+    const city = (searchParams.city || '').toLowerCase();
 
     const filtered = all.filter((item) => {
       if (cat && (item.business_category || '').toLowerCase() !== cat) return false;
+      if (city && (item.city || '').toLowerCase() !== city) return false;
       if (loc) {
         const matchLoc = (item.city || '').toLowerCase().includes(loc) ||
                          (item.area || '').toLowerCase().includes(loc) ||
@@ -1331,23 +2868,48 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
     return { rows };
   }, [searchParams]);
 
-  // URL sync (q, category, area) — reflect search in the URL.
+  // URL sync — every SUPPORTED filter is shareable via /salons query params.
+  // Hard rule: only filter values travel in the URL — never raw or rounded
+  // GPS coordinates (the distance filter is just a radius choice).
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (debouncedQuery) url.searchParams.set("q", debouncedQuery); else url.searchParams.delete("q");
-    if (categoryFilter) url.searchParams.set("category", categoryFilter); else url.searchParams.delete("category");
-    if (locationFilter) url.searchParams.set("area", locationFilter); else url.searchParams.delete("area");
+    const sync = (key: string, value: string) => {
+      if (value) url.searchParams.set(key, value); else url.searchParams.delete(key);
+    };
+    sync("q", debouncedQuery);
+    sync("category", categoryFilter);
+    sync("area", locationFilter);
+    sync("city", cityFilter);
+    sync("price", priceFilter);
+    sync("rating", ratingFilter ? String(ratingFilter) : "");
+    sync("gender", genderFilter);
+    sync("offer", offerOnly ? "1" : "");
+    sync("dist", distanceKm);
+    sync("open", openNow ? "1" : "");
+    sync("sort", sortBy === "relevance" ? "" : sortBy);
     window.history.replaceState({}, "", url.toString());
-  }, [debouncedQuery, categoryFilter, locationFilter]);
+  }, [debouncedQuery, categoryFilter, locationFilter, cityFilter, priceFilter, ratingFilter, genderFilter, offerOnly, distanceKm, openNow, sortBy]);
 
-  // Deep links + initial params
+  // Deep links + initial params (inverse of the sync above).
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
       const q = params.get("q"); if (q) { setQuery(q); setDebouncedQuery(q); }
       const cat = params.get("category"); if (cat) setCategoryFilter(cat);
       const area = params.get("area"); if (area) setLocationFilter(area);
-      const city = params.get("city"); if (city && !area) setLocationFilter(city);
+      const cityParam = params.get("city");
+      if (cityParam && area) setCityFilter(cityParam);
+      else if (cityParam) setLocationFilter(cityParam);
+      const price = params.get("price"); if (price) setPriceFilter(price);
+      const rating = params.get("rating"); if (rating) setRatingFilter(Number(rating) || 0);
+      const gender = params.get("gender"); if (gender) setGenderFilter(gender);
+      if (params.get("offer") === "1") setOfferOnly(true);
+      const dist = params.get("dist"); if (dist === "2" || dist === "5" || dist === "10") setDistanceKm(dist);
+      if (params.get("open") === "1") setOpenNow(true);
+      const sort = params.get("sort");
+      if (sort && ["rating", "popularity", "price", "availability", "name"].includes(sort)) {
+        setSortBy(sort as typeof sortBy);
+      }
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -1447,18 +3009,46 @@ function CatalogPage({ navigate, online }: { navigate: (path: string) => void; o
       {/* Filters + sort */}
       <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", marginBottom: 14 }}>
         <label>Category<select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}><option value="">All categories</option>{categories.map((c) => <option key={c} value={c}>{c}</option>)}</select></label>
-        <label>Location<select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}><option value="">All Jaipur</option>{JAIPUR_ZONES.map((z) => <optgroup key={z.zone} label={z.zone}>{z.areas.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>)}</select></label>
+        <label>City<select value={cityFilter} onChange={(e) => setCityFilter(e.target.value)}><option value="">All cities</option>{cities.map((c) => <option key={c} value={c}>{c}</option>)}</select></label>
+        <label>Jaipur area<select value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}><option value="">All Jaipur</option>{JAIPUR_ZONES.map((z) => <optgroup key={z.zone} label={z.zone}>{z.areas.map((a) => <option key={a} value={a}>{a}</option>)}</optgroup>)}</select></label>
+        <label>Distance<select value={distanceKm} onChange={(e) => setDistanceKm(e.target.value)}><option value="">Any distance</option><option value="2">Within 2 km</option><option value="5">Within 5 km</option><option value="10">Within 10 km</option></select></label>
         <label>Price<select value={priceFilter} onChange={(e) => setPriceFilter(e.target.value)}>{priceOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
         <label>Min rating<select value={ratingFilter} onChange={(e) => setRatingFilter(Number(e.target.value))}><option value={0}>Any rating</option><option value={4}>4+ ★</option><option value={4.5}>4.5+ ★</option></select></label>
         <label>Audience<select value={genderFilter} onChange={(e) => setGenderFilter(e.target.value)}><option value="">Any</option><option value="female">Women</option><option value="male">Men</option><option value="unisex">Unisex</option></select></label>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, paddingTop: 6 }}><input type="checkbox" checked={offerOnly} onChange={(e) => setOfferOnly(e.target.checked)} /> Offers only</label>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, paddingTop: 6 }}><input type="checkbox" checked={openNow} onChange={(e) => setOpenNow(e.target.checked)} /> Open now</label>
         <label>Sort by<select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}><option value="relevance">Relevance</option><option value="rating">Rating</option><option value="popularity">Popularity</option><option value="price">Price low-high</option><option value="availability">Availability</option><option value="name">Name A-Z</option></select></label>
       </div>
 
+      {/* Section 03 GPS — user-action only. The button starts the shared
+          location singleton; the page itself never requests permission. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+        <button
+          type="button"
+          className="secondary compact"
+          disabled={location.isImproving}
+          onClick={() => {
+            if (!distanceKm) setDistanceKm("5");
+            location.start();
+          }}
+        >
+          {location.isImproving ? "Locating you…" : "📍 Use my location"}
+        </button>
+        <p role="status" aria-live="polite" style={{ margin: 0, fontSize: 13, color: "var(--muted, #8c7077)" }}>
+          {distanceKm !== "" && location.isImproving && !gpsFix && "Getting your location — allow the permission prompt if it appears."}
+          {distanceKm !== "" && !location.isImproving && !gpsFix && (location.status === "denied") && "GPS permission is denied. No problem — pick your Jaipur area manually above to filter."}
+          {distanceKm !== "" && !location.isImproving && !gpsFix && (location.status === "unsupported") && "This browser cannot access GPS. Use the manual city/area selection instead."}
+          {distanceKm !== "" && !location.isImproving && !gpsFix && (location.status === "unavailable" || location.status === "timeout") && "No GPS signal right now. Use the manual city/area selection, or retry in an open area."}
+          {distanceKm !== "" && !location.isImproving && !gpsFix && location.status === "offline" && "You are offline — reconnect to use location, or choose an area manually."}
+          {distanceKm !== "" && gpsFix && !insideJaipur && "You appear to be outside Jaipur. Nexora currently serves Jaipur, so the distance filter is paused — choose an area manually."}
+          {distanceUsable && `Distance filter on: salons within ${distanceKm} km of you (approximate).`}
+        </p>
+      </div>
+
       {/* States */}
-      {loading ? <SalonSkeletons count={6} /> : error ? <StateCard title="Could not search salons" text={error} action="Retry" onAction={() => { setLoading(true); void runSearch(0).then(({ rows }) => setResults(rows)).finally(() => setLoading(false)); }} /> : !results.length ? <StateCard title={query || categoryFilter || locationFilter ? "No matching salon" : "No published salons yet"} text={query || categoryFilter || locationFilter ? "Try another name, area, category or clear some filters." : "Owner-approved salon websites will appear here when published."} /> : (
+      {loading ? <SalonSkeletons count={6} /> : error ? <StateCard title="Could not search salons" text={error} action="Retry" onAction={() => { setLoading(true); void runSearch(0).then(({ rows }) => setResults(rows)).finally(() => setLoading(false)); }} /> : !results.length ? <StateCard title={query || categoryFilter || locationFilter || cityFilter || distanceKm || openNow ? "No matching salon" : "No published salons yet"} text={query || categoryFilter || locationFilter || cityFilter || distanceKm || openNow ? "Try another name, city, area or category — or widen the distance / clear Open now." : "Owner-approved salon websites will appear here when published."} /> : (
         <>
-          <p style={{ fontSize: 12, color: "#8c7077", margin: "0 0 12px" }}>{results.length} result{results.length === 1 ? "" : "s"}{query ? ` for “${query}”` : ""}{categoryFilter ? ` · ${categoryFilter}` : ""}{locationFilter ? ` · ${locationFilter}` : ""}</p>
+          <p style={{ fontSize: 12, color: "#8c7077", margin: "0 0 12px" }}>{results.length} result{results.length === 1 ? "" : "s"}{query ? ` for “${query}”` : ""}{categoryFilter ? ` · ${categoryFilter}` : ""}{cityFilter ? ` · ${cityFilter}` : ""}{locationFilter ? ` · ${locationFilter}` : ""}{distanceUsable ? ` · within ${distanceKm} km` : ""}{openNow ? " · open now" : ""}</p>
           <div className="salon-grid">{results.map((item) => <SearchSalonCard key={item.id} row={item} navigate={navigate} />)}</div>
           {results.length >= 12 && (
             <div style={{ textAlign: "center", marginTop: 20 }}>
@@ -1475,19 +3065,212 @@ function SearchSalonCard({ row, navigate }: { row: SearchRow; navigate: (path: s
   return (
     <article className="salon-card">
       <div className="salon-visual" style={row.cover_image_path?.startsWith("http") ? { backgroundImage: `url("${row.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>{!row.cover_image_path?.startsWith("http") && <span>✦</span>}<em>Verified</em>{row.has_offer && <em style={{ right: 8, background: "#e6007e" }}>OFFER</em>}</div>
-      <div className="salon-body"><div className="salon-meta"><span>{row.business_category ?? "Salon"}</span><span>★ {Number(row.rating_avg).toFixed(1)} ({row.review_count}) · {row.booking_count} bookings</span></div>
+      <div className="salon-body"><div className="salon-meta"><span>{row.business_category ?? "Salon"}</span><span>★ {Number(row.rating_avg).toFixed(1)} ({row.review_count}){row.booking_count > 0 ? ` · ${row.booking_count} bookings` : ""}{row.distanceKm != null ? ` · 📍 ${formatDistance(row.distanceKm)}` : ""}</span></div>
       <h3>{row.name}</h3><p>{row.area ?? row.city}, {row.city}{row.landmark ? ` · ${row.landmark}` : ""}</p><div className="salon-bottom"><b>From {money(row.starting_price_paise)}</b><button onClick={() => navigate(`/salons/${row.slug}`)}>View salon</button></div></div>
     </article>
   );
 }
 
-function TopRatedCard({ row, navigate }: { row: TopRatedRow; navigate: (path: string) => void }) {
+/**
+ * Section 10 Top Jaipur card — upgraded in place (single call site: the
+ * top-jaipur-salons section). Optional props are additive; every field has an
+ * honest fallback (Distance unavailable / Timings unavailable / No ratings
+ * yet / View services for pricing). Rank comes from the preserved backend
+ * order — never invented here.
+ */
+function TopRatedCard({
+  row,
+  navigate,
+  rank,
+  distanceKm,
+  openLabel,
+  featured,
+}: {
+  row: TopRatedRow;
+  navigate: (path: string) => void;
+  rank?: number;
+  distanceKm?: number | null;
+  openLabel?: string;
+  featured?: boolean;
+}) {
+  const rating = Number(row.rating_avg ?? 0);
+  const reviews = Number(row.review_count ?? 0);
+  const hasRating = rating > 0 && reviews > 0;
+  const ratingLine = hasRating ? `${rating.toFixed(1)} ★ · ${reviews} review${reviews === 1 ? "" : "s"}` : "No ratings yet";
+  const cover = row.cover_image_path?.startsWith("http") ? row.cover_image_path : null;
   return (
-    <article className="salon-card">
-      <div className="salon-visual" style={row.cover_image_path?.startsWith("http") ? { backgroundImage: `url("${row.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>{!row.cover_image_path?.startsWith("http") && <span>✦</span>}<em>Verified</em></div>
-      <div className="salon-body"><div className="salon-meta"><span>{row.business_category ?? "Salon"}</span><span>★ {Number(row.bayesian_rating).toFixed(1)} ({row.review_count} reviews)</span></div>
-      <h3>{row.name}</h3><p>{row.area ?? row.city}, {row.city}</p><div className="salon-bottom"><b>From {money(row.starting_price_paise)}</b><button onClick={() => navigate(`/salons/${row.slug}`)}>View salon</button></div></div>
+    <article className={`salon-card top-jaipur-card${featured ? " top-jaipur-card-featured" : ""}`}>
+      {rank != null && <span className="rank-badge" aria-label={`Rank ${rank}`}>#{rank}</span>}
+      <div
+        className="salon-visual"
+        role="img"
+        aria-label={`${row.name} salon photo`}
+        style={cover ? { backgroundImage: `url("${cover.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
+      >
+        {!cover && <span aria-hidden="true">✦</span>}
+      </div>
+      <div className="salon-body">
+        <div className="salon-meta">
+          <span>{row.business_category ?? "Salon"}</span>
+          <span aria-label={hasRating ? `${rating.toFixed(1)} out of 5, ${reviews} review${reviews === 1 ? "" : "s"}` : "No ratings yet"}>{ratingLine}</span>
+        </div>
+        <h3>{row.name}</h3>
+        <p>{row.area ?? row.city}, {row.city}</p>
+        <div className="salon-meta">
+          <span>{distanceKm != null ? `📍 ${formatDistance(distanceKm)} away` : "Distance unavailable"}</span>
+          <span>{openLabel ?? "Timings unavailable"}</span>
+        </div>
+        <div className="salon-bottom">
+          <b>{nearbyPriceCopy(row.starting_price_paise)}</b>
+          <VerifiedBadge salonName={row.name} />
+        </div>
+        <div className="button-row" style={{ marginTop: 10 }}>
+          <button className="secondary compact" disabled={!row.slug} onClick={() => row.slug && navigate(`/salons/${row.slug}`)}>View Salon</button>
+          <button className="secondary compact" disabled={!row.slug} onClick={() => row.slug && navigate(`/app/customer/?salon=${row.id}&returnTo=${encodeURIComponent(`/salons/${row.slug}`)}`)}>Book Now</button>
+        </div>
+      </div>
     </article>
+  );
+}
+
+/** Section 10 — exactly-five display cap (spec: maximum five rank cards). */
+const TOP_JAIPUR_DISPLAY_LIMIT = 5;
+
+/**
+ * Section 10 — Jaipur's Top 5 Salons (upgraded from the old "Top Rated"
+ * section; stable id=top-jaipur-salons, no duplicate section).
+ *
+ * Ranking method (documented per contract): the EXISTING backend
+ * `marketplace_top_rated` RPC order is authoritative — a Bayesian /
+ * review-confidence weighted ranking (p_min_reviews: 1). The frontend only
+ * filters eligibility (real Jaipur city + valid rating/review aggregates)
+ * and takes the first five; it NEVER re-sorts by raw rating, so a 5.0-from-
+ * 1-review salon cannot outrank a well-reviewed salon the backend ranks
+ * higher. Ranks are positions in that preserved order (unique, DOM = visual).
+ * No paid-placement data feeds this section — the ranking rows carry no
+ * promotion flag, so nothing can be silently injected as organic.
+ */
+function TopJaipurSection({
+  online,
+  loading,
+  error,
+  onRetry,
+  rows,
+  items,
+  fixUsable,
+  gpsFix,
+  navigate,
+}: {
+  online: boolean;
+  loading: boolean;
+  error: string;
+  onRetry: () => void;
+  rows: TopRatedRow[];
+  items: CatalogItem[];
+  fixUsable: boolean;
+  gpsFix: { latitude: number; longitude: number } | null;
+  navigate: (path: string) => void;
+}) {
+  // Eligibility truth rules: real Jaipur city field + valid aggregates.
+  // Backend order preserved (filter + slice only — no frontend ranking).
+  const topFive = useMemo(
+    () => rows
+      .filter((row) => isJaipurCity(row.city) && Number(row.rating_avg ?? 0) > 0 && Number(row.review_count ?? 0) > 0)
+      .slice(0, TOP_JAIPUR_DISPLAY_LIMIT),
+    [rows],
+  );
+
+  // Section 07 hours contract reused for the five ranked salons only.
+  const topIdsKey = topFive.map((row) => row.id).join(",");
+  const hoursById = useTodayHours(online && !loading, topFive.map((row) => row.id), topIdsKey);
+  const minutes = useMinutesNowIST();
+  const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+
+  // Distance only from approved salon coordinates + a usable Section 06 fix.
+  const distanceById = useMemo(() => {
+    const map = new Map<string, number>();
+    if (!fixUsable || !gpsFix) return map;
+    for (const item of items) {
+      if (item.approval_status === "approved" && typeof item.latitude === "number" && typeof item.longitude === "number") {
+        map.set(item.id, haversineKm(gpsFix.latitude, gpsFix.longitude, Number(item.latitude), Number(item.longitude)));
+      }
+    }
+    return map;
+  }, [items, fixUsable, gpsFix]);
+
+  const openLabelFor = (row: TopRatedRow): string => {
+    if (!online || minutes == null) return "Timings unavailable";
+    const item = itemsById.get(row.id);
+    const hours = hoursById[row.id] ?? (item ? configOpeningHours(item) : null);
+    if (!hours) return "Timings unavailable";
+    const verdict: OpenNowVerdict = openNowVerdict(hours, minutes);
+    return verdict.status === "open" ? "Open now" : verdict.status === "closed" ? "Closed now" : "Timings unavailable";
+  };
+
+  // CTA → existing /salons contract (city + rating sort are supported params).
+  const viewAllJaipurSalons = () => {
+    const params = new URLSearchParams();
+    params.set("city", "Jaipur");
+    params.set("sort", "rating");
+    navigate(`/salons?${params.toString()}`);
+  };
+
+  const partial = topFive.length > 0 && topFive.length < TOP_JAIPUR_DISPLAY_LIMIT;
+  const statusLine = loading
+    ? "Jaipur ke top-rated salons load ho rahe hain…"
+    : !online
+      ? "Aap offline hain. Live rankings verify nahi ki ja sakti."
+      : topFive.length === 0
+        ? ""
+        : partial
+          ? "Jaipur ke available top-rated salons dikhaye ja rahe hain."
+          : "Jaipur ke top 5 salons — real customer ratings aur reviews ke आधार par ranked.";
+
+  return (
+    <section id="top-jaipur-salons" aria-labelledby="top-jaipur-heading" className="section scroll-mt-24">
+      <div className="section-heading"><span className="eyebrow">Top rated in Jaipur</span><h2 id="top-jaipur-heading">Jaipur Ke Top 5 Salons</h2><p>Real ratings, customer reviews aur marketplace activity ke आधार पर Jaipur के leading salons explore करें।</p></div>
+      {statusLine && <p className="nearby-status" role="status" aria-live="polite">{statusLine}</p>}
+
+      {loading ? (
+        <ol className="top-jaipur-list" aria-hidden="true">
+          {Array.from({ length: TOP_JAIPUR_DISPLAY_LIMIT }, (_, i) => <li key={i} className="salon-card skeleton"><div /><p /><p /><p /></li>)}
+        </ol>
+      ) : !online ? (
+        topFive.length ? (
+          <>
+            <p className="saved-results-label">Saved ranking</p>
+            <ol className="top-jaipur-list">
+              {topFive.map((row, index) => (
+                <li key={row.id} className="top-jaipur-item">
+                  <TopRatedCard row={row} navigate={navigate} rank={index + 1} distanceKm={distanceById.get(row.id) ?? null} openLabel="Timings unavailable" featured={index === 0} />
+                </li>
+              ))}
+            </ol>
+          </>
+        ) : (
+          <div className="state-card"><span>✦</span><h3>Aap offline hain</h3><p>Aap offline hain. Live rankings verify nahi ki ja sakti.</p><div className="button-row"><button className="secondary" onClick={viewAllJaipurSalons}>View All Jaipur Salons</button></div></div>
+        )
+      ) : error && !topFive.length ? (
+        <div className="state-card"><span>✦</span><h3>Top-rated salons load nahi ho sake</h3><p>Top-rated salons load nahi ho sake. Dobara try karein.</p><div className="button-row"><button className="secondary" onClick={onRetry}>Retry</button><button className="secondary" onClick={viewAllJaipurSalons}>View All Jaipur Salons</button></div></div>
+      ) : !topFive.length ? (
+        <div className="state-card"><span>✦</span><h3>Jaipur ke top-rated salons abhi available nahi hain</h3><p>Jaipur ke top-rated salons abhi available nahi hain.</p><div className="button-row"><button className="secondary" onClick={viewAllJaipurSalons}>View All Jaipur Salons</button><button className="secondary" onClick={() => scrollToCategoriesSection()}>Explore Categories</button></div></div>
+      ) : (
+        <>
+          {partial && <p className="saved-results-label">Available top-rated Jaipur salons</p>}
+          <ol className="top-jaipur-list">
+            {topFive.map((row, index) => (
+              <li key={row.id} className="top-jaipur-item">
+                <TopRatedCard row={row} navigate={navigate} rank={index + 1} distanceKm={distanceById.get(row.id) ?? null} openLabel={openLabelFor(row)} featured={index === 0} />
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+
+      <div className="categories-cta">
+        <button type="button" className="primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b]" onClick={viewAllJaipurSalons}>Jaipur Ke Sabhi Salons Dekhein</button>
+      </div>
+    </section>
   );
 }
 
@@ -1501,13 +3284,64 @@ function TrendingCard({ row, navigate }: { row: TrendingRow; navigate: (path: st
   );
 }
 
-function RecommendationCard({ row, navigate }: { row: RecommendationRow; navigate: (path: string) => void }) {
+/**
+ * Section 11 Smart Picks card — upgraded in place (single call site: the
+ * smart-picks section). Optional props are additive; every field keeps an
+ * honest fallback. The reason chip renders ONLY the backend-provided reason
+ * for personalized rows — never a frontend-invented one.
+ */
+function RecommendationCard({
+  row,
+  navigate,
+  showReason,
+  reasonOverride,
+  distanceKm,
+  openLabel,
+}: {
+  row: RecommendationRow;
+  navigate: (path: string) => void;
+  showReason?: boolean;
+  reasonOverride?: string;
+  distanceKm?: number | null;
+  openLabel?: string;
+}) {
+  const rating = Number(row.rating_avg ?? 0);
+  const reviews = Number(row.review_count ?? 0);
+  const hasRating = rating > 0 && reviews > 0;
+  const ratingLine = hasRating ? `${rating.toFixed(1)} ★ · ${reviews} review${reviews === 1 ? "" : "s"}` : "No ratings yet";
+  const cover = row.cover_image_path?.startsWith("http") ? row.cover_image_path : null;
+  const reason = showReason && row.personalized && row.reason ? row.reason : reasonOverride ?? null;
   return (
-    <article className="salon-card">
-      <div className="salon-visual" style={row.cover_image_path?.startsWith("http") ? { backgroundImage: `url("${row.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>{!row.cover_image_path?.startsWith("http") && <span>✦</span>}<em>Verified</em></div>
-      <div className="salon-body"><div className="salon-meta"><span>{row.business_category ?? "Salon"}</span><span>★ {Number(row.rating_avg).toFixed(1)} ({row.review_count})</span></div>
-      <h3>{row.name}</h3><p>{row.area ?? row.city}, {row.city}</p><div className="salon-bottom"><b>From {money(row.starting_price_paise)}</b><button onClick={() => navigate(`/salons/${row.slug}`)}>View salon</button></div>
-      <div style={{ marginTop: 8 }}><em style={{ fontSize: 11, color: "#8c7077", background: "var(--cream,#fff5f8)", padding: "3px 8px", borderRadius: 999 }}>{row.reason}{row.personalized ? " · for you" : ""}</em></div></div>
+    <article className="salon-card smart-picks-card">
+      <div
+        className="salon-visual"
+        role="img"
+        aria-label={`${row.name} salon photo`}
+        style={cover ? { backgroundImage: `url("${cover.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
+      >
+        {!cover && <span aria-hidden="true">✦</span>}
+      </div>
+      <div className="salon-body">
+        <div className="salon-meta">
+          <span>{row.business_category ?? "Salon"}</span>
+          <span aria-label={hasRating ? `${rating.toFixed(1)} out of 5, ${reviews} review${reviews === 1 ? "" : "s"}` : "No ratings yet"}>{ratingLine}</span>
+        </div>
+        <h3>{row.name}</h3>
+        <p>{row.area ?? row.city}, {row.city}</p>
+        <div className="salon-meta">
+          <span>{distanceKm != null ? `📍 ${formatDistance(distanceKm)} away` : "Distance unavailable"}</span>
+          <span>{openLabel ?? "Timings unavailable"}</span>
+        </div>
+        <div className="salon-bottom">
+          <b>{nearbyPriceCopy(row.starting_price_paise)}</b>
+          <VerifiedBadge salonName={row.name} />
+        </div>
+        {reason && <p className="smart-picks-reason">{reason}</p>}
+        <div className="button-row" style={{ marginTop: 10 }}>
+          <button className="secondary compact" disabled={!row.slug} onClick={() => row.slug && navigate(`/salons/${row.slug}`)}>View Salon</button>
+          <button className="secondary compact" disabled={!row.slug} onClick={() => row.slug && navigate(`/app/customer/?salon=${row.id}&returnTo=${encodeURIComponent(`/salons/${row.slug}`)}`)}>Book Now</button>
+        </div>
+      </div>
     </article>
   );
 }
@@ -1688,20 +3522,24 @@ function useMyMembership(online: boolean, session: Session | null) {
 function useMarketplaceCategories(online: boolean) {
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Section 05: surface the live failure (friendly text) so the section can
+  // offer a real Retry instead of silently looking empty. Data source stays
+  // the same `marketplace_categories` RPC.
+  const [error, setError] = useState("");
   const load = useCallback(async () => {
-    setLoading(true);
+    setLoading(true); setError("");
     try {
       const client = getClient(); if (!client) return;
       const { data, error } = await client.rpc("marketplace_categories");
       if (error) throw error;
       setCategories((data ?? []) as CategoryRow[]);
-    } catch { setCategories([]); } finally { setLoading(false); }
+    } catch (cause) { setCategories([]); setError(friendlyError(cause)); } finally { setLoading(false); }
   }, []);
   useEffect(() => {
     const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
     return () => window.clearTimeout(t);
   }, [load, online]);
-  return { categories, loading, load };
+  return { categories, loading, load, error };
 }
 
 /** Admin-sponsored shops/brands/videos (active + in window, published salons). */
@@ -1747,20 +3585,27 @@ function recordSponsoredClick(kind: "shop" | "brand" | "video", id: string) {
 function useTopRated(online: boolean) {
   const [rows, setRows] = useState<TopRatedRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Section 10: surface a friendly failure flag so the section can offer a
+  // real Retry (raw error text never reaches the public UI).
+  const [error, setError] = useState("");
   const load = useCallback(async () => {
-    setLoading(true);
+    setLoading(true); setError("");
     try {
       const client = getClient(); if (!client) return;
-      const { data, error } = await client.rpc("marketplace_top_rated", { p_min_reviews: 1, p_limit: 6 });
+      // Backend ranking contract preserved: marketplace_top_rated with the
+      // existing minimum-review rule (p_min_reviews: 1). The candidate pool is
+      // widened (frontend parameter only) so the Jaipur eligibility filter can
+      // still surface up to five real salons.
+      const { data, error } = await client.rpc("marketplace_top_rated", { p_min_reviews: 1, p_limit: 20 });
       if (error) throw error;
       setRows((data ?? []) as TopRatedRow[]);
-    } catch { setRows([]); } finally { setLoading(false); }
+    } catch (cause) { setRows([]); setError(friendlyError(cause)); } finally { setLoading(false); }
   }, []);
   useEffect(() => {
     const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
     return () => window.clearTimeout(t);
   }, [load, online]);
-  return { rows, loading, load };
+  return { rows, loading, load, error };
 }
 
 /** Trending — time-decayed score (bookings/events/reviews) + admin overrides. */
@@ -1947,22 +3792,47 @@ function useRecommendations(online: boolean, session: Session | null) {
   const [rows, setRows] = useState<RecommendationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [isPersonalized, setIsPersonalized] = useState(false);
+  // Section 11: friendly failure flag for the section's honest error state
+  // (raw error text never reaches the public UI).
+  const [error, setError] = useState("");
+  // Cross-user protection: the user id the current in-memory rows belong to.
+  // On login/logout/user-switch the previous (possibly personalized) rows are
+  // cleared immediately, so User A's signals can never leak to User B or to a
+  // logged-out visitor.
+  const rowsOwnerIdRef = useRef<string | null | undefined>(undefined);
+  // Race guard: a stale response (previous session/refetch) can never
+  // overwrite the result of a newer request.
+  const fetchTokenRef = useRef(0);
   const load = useCallback(async () => {
-    setLoading(true);
+    const token = ++fetchTokenRef.current;
+    setLoading(true); setError("");
     try {
-      const client = getClient(); if (!client) { setLoading(false); return; }
+      const client = getClient(); if (!client) { if (token === fetchTokenRef.current) setLoading(false); return; }
       const { data, error } = await client.rpc("marketplace_recommendations", { p_limit: 6 });
       if (error) throw error;
+      if (token !== fetchTokenRef.current) return; // stale response — ignore
       const list = (data ?? []) as RecommendationRow[];
       setRows(list);
       setIsPersonalized(list.some((r) => r.personalized));
-    } catch { setRows([]); } finally { setLoading(false); }
-  }, []);
+      rowsOwnerIdRef.current = session?.user?.id ?? null;
+    } catch (cause) {
+      if (token === fetchTokenRef.current) { setRows([]); setIsPersonalized(false); setError(friendlyError(cause)); }
+    } finally {
+      if (token === fetchTokenRef.current) setLoading(false);
+    }
+  }, [session]);
   useEffect(() => {
+    const uid = session?.user?.id ?? null;
+    if (rowsOwnerIdRef.current !== undefined && rowsOwnerIdRef.current !== uid) {
+      // Session changed (logout/switch): wipe personalized in-memory state
+      // before the fresh fetch resolves.
+      setRows([]);
+      setIsPersonalized(false);
+    }
     const t = window.setTimeout(() => { if (online) void load(); else setLoading(false); }, 0);
     return () => window.clearTimeout(t);
   }, [load, online, session]);
-  return { rows, loading, isPersonalized, load };
+  return { rows, loading, isPersonalized, load, error };
 }
 
 /**
