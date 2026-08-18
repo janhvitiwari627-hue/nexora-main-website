@@ -610,6 +610,7 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   const { sponsored, loading: sponsoredLoading } = useSponsored(online);
   const { rows: topRatedRows, loading: topRatedLoading, error: topRatedError, load: loadTopRated } = useTopRated(online);
   const { rows: trendingRows, loading: trendingLoading, error: trendingError, load: retryTrending } = useTrending(online);
+  const { offers: marketplaceOffers, loading: marketplaceOffersLoading, error: marketplaceOffersError, load: retryMarketplaceOffers } = useMarketplaceOffers(online);
   const { rows: nearbyRows, loading: nearbyLoading } = useNearby(online);
   // Section 06: OBSERVE only (auto:false) — the homepage never requests GPS
   // permission on page load. Acquisition starts only from the explicit
@@ -1278,10 +1279,15 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
 )}
 
 {visible('offers') && (
-<section className="section">
-        <div className="section-heading"><span className="eyebrow">Offers</span><h2>Active Offers</h2><p>From offers table where is_active=true – RLS public read. Shows discount_type, discount_value.</p></div>
-        <OffersStrip navigate={navigate} />
-      </section>)}
+  <BestOffersSection
+    offers={marketplaceOffers}
+    loading={marketplaceOffersLoading}
+    error={marketplaceOffersError}
+    online={online}
+    onRetry={retryMarketplaceOffers}
+    navigate={navigate}
+  />
+)}
 
       {/* Partner-approved promotions — only active + approved (published) */}
       <section className="section" style={{ background: "var(--cream)" }}>
@@ -1838,50 +1844,451 @@ function OfferCard({ offer, salonName, salonSlug, navigate }: { offer: Offer; sa
   );
 }
 
-function OffersStrip({ navigate }: { navigate: (path: string) => void }) {
+/**
+ * Public Best Offers source. Reuses the existing marketplace_offers RPC
+ * (p_limit: 12) that OffersStrip previously called. Response order is kept
+ * exactly as returned — this repository has no frontend "best" ranking rule.
+ */
+/** Homepage public offer cap — matches existing marketplace_offers p_limit. */
+const MARKETPLACE_OFFERS_LIMIT = 12;
+
+function useMarketplaceOffers(online: boolean) {
   const [offers, setOffers] = useState<OfferDetail[]>([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      try {
-        const client = getClient(); if (!client) { setLoading(false); return; }
-        const { data, error } = await client.rpc("marketplace_offers", { p_limit: 12 });
-        if (error) throw error;
-        if (active) setOffers((data ?? []) as OfferDetail[]);
-      } catch { /* strip degrades gracefully */ } finally { if (active) setLoading(false); }
-    };
-    const t = setTimeout(() => void load(), 0);
-    return () => { active = false; clearTimeout(t); };
+  const [error, setError] = useState(false);
+  const requestVersion = useRef(0);
+  const load = useCallback(async () => {
+    const version = ++requestVersion.current;
+    setLoading(true);
+    setError(false);
+    try {
+      const client = getClient();
+      if (!client) throw new Error("Marketplace client unavailable");
+      const { data, error: rpcError } = await client.rpc("marketplace_offers", { p_limit: MARKETPLACE_OFFERS_LIMIT });
+      if (rpcError) throw rpcError;
+      if (version === requestVersion.current) setOffers((data ?? []) as OfferDetail[]);
+    } catch {
+      // Keep already-loaded public rows during a failed refresh. Raw backend
+      // details never leave this hook; Section 13 receives only a boolean.
+      if (version === requestVersion.current) setError(true);
+    } finally {
+      if (version === requestVersion.current) setLoading(false);
+    }
   }, []);
-  if (loading) return <SalonSkeletons count={3} />;
-  if (!offers.length) return <StateCard title="No active offers yet" text="Approved, in-date offers from published salons appear here — usage limits and eligibility enforced server-side." />;
-  return <div className="service-grid">{offers.map((o) => <OfferDetailCard key={o.offer_id} offer={o} navigate={navigate} />)}</div>;
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      if (online) void load();
+      else setLoading(false);
+    }, 0);
+    return () => {
+      window.clearTimeout(t);
+      requestVersion.current += 1;
+    };
+  }, [load, online]);
+  return { offers, loading, load, error };
+}
+
+function trimPublicText(value: string | null | undefined): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function isSafeSalonSlug(slug: string): boolean {
+  return Boolean(slug) && !slug.includes("/") && slug !== "undefined" && slug !== "null";
+}
+
+function isSafePublicId(value: string): boolean {
+  return Boolean(value) && value !== "undefined" && value !== "null" && !value.includes("/") && !value.includes("?");
+}
+
+/**
+ * Existing Customer PWA booking handoff used by salon/nearby/smart-picks cards.
+ * Only supported query keys: salon, returnTo, optional service (name).
+ * No invented offer/coupon/promo parameters.
+ */
+function marketplaceBookingPath(salonId: string, salonSlug: string, serviceName?: string): string | null {
+  if (!isSafePublicId(salonId) || !isSafeSalonSlug(salonSlug)) return null;
+  const params = new URLSearchParams();
+  params.set("salon", salonId);
+  params.set("returnTo", `/salons/${salonSlug}`);
+  const service = trimPublicText(serviceName);
+  if (service) params.set("service", service);
+  return `/app/customer/?${params.toString()}`;
+}
+
+const OFFER_DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
+const OFFER_TZ = "Asia/Kolkata";
+
+/**
+ * Instant for OfferDetail.valid_from / valid_until.
+ * Full ISO timestamps use Date.parse (UTC-safe). Date-only YYYY-MM-DD is
+ * interpreted as the start or end of that calendar day in Asia/Kolkata so a
+ * naive UTC midnight parse cannot expire an offer hours early in Jaipur.
+ */
+function parseOfferBoundMs(value: string | null | undefined, bound: "start" | "end"): number | null {
+  const raw = trimPublicText(value);
+  if (!raw) return null;
+  const dateOnly = OFFER_DATE_ONLY.exec(raw);
+  if (dateOnly) {
+    const y = Number(dateOnly[1]);
+    const mo = Number(dateOnly[2]);
+    const d = Number(dateOnly[3]);
+    if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null;
+    const utcGuess = Date.UTC(y, mo - 1, d, bound === "start" ? 0 : 23, bound === "start" ? 0 : 59, bound === "start" ? 0 : 59, bound === "start" ? 0 : 999);
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: OFFER_TZ,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(utcGuess));
+    const num = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+    const shown = Date.UTC(num("year"), num("month") - 1, num("day"), num("hour"), num("minute"), num("second"));
+    if (!Number.isFinite(shown)) return null;
+    return utcGuess + (utcGuess - shown);
+  }
+  const ms = Date.parse(raw);
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function formatOfferDate(value: string | null | undefined): string | null {
+  const ms = parseOfferBoundMs(value, "start");
+  if (ms == null) return null;
+  return new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: OFFER_TZ });
+}
+
+type OfferWindow = "open" | "scheduled" | "expired" | "undated" | "invalid";
+
+/** Window from valid_from / valid_until only. No invented status enum. */
+function offerWindowState(offer: OfferDetail, nowMs = Date.now()): OfferWindow {
+  const fromRaw = trimPublicText(offer.valid_from);
+  const untilRaw = trimPublicText(offer.valid_until);
+  const fromMs = parseOfferBoundMs(offer.valid_from, "start");
+  const untilMs = parseOfferBoundMs(offer.valid_until, "end");
+  if ((fromRaw && fromMs == null) || (untilRaw && untilMs == null)) return "invalid";
+  if (untilMs != null && nowMs > untilMs) return "expired";
+  if (fromMs != null && nowMs < fromMs) return "scheduled";
+  if (fromMs == null && untilMs == null) return "undated";
+  return "open";
+}
+
+/** Trusted public remaining count only. Null means the RPC did not supply one. */
+function offerRemainingGlobal(offer: OfferDetail): number | null {
+  if (offer.remaining_global == null) return null;
+  const remaining = Number(offer.remaining_global);
+  if (!Number.isFinite(remaining)) return null;
+  return remaining;
+}
+
+/** Exhausted only when remaining_global is a trusted finite count of 0. */
+function offerIsExhausted(offer: OfferDetail): boolean {
+  const remaining = offerRemainingGlobal(offer);
+  return remaining === 0;
+}
+
+/**
+ * Public homepage cards stay generic. There is no authenticated offer-eligibility
+ * RPC in this repository — do not infer "eligible for you" from session, membership,
+ * or booking history.
+ */
+function isRenderableOffer(offer: OfferDetail): boolean {
+  if (!trimPublicText(offer.offer_id)) return false;
+  if (offer.remaining_global != null && offerRemainingGlobal(offer) == null) return false;
+  if (offerRemainingGlobal(offer) != null && offerRemainingGlobal(offer)! < 0) return false;
+  const windowState = offerWindowState(offer);
+  if (windowState === "expired" || windowState === "invalid") return false;
+  if (offerIsExhausted(offer)) return false;
+  return true;
+}
+
+/**
+ * Existing production rule: percent → "{n}% OFF"; any other type with a
+ * positive finite value is rupees via money(value * 100). Unknown/empty type
+ * follows that same existing non-percent presentation. Invalid numbers omitted.
+ */
+function formatOfferDiscount(offer: OfferDetail): string | null {
+  const value = Number(offer.discount_value);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const kind = trimPublicText(offer.discount_type).toLowerCase();
+  if (kind === "percent") return `${value}% OFF`;
+  return `${money(value * 100)} OFF`;
+}
+
+function formatOfferDiscountSpoken(offer: OfferDetail): string | null {
+  const value = Number(offer.discount_value);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const kind = trimPublicText(offer.discount_type).toLowerCase();
+  if (kind === "percent") return `${value} percent off`;
+  return `${money(value * 100)} off`;
+}
+
+function formatOfferValidity(offer: OfferDetail, window: OfferWindow): string | null {
+  const from = formatOfferDate(offer.valid_from);
+  const until = formatOfferDate(offer.valid_until);
+  if (window === "scheduled" && from) return `Starts ${from}`;
+  if (from && until) return `Valid from ${from} till ${until}`;
+  if (until) return `Valid till ${until}`;
+  if (from) return `Valid from ${from}`;
+  return null;
+}
+
+function offerServiceNames(offer: OfferDetail): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const service of offer.eligible_services ?? []) {
+    const name = trimPublicText(service?.service_name);
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    names.push(name);
+  }
+  return names;
+}
+
+
+
+/**
+ * Section 13 — Best Offers. Consolidates the previous homepage Active Offers
+ * strip (stable id=best-offers). Cards map marketplace_offers rows in backend
+ * order via OfferDetail. PHASE1_SECTION13.md.
+ */
+const SECTION13_SKELETON_KEYS = ["one", "two", "three"] as const;
+
+function Section13OfferSkeletons() {
+  return (
+    <div className="section13-offers-grid section13-skeleton-grid" aria-hidden="true">
+      {SECTION13_SKELETON_KEYS.map((key) => (
+        <div className="service-card section13-offer-card section13-offer-skeleton" key={`offer-skeleton-${key}`}>
+          <div><span /><span /><span /><span /></div>
+          <div><span /><span /></div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BestOffersSection({
+  offers,
+  loading,
+  error = false,
+  online = true,
+  onRetry,
+  navigate,
+}: {
+  offers: OfferDetail[];
+  loading: boolean;
+  error?: boolean;
+  online?: boolean;
+  onRetry?: () => void;
+  navigate: (path: string) => void;
+}) {
+  const renderableOffers = useMemo(() => {
+    const rows: OfferDetail[] = [];
+    for (const offer of offers) {
+      if (!isRenderableOffer(offer)) continue;
+      rows.push(offer);
+      if (rows.length >= MARKETPLACE_OFFERS_LIMIT) break;
+    }
+    return rows;
+  }, [offers]);
+  const count = renderableOffers.length;
+  const status = !online
+    ? count
+      ? `${count} saved offer result${count === 1 ? "" : "s"} available. Live offers update nahi kiye ja sakte.`
+      : "Aap offline hain. Live offers update nahi kiye ja sakte."
+    : loading && !count
+      ? "Best offers load ho rahe hain."
+      : error && !count
+        ? "Offers load nahi ho sake. Dobara try karein."
+        : count
+          ? error
+            ? `${count} pehle load kiye gaye offer result available hain. Update nahi ho saka.`
+            : loading
+              ? `${count} offer result available hain. Results refresh ho rahe hain.`
+              : `${count} offer result available hain.`
+          : "Abhi koi active Best Offer available nahi hai.";
+
+  return (
+    <section id="best-offers" aria-labelledby="best-offers-heading" className="section section13 scroll-mt-24">
+      <div className="section-heading">
+        <span className="eyebrow">Offers</span>
+        <h2 id="best-offers-heading">Active Offers</h2>
+        <p>From offers table where is_active=true – RLS public read. Shows discount_type, discount_value.</p>
+      </div>
+      <p className="sr-only" role="status" aria-live="polite">{status}</p>
+      {count ? (
+        <>
+          {!online && <p className="saved-results-label">Saved results</p>}
+          {online && error && <p className="saved-results-label">Previously loaded results</p>}
+          {!online && <p className="section13-data-note">Aap offline hain. Saved results dikhaye ja rahe hain; inhe current live offers na samjhein.</p>}
+          {online && error && (
+            <div className="section13-inline-state" role="alert">
+              <span>Offers refresh nahi ho sake. Pehle load kiye gaye results available hain.</span>
+              {onRetry && (
+                <button type="button" className="secondary compact" aria-label="Dobara Try Karein" onClick={() => void onRetry()}>
+                  Dobara Try Karein
+                </button>
+              )}
+            </div>
+          )}
+          {online && loading && <p className="section13-data-note" role="status">Results refresh ho rahe hain; available offers visible rahenge.</p>}
+          <div className="section13-offers-grid">{renderableOffers.map((o) => <OfferDetailCard key={o.offer_id} offer={o} navigate={navigate} />)}</div>
+        </>
+      ) : !online ? (
+        <div className="state-card" role="status">
+          <span aria-hidden="true">✦</span>
+          <h3>Aap offline hain. Live offers update nahi kiye ja sakte.</h3>
+          <p>Internet reconnect hone par live Best Offers dobara load honge.</p>
+          <div className="button-row">
+            <button type="button" className="secondary" onClick={() => navigate("/salons")}>View All Salons</button>
+          </div>
+        </div>
+      ) : loading ? (
+        <Section13OfferSkeletons />
+      ) : error ? (
+        <div className="state-card" role="alert">
+          <span aria-hidden="true">✦</span>
+          <h3>Offers load nahi ho sake. Dobara try karein.</h3>
+          <p>Live marketplace offers abhi available nahi hain.</p>
+          <div className="button-row">
+            {onRetry && (
+              <button type="button" className="secondary" aria-label="Dobara Try Karein" onClick={() => void onRetry()}>
+                Dobara Try Karein
+              </button>
+            )}
+            <button type="button" className="secondary" onClick={() => navigate("/salons")}>View All Salons</button>
+          </div>
+        </div>
+      ) : (
+        <div className="state-card" role="status">
+          <span aria-hidden="true">✦</span>
+          <h3>Abhi koi active Best Offer available nahi hai.</h3>
+          <p>Approved, in-date offers from published salons appear here when they are available.</p>
+          <div className="button-row">
+            <button type="button" className="secondary" onClick={() => navigate("/salons")}>View All Salons</button>
+          </div>
+        </div>
+      )}
+    </section>
+  );
 }
 
 function OfferDetailCard({ offer, navigate }: { offer: OfferDetail; navigate: (path: string) => void }) {
-  const pct = offer.discount_type === "percent";
-  const discountLabel = pct ? `${offer.discount_value}% off` : offer.discount_value != null ? `${money(offer.discount_value * 100)} off` : "Limited offer";
-  const maxCap = offer.maximum_discount_paise != null && offer.maximum_discount_paise > 0 ? ` · up to ${money(offer.maximum_discount_paise)} off` : "";
-  const minSpend = offer.minimum_booking_paise != null && offer.minimum_booking_paise > 0 ? `Min. spend ${money(offer.minimum_booking_paise)}` : null;
-  const validity = offer.valid_from || offer.valid_until
-    ? `Valid ${offer.valid_from ? "from " + new Date(offer.valid_from).toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : ""}${offer.valid_until ? " till " + new Date(offer.valid_until).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : ""}`
-    : null;
+  const title = trimPublicText(offer.name) || "Offer";
+  const salonName = trimPublicText(offer.salon_name);
+  const salonSlug = trimPublicText(offer.salon_slug);
+  const canOpenSalon = isSafeSalonSlug(salonSlug);
+  const description = trimPublicText(offer.description);
+  const terms = trimPublicText(offer.terms);
+  const coupon = trimPublicText(offer.code);
+  const discountLabel = formatOfferDiscount(offer);
+  const discountSpoken = formatOfferDiscountSpoken(offer);
+  const maxCapPaise = Number(offer.maximum_discount_paise);
+  const maxCap = Number.isFinite(maxCapPaise) && maxCapPaise > 0 ? `up to ${money(maxCapPaise)} off` : null;
+  const minSpendPaise = Number(offer.minimum_booking_paise);
+  const minSpend = Number.isFinite(minSpendPaise) && minSpendPaise > 0 ? `Minimum spend ${money(minSpendPaise)}` : null;
+  const services = offerServiceNames(offer);
+  const offerWindow = offerWindowState(offer);
+  const validity = formatOfferValidity(offer, offerWindow);
+  const salonId = trimPublicText(offer.salon_id);
+  const bookingServiceName = services.length === 1 ? services[0] : undefined;
+  const bookingPath = marketplaceBookingPath(salonId, salonSlug, bookingServiceName);
+  const canBookNow = Boolean(bookingPath) && (offerWindow === "open" || offerWindow === "undated");
+  const openSalon = () => { if (canOpenSalon) navigate(`/salons/${salonSlug}`); };
+  const openBooking = () => { if (canBookNow && bookingPath) navigate(bookingPath); };
+  const [copyNote, setCopyNote] = useState("");
+  const copyTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current != null) window.clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
+  const copyCoupon = async (event?: { stopPropagation: () => void }) => {
+    event?.stopPropagation();
+    if (!coupon) return;
+    try {
+      await navigator.clipboard.writeText(coupon);
+      setCopyNote("Code copied");
+    } catch {
+      setCopyNote("Could not copy code");
+    }
+    if (copyTimerRef.current != null) window.clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = window.setTimeout(() => setCopyNote(""), 2000);
+  };
+
   return (
-    <article className="service-card">
+    <article className="service-card section13-offer-card">
       <div>
-        <h3>{offer.name ?? "Offer"} <em style={{ fontSize: 10, color: "#e6007e" }}>{offer.membership_only ? "· members" : ""}</em></h3>
-        <p>{offer.description || ""}</p>
-        <small style={{ display: "block", marginBottom: 4 }}><b>{discountLabel}</b>{maxCap}{minSpend ? ` · ${minSpend}` : ""}</small>
-        {offer.eligible_services.length > 0 && <small style={{ display: "block" }}>On: {offer.eligible_services.map((sv) => sv.service_name).join(", ")}</small>}
-        {offer.terms && <small style={{ display: "block", color: "#8c7077" }}>Terms: {offer.terms}</small>}
-        {validity && <small style={{ display: "block", color: "#8c7077" }}>🕑 {validity}</small>}
-        {offer.code && <small style={{ display: "block", fontWeight: 700, color: "#8e004b" }}>Coupon: {offer.code}</small>}
-        {offer.remaining_global != null && offer.remaining_global <= 10 && <small style={{ display: "block", color: "#b45309" }}>Only {Math.max(offer.remaining_global, 0)} left</small>}
+        <div className="salon-meta section13-status-row">
+          {discountLabel && <span className="section13-discount" aria-label={discountSpoken ?? undefined}>{discountLabel}</span>}
+          {offerWindow === "scheduled" ? <span>Starts later</span> : null}
+          {offer.membership_only ? <span>Members only</span> : null}
+        </div>
+        <h3>{title}</h3>
+        {salonName ? <p>{salonName}</p> : null}
+        {description ? <p>{description}</p> : null}
+        {(maxCap || minSpend) && (
+          <small>
+            {maxCap}
+            {maxCap && minSpend ? " · " : ""}
+            {minSpend}
+          </small>
+        )}
+        {services.length > 0 && <small>On: {services.join(", ")}</small>}
+        {terms ? <small>Terms: {terms}</small> : null}
+        {validity ? <small>{validity}</small> : null}
+        {coupon ? (
+          <div className="section13-coupon">
+            <small className="section13-code">Code: {coupon}</small>
+            <button
+              type="button"
+              className="secondary compact"
+              aria-label={`Copy coupon code ${coupon}`}
+              onClick={() => void copyCoupon()}
+            >
+              Copy Code
+            </button>
+          </div>
+        ) : null}
+        <p className="sr-only">
+          {offerWindow === "scheduled" ? "This offer starts later and is not available to book yet. " : ""}
+          {offer.membership_only ? "This offer is restricted to members. " : ""}
+          {minSpend ? `${minSpend}. ` : ""}
+          {services.length > 0 ? "Valid on selected services. " : ""}
+        </p>
+        <p className="sr-only" role="status" aria-live="polite">{copyNote}</p>
+        {copyNote ? <small className="section13-copy-note">{copyNote}</small> : null}
       </div>
       <div>
-        <button className="text-button" onClick={() => navigate(`/salons/${offer.salon_slug}`)}>{offer.salon_name} →</button>
-        <button className="primary" style={{ marginTop: 6, fontSize: 12, padding: "8px 12px" }} onClick={() => navigate(`/salons/${offer.salon_slug}`)}>Book Now</button>
+        <button
+          type="button"
+          className="text-button"
+          disabled={!canOpenSalon}
+          aria-label={salonName ? `View salon ${salonName}` : "View salon"}
+          onClick={openSalon}
+        >
+          View Salon
+        </button>
+        <button
+          type="button"
+          className="primary section13-book"
+          disabled={!canBookNow}
+          aria-label={
+            offerWindow === "scheduled"
+              ? (salonName ? `Booking not available yet at ${salonName}` : "Booking not available yet")
+              : bookingServiceName && salonName
+                ? `Book ${bookingServiceName} at ${salonName}`
+                : salonName
+                  ? `Book at ${salonName}`
+                  : "Book now"
+          }
+          onClick={openBooking}
+        >
+          Book Now
+        </button>
       </div>
     </article>
   );
