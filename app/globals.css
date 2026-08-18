@@ -337,6 +337,46 @@ h1,h2,h3,p { margin-top:0; }
 .service-card p,.service-card small { color:var(--muted); }
 .service-card>b { color:var(--pink-dark); white-space:nowrap; }
 .service-card>div:last-child { display:grid; justify-items:end; gap:8px; }
+.section13 { min-width:0; overflow-x:clip; }
+.section13-offers-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:22px; }
+.section13 .section13-offer-card { background:#fff; min-width:0; max-width:100%; flex-direction:column; }
+.section13 .section13-offer-card>div:first-child { min-width:0; }
+.section13 .section13-offer-card>div:last-child { width:100%; display:flex; flex-wrap:wrap; align-items:stretch; justify-content:flex-start; gap:8px; margin-top:auto; padding-top:14px; border-top:1px solid #f6eaf0; }
+.section13 .section13-offer-card h3,.section13 .section13-offer-card p,.section13 .section13-offer-card small { overflow-wrap:anywhere; word-break:break-word; color:#594047; }
+.section13 .section13-offer-card h3 { color:var(--ink); line-height:1.3; }
+.section13 .section13-offer-card small { display:block; margin-top:6px; }
+.section13-status-row { min-width:0; flex-wrap:wrap; gap:8px; }
+.section13 .section13-discount { color:var(--pink-dark); overflow-wrap:anywhere; }
+.section13 .section13-code { font-weight:800; color:var(--pink-dark); overflow-wrap:anywhere; word-break:break-word; min-width:0; flex:1 1 140px; }
+.section13 .section13-coupon { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px; min-width:0; }
+.section13 .section13-copy-note { color:#12704c; font-weight:700; }
+.section13 .section13-offer-card button:disabled { opacity:.55; cursor:not-allowed; }
+.section13 button { min-height:44px; min-width:44px; }
+.section13 .section13-book { margin-top:0; font-size:13px; padding:0 14px; }
+.section13 .compact { min-height:44px; }
+.section13 button:focus-visible { outline:3px solid #8e004b; outline-offset:3px; box-shadow:0 0 0 2px #fff; }
+.section13 .primary:focus-visible { outline-color:#26181c; box-shadow:0 0 0 2px #fff; }
+.section13-offer-skeleton { min-height:220px; background:#fff; animation:pulse 1.25s infinite; }
+.section13-offer-skeleton span { display:block; height:13px; border-radius:999px; background:#f7eaf0; }
+.section13-offer-skeleton>div:first-child { width:min(260px,72%); display:grid; gap:14px; }
+.section13-offer-skeleton>div:last-child { width:120px; display:grid; align-content:start; gap:14px; border-top:0; padding-top:0; }
+.section13-offer-skeleton span:nth-child(2) { width:80%; }
+.section13-offer-skeleton span:nth-child(3) { width:64%; }
+.section13-offer-skeleton span:nth-child(4) { width:48%; }
+.section13-data-note { margin:0 0 12px; color:#594047; font-size:13px; }
+.section13-inline-state { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 12px; color:#7b244a; }
+.section13 .state-card .button-row { justify-content:center; }
+@media(max-width:920px) {
+  .section13-offers-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:620px) {
+  .section13-offers-grid { grid-template-columns:minmax(0,1fr); }
+  .section13-inline-state { flex-direction:column; align-items:flex-start; }
+  .section13 .state-card .button-row,.section13 .state-card .button-row>button { width:100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .section13-offer-skeleton { animation:none; }
+}
 /* Section 12 service cards keep the shared surface while stacking their live
    fields so three desktop columns remain readable even with long names/prices. */
 .section12-service-card { min-height:220px; background:#fff; flex-direction:column; }
