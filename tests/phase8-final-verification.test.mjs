@@ -40,7 +40,15 @@ test("Phase 6 unified app auth is present", () => {
   assert.equal(existsSync(new URL("../integration-packages/owner-pwa/phase6-unified-auth.patch", import.meta.url)), true);
   assert.equal(existsSync(new URL("../integration-packages/customer-pwa/phase6-unified-auth.patch", import.meta.url)), true);
   assert.equal(existsSync(new URL("../integration-packages/growth-partner-pwa/phase6-unified-auth.patch", import.meta.url)), true);
-  assert.equal(existsSync(new URL("../integration-packages/template-app/phase6-unified-auth.patch", import.meta.url)), true);
+  // The Template App no longer ships a per-app Phase 6 patch; it is
+  // integrated as a vendored copy of FINAL-NEW-APP-TEMPLETE- (operator-
+  // approved source switch, 2026-08-21). The Phase 6 access gates are
+  // still enforced by the shared Supabase project's RLS policies.
+  assert.equal(
+    existsSync(new URL("../integration-packages/template-app/files/src/lib/supabaseClient.ts", import.meta.url)),
+    true,
+    "Vendored Template App must be present",
+  );
 });
 
 test("Phase 7 shared location and RLS are present", () => {

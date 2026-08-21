@@ -6414,7 +6414,7 @@ function PortalGateway({
   const currentPath = typeof window !== "undefined" ? window.location.pathname : "";
   const mountKey = portalMountKeyFromPath(currentPath) ?? (expectedRole === "business_user" ? "owner" : expectedRole === "growth_partner" ? "partner" : "customer");
   // Template App is an external PWA on its own Vercel origin
-  // (https://new-tamplete-app.vercel.app). Use PortalHandoff to trigger the
+  // (https://final-new-app-templete.vercel.app). Use PortalHandoff to trigger the
   // server-side 307 redirect — same mechanism used by Customer, Owner and
   // Partner portals. This fixes the bug where clicking "Template" in the nav
   // rendered an inline status page instead of redirecting to the builder.
