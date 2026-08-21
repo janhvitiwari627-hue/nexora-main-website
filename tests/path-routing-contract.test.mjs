@@ -58,7 +58,7 @@ test("role links and external portal mounts use canonical portal paths", () => {
   // exception is the built-in Template App default, so /app/template keeps
   // working on a deployment that never set NEXORA_TEMPLATE_PWA_ORIGIN.
   const hardcodedOrigins = [...originConfig.matchAll(/"(https?:\/\/[^"]+)"/g)].map(([, origin]) => origin);
-  assert.deepEqual(hardcodedOrigins, ["https://new-tamplete-app.vercel.app"]);
+  assert.deepEqual(hardcodedOrigins, ["https://final-new-app-templete.vercel.app"]);
   assert.match(originConfig, /DEFAULT_PORTAL_ORIGINS/);
   assert.match(nextConfig, /permanent: false/);
   assert.doesNotMatch(nextConfig, /api\/portal/);

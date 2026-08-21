@@ -59,7 +59,7 @@ test("self-referential deployment origins are rejected to prevent loops", () => 
 });
 
 test("Template falls back to the Template App origin and the env var overrides it", () => {
-  assert.equal(DEFAULT_TEMPLATE_ORIGIN, "https://new-tamplete-app.vercel.app");
+  assert.equal(DEFAULT_TEMPLATE_ORIGIN, "https://final-new-app-templete.vercel.app");
   withEnvironment({}, () => assert.equal(resolvePortalOrigin("template"), DEFAULT_TEMPLATE_ORIGIN));
   withEnvironment({ NEXORA_TEMPLATE_PWA_ORIGIN: "https://template.example.com" }, () => {
     assert.equal(resolvePortalOrigin("template"), "https://template.example.com");
@@ -67,7 +67,7 @@ test("Template falls back to the Template App origin and the env var overrides i
 });
 
 test("Template default is dropped when it would point back at this deployment", () => {
-  withEnvironment({ VERCEL_URL: "new-tamplete-app.vercel.app" }, () => {
+  withEnvironment({ VERCEL_URL: "final-new-app-templete.vercel.app" }, () => {
     assert.equal(resolvePortalOrigin("template"), undefined);
   });
 });

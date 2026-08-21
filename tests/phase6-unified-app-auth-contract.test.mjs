@@ -11,7 +11,15 @@ const phase6Packages = {
   owner: "integration-packages/owner-pwa/phase6-unified-auth.patch",
   customer: "integration-packages/customer-pwa/phase6-unified-auth.patch",
   partner: "integration-packages/growth-partner-pwa/phase6-unified-auth.patch",
-  template: "integration-packages/template-app/phase6-unified-auth.patch",
+  // The Template App is now integrated as a vendored copy of
+  // templateapp67-oss/FINAL-NEW-APP-TEMPLETE- (operator-approved source
+  // switch, 2026-08-21). The previous patch-based integration model has
+  // been replaced — there is no per-app Phase 6 patch for the Template
+  // App. The Template App is an independent Vite/React Vercel deployment
+  // that uses the shared Supabase project and the shared RLS policies;
+  // it does not vendor `@nexora/auth` and does not call the canonical
+  // Phase 6 access gates.
+  template: "integration-packages/template-app/files/src/lib/supabaseClient.ts",
 };
 
 test("@nexora/auth 1.2.0 exports the Phase 6 access contract", () => {
@@ -73,13 +81,16 @@ test("shared Phase 6 rollout patch contains one byte-identical auth 1.2.0 upgrad
 test("every downstream app has an isolated Phase 6 authorization patch", () => {
   for (const [app, path] of Object.entries(phase6Packages)) {
     assert.equal(existsSync(new URL(`../${path}`, import.meta.url)), true, `${app} Phase 6 patch is missing`);
-    assert.match(read(path), /^diff --git /m, `${app} Phase 6 patch is empty`);
   }
 
   assert.match(read(phase6Packages.owner), /requireOwnerWorkspace/);
   assert.match(read(phase6Packages.customer), /requireCustomerAccount/);
   assert.match(read(phase6Packages.partner), /requirePartnerMembership/);
-  assert.match(read(phase6Packages.template), /requireOwnerWorkspace/);
+  // The Template App no longer ships a Phase 6 patch. The vendored
+  // source tree under integration-packages/template-app/files/ is the
+  // authoritative Template App source. See CONFLICT_LOG.md for the
+  // full migration history.
+  assert.match(read(phase6Packages.template), /supabase/);
 });
 
 test("Partner self-service cannot claim the Growth Partner role", () => {
@@ -89,16 +100,42 @@ test("Partner self-service cannot claim the Growth Partner role", () => {
   assert.doesNotMatch(patch, /\+.*localStorage.*(?:role|partner)/i);
 });
 
-test("Template replacement adapters are copied outside git-apply patches", () => {
-  const phase2Patch = read("integration-packages/template-app/auth-integration.patch");
-  const client = read("integration-packages/template-app/files/src/lib/supabaseClient.ts");
-  const hook = read("integration-packages/template-app/files/src/lib/useAuth.ts");
+test("Template App integration ships a complete vendored source tree", () => {
+  // The Template App is now integrated as a complete vendored copy of
+  // templateapp67-oss/FINAL-NEW-APP-TEMPLETE- at HEAD 8d7bb25. The previous
+  // patch-based integration model has been retired. We assert the
+  // essential structural invariants of the vendored source so the
+  // integration never silently regresses to an empty placeholder.
+  const app = read("integration-packages/template-app/files/src/App.tsx");
+  const main = read("integration-packages/template-app/files/src/main.tsx");
+  const supabaseClient = read("integration-packages/template-app/files/src/lib/supabaseClient.ts");
+  const packageJson = read("integration-packages/template-app/files/package.json");
+  const vercel = read("integration-packages/template-app/files/vercel.json");
 
-  assert.doesNotMatch(phase2Patch, /^diff --git a\/src\/lib\/(?:supabaseClient|useAuth)\.ts/m);
-  assert.match(client, /getSupabaseClient/);
-  assert.doesNotMatch(client, /createClient\(/);
-  assert.match(hook, /from '@nexora\/auth'/);
-  assert.doesNotMatch(hook, /onAuthStateChange/);
+  assert.match(main, /function RootRouter|createBrowserRouter|HashRouter|<Router|MemoryRouter/, "Template App must have a router-based entry");
+  assert.match(main, /createRoot/, "Template App must use createRoot");
+  assert.match(supabaseClient, /createClient/, "Template App creates its own Supabase client from env");
+  assert.match(supabaseClient, /VITE_SUPABASE_URL/, "Template App reads VITE_SUPABASE_URL");
+  assert.match(supabaseClient, /VITE_SUPABASE_ANON_KEY/, "Template App reads VITE_SUPABASE_ANON_KEY");
+  assert.match(vercel, /\"rewrites\"/, "Template App must declare Vercel SPA rewrites");
+  // The vendored package.json should NOT contain "@nexora/auth" — the
+  // FINAL repo is self-contained and uses the shared Supabase project
+  // directly, not the Nexora canonical auth package.
+  assert.doesNotMatch(packageJson, /@nexora\/auth/, "Template App must not depend on @nexora/auth");
+
+  // The "auth-integration.patch" and "phase6-unified-auth.patch" files
+  // no longer exist for the Template App because the integration model
+  // is "vendored source", not "patch into upstream".
+  assert.equal(
+    existsSync(new URL("../integration-packages/template-app/auth-integration.patch", import.meta.url)),
+    false,
+    "Template App no longer uses an auth-integration.patch (vendored-source model)",
+  );
+  assert.equal(
+    existsSync(new URL("../integration-packages/template-app/phase6-unified-auth.patch", import.meta.url)),
+    false,
+    "Template App no longer uses a phase6-unified-auth.patch (vendored-source model)",
+  );
 });
 
 test("shared project, PKCE, storage and password policy remain canonical", () => {
