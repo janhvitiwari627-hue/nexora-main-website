@@ -50,3 +50,6 @@ next-env.d.ts
 .env.acceptance.local
 playwright-report/
 test-results/
+
+# Local upstream-audit working copies
+/.audit/
