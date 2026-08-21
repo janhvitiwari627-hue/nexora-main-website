@@ -41,7 +41,7 @@ const JOB_PORTAL_ROUTE_ROOTS = [
  *
  * Origins come only from validated server-side configuration. Customer, Owner
  * and Partner are required and fail closed when unset. Template resolves to
- * its built-in Template App origin (new-tamplete-app.vercel.app) so
+ * its built-in Template App origin (final-new-app-templete.vercel.app) so
  * `/app/template` always reaches the builder, and `NEXORA_TEMPLATE_PWA_ORIGIN`
  * overrides that default whenever it is configured.
  */

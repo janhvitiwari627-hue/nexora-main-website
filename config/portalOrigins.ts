@@ -17,9 +17,15 @@ const REQUIRED_EXTERNAL_PORTALS = new Set<ExternalPortalKey>(["customer", "owner
  * `NEXORA_TEMPLATE_PWA_ORIGIN`. The env var always wins when present; this is
  * only the fallback. Customer / Owner / Partner intentionally have no default
  * and still fail closed, because a wrong guess there would break sign-in.
+ *
+ * The default origin is the live Vercel deployment of the canonical Template
+ * App source: `templateapp67-oss/FINAL-NEW-APP-TEMPLETE-`. The previous
+ * default (`new-tamplete-app.vercel.app`, which was the deployment of the
+ * old `templateapp67-oss/NEW-TAMPLETE-APP` repo) has been retired; see
+ * `integration-packages/template-app/README.md` for the source history.
  */
 const DEFAULT_PORTAL_ORIGINS: Partial<Record<ExternalPortalKey, string>> = {
-  template: "https://new-tamplete-app.vercel.app",
+  template: "https://final-new-app-templete.vercel.app",
 };
 
 /** Default Template App origin used when NEXORA_TEMPLATE_PWA_ORIGIN is unset. */
