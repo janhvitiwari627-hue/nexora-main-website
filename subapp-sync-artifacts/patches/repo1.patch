@@ -1,0 +1,272 @@
+From bb81c7e90cc26ee97158061016056abab5e01265 Mon Sep 17 00:00:00 2001
+From: Arena Agent <arena-agent@users.noreply.github.com>
+Date: Sun, 23 Aug 2026 15:08:06 +0000
+Subject: [PATCH] Sync Supabase PKCE auth and location sync with main website
+
+---
+ .env                         |  3 ++
+ .env.example                 |  8 ++-
+ src/App.tsx                  | 15 ++++++
+ src/hooks/useLocationSync.ts | 95 ++++++++++++++++++++++++++++++++++++
+ src/lib/mainWebsiteAuth.ts   | 14 ++++++
+ src/lib/supabase.ts          | 15 ++++--
+ 6 files changed, 142 insertions(+), 8 deletions(-)
+ create mode 100644 .env
+ create mode 100644 src/hooks/useLocationSync.ts
+ create mode 100644 src/lib/mainWebsiteAuth.ts
+
+diff --git a/.env b/.env
+new file mode 100644
+index 0000000..17481e0
+--- /dev/null
++++ b/.env
+@@ -0,0 +1,3 @@
++VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co
++VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3YWVocXNtb2Rla2Jndm5hYXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNjQ5MjksImV4cCI6MjEwMDc0MDkyOX0.K92b2vkEb77dyu8fYYZpMTIbTyP98Vo80TaMo_Hmq_E
++VITE_SUPABASE_STORAGE_KEY=nexora.auth.qwaehqsmodekbgvnaavz
+diff --git a/.env.example b/.env.example
+index cb3b112..46a3dde 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1,9 +1,7 @@
+-# Supabase Configuration (Shared Project: qwaehqsmodekbgvnaavz)
+-# Vercel environment variables are NOT automatically available on local :3000.
+-# Copy this file to .env.local, fill the current public key, then restart npm run dev.
++# Shared Nexora Supabase configuration
+ VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co
+-VITE_SUPABASE_ANON_KEY=
++VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3YWVocXNtb2Rla2Jndm5hYXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNjQ5MjksImV4cCI6MjEwMDc0MDkyOX0.K92b2vkEb77dyu8fYYZpMTIbTyP98Vo80TaMo_Hmq_E
++VITE_SUPABASE_STORAGE_KEY=nexora.auth.qwaehqsmodekbgvnaavz
+ 
+ # Gemini AI Configuration
+ GEMINI_API_KEY=
+-
+diff --git a/src/App.tsx b/src/App.tsx
+index e1d619b..56e6781 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -52,6 +52,8 @@ import { Download, X, WifiOff, RefreshCw } from 'lucide-react';
+ import { motion, AnimatePresence } from 'motion/react';
+ import { useRegisterSW } from 'virtual:pwa-register/react';
+ import { useLocation } from './contexts/LocationContext';
++import { useLocationSync } from './hooks/useLocationSync';
++import { redirectToMainWebsiteLogin } from './lib/mainWebsiteAuth';
+ 
+ export default function App() {
+   const { requestLocation } = useLocation();
+@@ -83,12 +85,19 @@ export default function App() {
+   });
+   const currentScreenRef = React.useRef(currentScreen);
+   const [session, setSession] = useState<Session | null>(null);
++  const hadSessionRef = React.useRef(false);
+   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+   const [showInstallToast, setShowInstallToast] = useState(false);
+   const [isAppInstalled, setIsAppInstalled] = useState(false);
+   const [isOnline, setIsOnline] = useState(navigator.onLine);
+   const [isSyncing, setIsSyncing] = useState<boolean>(false);
+ 
++  useLocationSync({
++    client: supabase,
++    userId: session?.user?.id ?? null,
++    enabled: Boolean(session?.user?.id),
++  });
++
+   // PWA Update handling
+   const {
+     offlineReady: [offlineReady, setOfflineReady],
+@@ -202,6 +211,7 @@ export default function App() {
+     // Initial session check — already-logged-in user reload par bhi location auto-maango
+     supabase.auth.getSession().then(({ data: { session } }) => {
+       setSession(session);
++      if (session?.user?.id) hadSessionRef.current = true;
+       if (session && !locationAutoAskedRef.current) {
+         locationAutoAskedRef.current = true;
+         setTimeout(() => requestLocation(), 800);
+@@ -306,12 +316,17 @@ export default function App() {
+       const activeScreen = currentScreenRef.current;
+       
+       if (!session) {
++        if (hadSessionRef.current) {
++          hadSessionRef.current = false;
++          redirectToMainWebsiteLogin('signed_out');
++        }
+         // Only force welcome if we are on a protected screen
+         const authScreens: ScreenName[] = ['splash', 'welcome', 'login', 'register-stepper', 'website-builder', 'dashboard', 'staff', 'new-staff', 'staff-detail', 'staff-schedule', 'staff-attendance', 'leave-swap', 'staff-payroll', 'staff-payroll-detail', 'staff-payroll-breakdown', 'staff-roles-access', 'staff-performance', 'staff-self-service', 'staff-website-booking'];
+         if (!authScreens.includes(activeScreen)) {
+           setCurrentScreen('welcome');
+         }
+       } else if (['splash', 'welcome', 'login'].includes(activeScreen)) {
++        hadSessionRef.current = true;
+         // Automatically go to dashboard if logged in from these entry screens
+         setCurrentScreen('dashboard');
+       }
+diff --git a/src/hooks/useLocationSync.ts b/src/hooks/useLocationSync.ts
+new file mode 100644
+index 0000000..b8b9377
+--- /dev/null
++++ b/src/hooks/useLocationSync.ts
+@@ -0,0 +1,95 @@
++import { useEffect } from 'react';
++import type { SupabaseClient } from '@supabase/supabase-js';
++
++type UseLocationSyncOptions = {
++  client: SupabaseClient | null | undefined;
++  userId: string | null | undefined;
++  enabled?: boolean;
++};
++
++const GEO_OPTIONS: PositionOptions = {
++  enableHighAccuracy: true,
++  timeout: 15_000,
++  maximumAge: 0,
++};
++
++async function writeLocation(client: SupabaseClient, userId: string, position: GeolocationPosition) {
++  const capturedAt = new Date(position.timestamp).toISOString();
++  const latitude = position.coords.latitude;
++  const longitude = position.coords.longitude;
++  const accuracy = Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null;
++  const attempts = [
++    () => client.from('user_locations').upsert({
++      user_id: userId,
++      latitude,
++      longitude,
++      accuracy_m: accuracy,
++      source: 'gps',
++      captured_at: capturedAt,
++      updated_at: capturedAt,
++    }, { onConflict: 'user_id' }),
++    () => client.from('user_locations').upsert({
++      user_id: userId,
++      latitude,
++      longitude,
++      accuracy,
++      updated_at: capturedAt,
++    }, { onConflict: 'user_id' }),
++    () => client.rpc('save_my_private_location', {
++      p_latitude: latitude,
++      p_longitude: longitude,
++      p_accuracy_m: accuracy,
++      p_altitude_m: position.coords.altitude ?? null,
++      p_altitude_accuracy_m: position.coords.altitudeAccuracy ?? null,
++      p_speed_mps: position.coords.speed ?? null,
++      p_heading_degrees: position.coords.heading ?? null,
++      p_captured_at: capturedAt,
++    }),
++  ];
++
++  let lastError: unknown = null;
++  for (const attempt of attempts) {
++    const { error } = await attempt();
++    if (!error) return;
++    lastError = error;
++  }
++  throw lastError instanceof Error ? lastError : new Error(String(lastError || 'Location sync failed.'));
++}
++
++export function useLocationSync({ client, userId, enabled = true }: UseLocationSyncOptions) {
++  useEffect(() => {
++    if (!enabled || !client || !userId) return;
++    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) return;
++
++    let active = true;
++    let lastSignature = '';
++    let saveChain: Promise<void> = Promise.resolve();
++
++    const watchId = navigator.geolocation.watchPosition(
++      (position) => {
++        if (!active) return;
++        const signature = `${userId}:${position.timestamp}:${position.coords.latitude.toFixed(6)}:${position.coords.longitude.toFixed(6)}`;
++        if (signature === lastSignature) return;
++        lastSignature = signature;
++        saveChain = saveChain
++          .catch(() => undefined)
++          .then(async () => {
++            if (!active) return;
++            await writeLocation(client, userId, position);
++          })
++          .catch((error) => {
++            console.warn('[Nexora] location sync skipped:', error);
++          });
++      },
++      (error) => {
++        console.warn('[Nexora] location permission/status:', error.message);
++      },
++      GEO_OPTIONS,
++    );
++
++    return () => {
++      active = false;
++      navigator.geolocation.clearWatch(watchId);
++    };
++  }, [client, enabled, userId]);
++}
+diff --git a/src/lib/mainWebsiteAuth.ts b/src/lib/mainWebsiteAuth.ts
+new file mode 100644
+index 0000000..f9ee6c5
+--- /dev/null
++++ b/src/lib/mainWebsiteAuth.ts
+@@ -0,0 +1,14 @@
++const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
++
++export const MAIN_WEBSITE_LOGIN_URL = 'https://nexora-main-website.vercel.app/';
++export const DEFAULT_NEXORA_STORAGE_KEY = 'nexora.auth.qwaehqsmodekbgvnaavz';
++export const NEXORA_STORAGE_KEY = env?.VITE_SUPABASE_STORAGE_KEY?.trim() || DEFAULT_NEXORA_STORAGE_KEY;
++
++export function redirectToMainWebsiteLogin(reason = 'signed_out') {
++  if (typeof window === 'undefined') return;
++  const url = new URL(MAIN_WEBSITE_LOGIN_URL);
++  url.searchParams.set('source', window.location.origin);
++  url.searchParams.set('reason', reason);
++  url.searchParams.set('next', window.location.href);
++  window.location.assign(url.toString());
++}
+diff --git a/src/lib/supabase.ts b/src/lib/supabase.ts
+index 972ef93..5ea8c87 100644
+--- a/src/lib/supabase.ts
++++ b/src/lib/supabase.ts
+@@ -1,5 +1,6 @@
+ /// <reference types="vite/client" />
+ import { createClient } from '@supabase/supabase-js';
++import { NEXORA_STORAGE_KEY } from './mainWebsiteAuth';
+ 
+ /**
+  * Public Supabase project settings for Nexora.
+@@ -22,7 +23,16 @@ const configuredAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
+ const effectiveUrl = configuredUrl || DEFAULT_SUPABASE_URL;
+ const effectiveKey = configuredAnonKey || DEFAULT_SUPABASE_ANON_KEY;
+ 
+-export const supabase = createClient(effectiveUrl, effectiveKey);
++export const supabase = createClient(effectiveUrl, effectiveKey, {
++  auth: {
++    persistSession: true,
++    autoRefreshToken: true,
++    detectSessionInUrl: true,
++    flowType: 'pkce',
++    storageKey: NEXORA_STORAGE_KEY,
++  },
++  global: { headers: { 'x-nexora-client': 'owner-pwa/auth-sync' } },
++});
+ 
+ /** True when a usable Supabase client is available. */
+ export const isSupabaseConfigured = () =>
+@@ -81,7 +91,6 @@ async function applyAuthTokens(result: AuthApiResponse) {
+     // Some installed browsers block direct cross-origin requests after the
+     // server exchange. Keep the authenticated session locally so login is
+     // still successful; the next app load restores it through Supabase.
+-    const projectRef = new URL(effectiveUrl).hostname.split('.')[0];
+     const expiresAt = result.expires_at || Math.floor(Date.now() / 1000) + (result.expires_in || 3600);
+     const session = {
+       access_token: result.access_token,
+@@ -91,7 +100,7 @@ async function applyAuthTokens(result: AuthApiResponse) {
+       token_type: result.token_type || 'bearer',
+       user: result.user,
+     };
+-    localStorage.setItem(`sb-${projectRef}-auth-token`, JSON.stringify(session));
++    localStorage.setItem(NEXORA_STORAGE_KEY, JSON.stringify(session));
+     return { session, user: result.user };
+   }
+ }
+-- 
+2.39.5
+
