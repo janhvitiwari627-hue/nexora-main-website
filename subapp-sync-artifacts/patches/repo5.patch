@@ -1,0 +1,240 @@
+From b51a952466808daf85534610ddbbed2f946a388e Mon Sep 17 00:00:00 2001
+From: Arena Agent <arena-agent@users.noreply.github.com>
+Date: Sun, 23 Aug 2026 15:08:06 +0000
+Subject: [PATCH] Sync Supabase PKCE auth and location sync with main website
+
+---
+ .env                         |  3 ++
+ .env.example                 | 11 ++---
+ src/App.tsx                  |  9 ++++
+ src/hooks/useLocationSync.ts | 95 ++++++++++++++++++++++++++++++++++++
+ src/lib/mainWebsiteAuth.ts   | 14 ++++++
+ src/lib/supabase.ts          |  4 ++
+ src/vite-env.d.ts            |  1 +
+ 7 files changed, 130 insertions(+), 7 deletions(-)
+ create mode 100644 .env
+ create mode 100644 src/hooks/useLocationSync.ts
+ create mode 100644 src/lib/mainWebsiteAuth.ts
+
+diff --git a/.env b/.env
+new file mode 100644
+index 0000000..17481e0
+--- /dev/null
++++ b/.env
+@@ -0,0 +1,3 @@
++VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co
++VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3YWVocXNtb2Rla2Jndm5hYXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNjQ5MjksImV4cCI6MjEwMDc0MDkyOX0.K92b2vkEb77dyu8fYYZpMTIbTyP98Vo80TaMo_Hmq_E
++VITE_SUPABASE_STORAGE_KEY=nexora.auth.qwaehqsmodekbgvnaavz
+diff --git a/.env.example b/.env.example
+index eb12698..3805a5a 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1,10 +1,7 @@
+-# Supabase project settings (Project Settings -> API)
+-# The anon/publishable key is safe to expose to the browser when RLS is enabled.
+-VITE_SUPABASE_URL="https://YOUR_PROJECT_REF.supabase.co"
+-VITE_SUPABASE_ANON_KEY="YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY"
++# Shared Nexora Supabase project
++VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co
++VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3YWVocXNtb2Rla2Jndm5hYXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNjQ5MjksImV4cCI6MjEwMDc0MDkyOX0.K92b2vkEb77dyu8fYYZpMTIbTyP98Vo80TaMo_Hmq_E
++VITE_SUPABASE_STORAGE_KEY=nexora.auth.qwaehqsmodekbgvnaavz
+ 
+-# Optional AI feature key. Never place Supabase service_role keys in VITE_* vars.
+ GEMINI_API_KEY="MY_GEMINI_API_KEY"
+-
+-# Public URL used for OAuth and password recovery redirects.
+ APP_URL="http://localhost:3000"
+diff --git a/src/App.tsx b/src/App.tsx
+index 41d1e56..9352340 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -3,6 +3,8 @@ import { ScreenState, UserRole, JobPosting, Application, Applicant, UserProfile,
+ import { INITIAL_JOBS, INITIAL_APPLICATIONS, INITIAL_APPLICANTS, INITIAL_CONVERSATIONS, INITIAL_MESSAGES, INITIAL_PORTFOLIO_ITEMS, INITIAL_SAVED_FILTERS, INITIAL_JOB_ALERTS } from './data/mockData';
+ import { processNewJobForAlerts } from './utils/jobAlertMatcher';
+ import { isSupabaseConfigured, supabase } from './lib/supabase';
++import { useLocationSync } from './hooks/useLocationSync';
++import { redirectToMainWebsiteLogin } from './lib/mainWebsiteAuth';
+ import { pathForScreen, resolveJobPortalRoute, type JobPortalRoute } from './routing';
+ import {
+   applyPendingOAuthRole,
+@@ -60,6 +62,12 @@ export default function App() {
+   const [selectedApplicationForOffer, setSelectedApplicationForOffer] = useState<Application | null>(null);
+   const [seekerInitialTab, setSeekerInitialTab] = useState<'feed' | 'applications' | 'saved' | 'messages' | 'portfolio' | 'profile' | undefined>(initialRoute.seekerTab);
+   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
++
++  useLocationSync({
++    client: supabase,
++    userId: currentUserId,
++    enabled: Boolean(supabase && currentUserId),
++  });
+   const [isBackendLoading, setIsBackendLoading] = useState(isSupabaseConfigured);
+   const [backendError, setBackendError] = useState<string | null>(null);
+   const [passwordRecoveryState, setPasswordRecoveryState] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
+@@ -184,6 +192,7 @@ export default function App() {
+         setCurrentUserId(null);
+         setPasswordRecoveryState('idle');
+         setScreen('welcome');
++        redirectToMainWebsiteLogin('signed_out');
+       }
+     });
+ 
+diff --git a/src/hooks/useLocationSync.ts b/src/hooks/useLocationSync.ts
+new file mode 100644
+index 0000000..b8b9377
+--- /dev/null
++++ b/src/hooks/useLocationSync.ts
+@@ -0,0 +1,95 @@
++import { useEffect } from 'react';
++import type { SupabaseClient } from '@supabase/supabase-js';
++
++type UseLocationSyncOptions = {
++  client: SupabaseClient | null | undefined;
++  userId: string | null | undefined;
++  enabled?: boolean;
++};
++
++const GEO_OPTIONS: PositionOptions = {
++  enableHighAccuracy: true,
++  timeout: 15_000,
++  maximumAge: 0,
++};
++
++async function writeLocation(client: SupabaseClient, userId: string, position: GeolocationPosition) {
++  const capturedAt = new Date(position.timestamp).toISOString();
++  const latitude = position.coords.latitude;
++  const longitude = position.coords.longitude;
++  const accuracy = Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null;
++  const attempts = [
++    () => client.from('user_locations').upsert({
++      user_id: userId,
++      latitude,
++      longitude,
++      accuracy_m: accuracy,
++      source: 'gps',
++      captured_at: capturedAt,
++      updated_at: capturedAt,
++    }, { onConflict: 'user_id' }),
++    () => client.from('user_locations').upsert({
++      user_id: userId,
++      latitude,
++      longitude,
++      accuracy,
++      updated_at: capturedAt,
++    }, { onConflict: 'user_id' }),
++    () => client.rpc('save_my_private_location', {
++      p_latitude: latitude,
++      p_longitude: longitude,
++      p_accuracy_m: accuracy,
++      p_altitude_m: position.coords.altitude ?? null,
++      p_altitude_accuracy_m: position.coords.altitudeAccuracy ?? null,
++      p_speed_mps: position.coords.speed ?? null,
++      p_heading_degrees: position.coords.heading ?? null,
++      p_captured_at: capturedAt,
++    }),
++  ];
++
++  let lastError: unknown = null;
++  for (const attempt of attempts) {
++    const { error } = await attempt();
++    if (!error) return;
++    lastError = error;
++  }
++  throw lastError instanceof Error ? lastError : new Error(String(lastError || 'Location sync failed.'));
++}
++
++export function useLocationSync({ client, userId, enabled = true }: UseLocationSyncOptions) {
++  useEffect(() => {
++    if (!enabled || !client || !userId) return;
++    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) return;
++
++    let active = true;
++    let lastSignature = '';
++    let saveChain: Promise<void> = Promise.resolve();
++
++    const watchId = navigator.geolocation.watchPosition(
++      (position) => {
++        if (!active) return;
++        const signature = `${userId}:${position.timestamp}:${position.coords.latitude.toFixed(6)}:${position.coords.longitude.toFixed(6)}`;
++        if (signature === lastSignature) return;
++        lastSignature = signature;
++        saveChain = saveChain
++          .catch(() => undefined)
++          .then(async () => {
++            if (!active) return;
++            await writeLocation(client, userId, position);
++          })
++          .catch((error) => {
++            console.warn('[Nexora] location sync skipped:', error);
++          });
++      },
++      (error) => {
++        console.warn('[Nexora] location permission/status:', error.message);
++      },
++      GEO_OPTIONS,
++    );
++
++    return () => {
++      active = false;
++      navigator.geolocation.clearWatch(watchId);
++    };
++  }, [client, enabled, userId]);
++}
+diff --git a/src/lib/mainWebsiteAuth.ts b/src/lib/mainWebsiteAuth.ts
+new file mode 100644
+index 0000000..f9ee6c5
+--- /dev/null
++++ b/src/lib/mainWebsiteAuth.ts
+@@ -0,0 +1,14 @@
++const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
++
++export const MAIN_WEBSITE_LOGIN_URL = 'https://nexora-main-website.vercel.app/';
++export const DEFAULT_NEXORA_STORAGE_KEY = 'nexora.auth.qwaehqsmodekbgvnaavz';
++export const NEXORA_STORAGE_KEY = env?.VITE_SUPABASE_STORAGE_KEY?.trim() || DEFAULT_NEXORA_STORAGE_KEY;
++
++export function redirectToMainWebsiteLogin(reason = 'signed_out') {
++  if (typeof window === 'undefined') return;
++  const url = new URL(MAIN_WEBSITE_LOGIN_URL);
++  url.searchParams.set('source', window.location.origin);
++  url.searchParams.set('reason', reason);
++  url.searchParams.set('next', window.location.href);
++  window.location.assign(url.toString());
++}
+diff --git a/src/lib/supabase.ts b/src/lib/supabase.ts
+index 7e58653..c16a836 100644
+--- a/src/lib/supabase.ts
++++ b/src/lib/supabase.ts
+@@ -1,4 +1,5 @@
+ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
++import { NEXORA_STORAGE_KEY } from './mainWebsiteAuth';
+ 
+ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
+ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
+@@ -16,10 +17,13 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
+         persistSession: true,
+         autoRefreshToken: true,
+         detectSessionInUrl: true,
++        flowType: 'pkce',
++        storageKey: NEXORA_STORAGE_KEY,
+       },
+       realtime: {
+         params: { eventsPerSecond: 10 },
+       },
++      global: { headers: { 'x-nexora-client': 'job-portal/auth-sync' } },
+     })
+   : null;
+ 
+diff --git a/src/vite-env.d.ts b/src/vite-env.d.ts
+index 047ea09..cdb3d8c 100644
+--- a/src/vite-env.d.ts
++++ b/src/vite-env.d.ts
+@@ -4,6 +4,7 @@
+ interface ImportMetaEnv {
+   readonly VITE_SUPABASE_URL?: string;
+   readonly VITE_SUPABASE_ANON_KEY?: string;
++  readonly VITE_SUPABASE_STORAGE_KEY?: string;
+ }
+ 
+ interface ImportMeta {
+-- 
+2.39.5
+

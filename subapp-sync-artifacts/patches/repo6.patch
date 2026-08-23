@@ -1,0 +1,1094 @@
+From 1f94f7250181d36a40ebb4bae7c5fb500fd53bf6 Mon Sep 17 00:00:00 2001
+From: Arena Agent <arena-agent@users.noreply.github.com>
+Date: Sun, 23 Aug 2026 15:08:06 +0000
+Subject: [PATCH] Sync Supabase PKCE auth and location sync with main website
+
+---
+ .env                         |   3 +
+ .env.example                 |  16 +-
+ src/App.tsx                  | 104 +++++-
+ src/components/AuthModal.tsx | 634 ++++++++++++++++-------------------
+ src/hooks/useLocationSync.ts |  95 ++++++
+ src/lib/mainWebsiteAuth.ts   |  14 +
+ src/lib/supabase.ts          |  11 +-
+ src/vite-env.d.ts            |  10 +
+ 8 files changed, 510 insertions(+), 377 deletions(-)
+ create mode 100644 .env
+ create mode 100644 src/hooks/useLocationSync.ts
+ create mode 100644 src/lib/mainWebsiteAuth.ts
+
+diff --git a/.env b/.env
+new file mode 100644
+index 0000000..17481e0
+--- /dev/null
++++ b/.env
+@@ -0,0 +1,3 @@
++VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co
++VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3YWVocXNtb2Rla2Jndm5hYXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNjQ5MjksImV4cCI6MjEwMDc0MDkyOX0.K92b2vkEb77dyu8fYYZpMTIbTyP98Vo80TaMo_Hmq_E
++VITE_SUPABASE_STORAGE_KEY=nexora.auth.qwaehqsmodekbgvnaavz
+diff --git a/.env.example b/.env.example
+index 51c1cbb..4761cec 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1,15 +1,7 @@
+-# GEMINI_API_KEY: Required for Gemini AI API calls.
+-# AI Studio automatically injects this at runtime from user secrets.
+-# Users configure this via the Secrets panel in the AI Studio UI.
+ GEMINI_API_KEY="MY_GEMINI_API_KEY"
+-
+-# APP_URL: The URL where this applet is hosted.
+-# AI Studio automatically injects this at runtime with the Cloud Run service URL.
+-# Used for self-referential links, OAuth callbacks, and API endpoints.
+ APP_URL="MY_APP_URL"
+ 
+-# SUPABASE INTEGRATION:
+-# Optional live credentials for connecting to your Supabase PostgreSQL project.
+-# You can obtain these from your Supabase Project Settings > API.
+-VITE_SUPABASE_URL="https://your-project.supabase.co"
+-VITE_SUPABASE_ANON_KEY="your-anon-public-key"
++# Shared Nexora Supabase project
++VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co
++VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3YWVocXNtb2Rla2Jndm5hYXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNjQ5MjksImV4cCI6MjEwMDc0MDkyOX0.K92b2vkEb77dyu8fYYZpMTIbTyP98Vo80TaMo_Hmq_E
++VITE_SUPABASE_STORAGE_KEY=nexora.auth.qwaehqsmodekbgvnaavz
+diff --git a/src/App.tsx b/src/App.tsx
+index c718274..229638f 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,4 +1,4 @@
+-import React, { useState } from 'react';
++import React, { useEffect, useRef, useState } from 'react';
+ import { TopNavBar } from './components/TopNavBar';
+ import { HeroSection } from './components/HeroSection';
+ import { CategoryGrid } from './components/CategoryGrid';
+@@ -38,7 +38,9 @@ import { ChatModalDrawer } from './components/ChatModalDrawer';
+ import { BuyerOnboardingScreen } from './components/BuyerOnboardingScreen';
+ import { DatabaseStatusModal } from './components/DatabaseStatusModal';
+ import { getBuyerProfile, BUYER_PROFILES_DB } from './data/buyerProfilesData';
+-import { SupabaseProvider } from './lib/supabase';
++import { SupabaseProvider, supabase, isSupabaseConfigured } from './lib/supabase';
++import { useLocationSync } from './hooks/useLocationSync';
++import { redirectToMainWebsiteLogin } from './lib/mainWebsiteAuth';
+ import {
+   CATEGORIES,
+   TRENDING_PRODUCTS,
+@@ -48,21 +50,84 @@ import { RFQItem, DealProduct, TrendingProduct, VerifiedSupplier, SearchProduct
+ import { CheckCircle2, Database } from 'lucide-react';
+ 
+ export function App() {
+-  const [currentScreen, setCurrentScreen] = useState<'explore' | 'directory' | 'supplier-directory' | 'plp' | 'product-detail' | 'search-results' | 'brands' | 'oem-hub' | 'supplier-profile' | 'onboarding' | 'buyer-onboarding' | 'supplier-portal' | 'supplier-verification' | 'buyer-dashboard' | 'buyer-profile' | 'rfq-tracking' | 'sample-request' | 'post-rfq' | 'buyer-enquiry-log'>('buyer-profile');
++  const [currentScreen, setCurrentScreen] = useState<'explore' | 'directory' | 'supplier-directory' | 'plp' | 'product-detail' | 'search-results' | 'brands' | 'oem-hub' | 'supplier-profile' | 'onboarding' | 'buyer-onboarding' | 'supplier-portal' | 'supplier-verification' | 'buyer-dashboard' | 'buyer-profile' | 'rfq-tracking' | 'sample-request' | 'post-rfq' | 'buyer-enquiry-log'>('explore');
+   const [selectedProductId, setSelectedProductId] = useState<string>('product_vitc_101');
+   const [selectedSupplierId, setSelectedSupplierId] = useState<string>('seller_aura_001');
+   const [selectedLocation, setSelectedLocation] = useState('All');
+   
++  const supabaseReady = isSupabaseConfigured();
++
+   // Persistent Auth State
+-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+-    const stored = localStorage.getItem('nexora_is_logged_in');
+-    return stored === null ? true : stored === 'true'; // Default to logged in as per prompt
++  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
++  const [userRole, setUserRole] = useState<'buyer' | 'supplier' | null>(null);
++  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
++  const [authReady, setAuthReady] = useState<boolean>(!supabaseReady);
++  const hadSessionRef = useRef(false);
++
++  useLocationSync({
++    client: supabaseReady ? supabase : null,
++    userId: sessionUserId,
++    enabled: Boolean(supabaseReady && sessionUserId),
+   });
+ 
+-  const [userRole, setUserRole] = useState<'buyer' | 'supplier' | null>(() => {
+-    const stored = localStorage.getItem('nexora_user_role');
+-    return (stored as 'buyer' | 'supplier') || 'buyer';
+-  });
++  useEffect(() => {
++    if (!supabaseReady) {
++      setAuthReady(true);
++      setIsLoggedIn(false);
++      setUserRole(null);
++      setSessionUserId(null);
++      return;
++    }
++
++    let active = true;
++
++    const applySession = (session: any | null) => {
++      if (!active) return;
++      if (!session?.user) {
++        setSessionUserId(null);
++        setIsLoggedIn(false);
++        setUserRole(null);
++        localStorage.setItem('nexora_is_logged_in', 'false');
++        if (hadSessionRef.current) {
++          hadSessionRef.current = false;
++          redirectToMainWebsiteLogin('signed_out');
++        }
++        setAuthReady(true);
++        return;
++      }
++
++      hadSessionRef.current = true;
++      setSessionUserId(session.user.id);
++      setIsLoggedIn(true);
++      const roleMeta = session.user.user_metadata?.role;
++      const storedRole = localStorage.getItem('nexora_user_role');
++      const resolvedRole = roleMeta === 'supplier' || roleMeta === 'buyer'
++        ? roleMeta
++        : storedRole === 'supplier' || storedRole === 'buyer'
++          ? storedRole
++          : 'buyer';
++      setUserRole(resolvedRole);
++      localStorage.setItem('nexora_is_logged_in', 'true');
++      localStorage.setItem('nexora_user_role', resolvedRole);
++      setAuthReady(true);
++    };
++
++    void supabase.auth.getSession()
++      .then(({ data }) => applySession(data.session))
++      .catch((error) => {
++        console.warn('Supabase auth bootstrap failed:', error);
++        if (active) setAuthReady(true);
++      });
++
++    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
++      applySession(session);
++    });
++
++    return () => {
++      active = false;
++      data.subscription.unsubscribe();
++    };
++  }, [supabaseReady]);
+ 
+   // Persistent Buyer Profile State
+   const [buyerProfile, setBuyerProfile] = useState<BuyerProfileData>(() => {
+@@ -164,10 +229,14 @@ export function App() {
+   };
+ 
+   const handleLogout = () => {
+-    setIsLoggedIn(false);
+-    setUserRole(null);
+     localStorage.setItem('nexora_is_logged_in', 'false');
+     localStorage.removeItem('nexora_user_role');
++    setIsLoggedIn(false);
++    setUserRole(null);
++    setSessionUserId(null);
++    if (supabaseReady) {
++      void supabase.auth.signOut().catch((error) => console.warn('Supabase sign-out failed:', error));
++    }
+     triggerToast('You have signed out successfully.');
+   };
+ 
+@@ -348,6 +417,17 @@ export function App() {
+     window.scrollTo({ top: 0, behavior: 'smooth' });
+   };
+ 
++  if (!authReady) {
++    return (
++      <div className="min-h-screen bg-[#fdf8f8] flex items-center justify-center text-[#8e004b]">
++        <div className="text-center space-y-3">
++          <div className="mx-auto h-9 w-9 rounded-full border-4 border-[#ffd9e2] border-t-[#e2007c] animate-spin" />
++          <p className="text-sm font-semibold">Loading Nexora Luxe…</p>
++        </div>
++      </div>
++    );
++  }
++
+   return (
+     <SupabaseProvider>
+       <div className="min-h-screen bg-[#fdf8f8] text-[#1c1b1b] flex flex-col font-sans selection:bg-[#fde7f3] selection:text-[#b90064] pb-16 md:pb-0">
+diff --git a/src/components/AuthModal.tsx b/src/components/AuthModal.tsx
+index 1a88f65..4fdd4d9 100644
+--- a/src/components/AuthModal.tsx
++++ b/src/components/AuthModal.tsx
+@@ -1,5 +1,18 @@
+-import React, { useState } from 'react';
+-import { X, CheckCircle2, ShieldCheck, ArrowRight, Building2, ShoppingBag, Sparkles, Mail, Phone, Lock, Eye, EyeOff } from 'lucide-react';
++import React, { useEffect, useState } from 'react';
++import {
++  X,
++  ShieldCheck,
++  ArrowRight,
++  Building2,
++  ShoppingBag,
++  Mail,
++  Lock,
++  Eye,
++  EyeOff,
++  AlertCircle,
++  CheckCircle2,
++} from 'lucide-react';
++import { supabase, isSupabaseConfigured } from '../lib/supabase';
+ 
+ interface AuthModalProps {
+   isOpen: boolean;
+@@ -9,122 +22,138 @@ interface AuthModalProps {
+   isFullPage?: boolean;
+ }
+ 
+-export const AuthModal: React.FC<AuthModalProps> = ({ 
+-  isOpen, 
+-  onClose, 
+-  onSuccess, 
++export const AuthModal: React.FC<AuthModalProps> = ({
++  isOpen,
++  onClose,
++  onSuccess,
+   initialMode = 'login',
+-  isFullPage = false
++  isFullPage = false,
+ }) => {
+   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
+   const [role, setRole] = useState<'buyer' | 'supplier'>('buyer');
+-  const [authMethod, setAuthMethod] = useState<'otp' | 'password'>('otp');
+-  const [phoneOrEmail, setPhoneOrEmail] = useState('');
++  const [email, setEmail] = useState('');
+   const [password, setPassword] = useState('');
+-  const [showPassword, setShowPassword] = useState(false);
++  const [confirmPassword, setConfirmPassword] = useState('');
++  const [fullName, setFullName] = useState('');
+   const [businessName, setBusinessName] = useState('');
+-  const [otpMode, setOtpMode] = useState(false);
+-  const [otp, setOtp] = useState('');
+-  const [verified, setVerified] = useState(false);
+-  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
++  const [showPassword, setShowPassword] = useState(false);
++  const [busy, setBusy] = useState(false);
++  const [successMessage, setSuccessMessage] = useState<string | null>(null);
++  const [errorMessage, setErrorMessage] = useState<string | null>(null);
++
++  useEffect(() => {
++    setMode(initialMode);
++  }, [initialMode, isOpen]);
+ 
+   if (!isOpen && !isFullPage) return null;
+ 
+-  const handleOAuthGoogle = () => {
+-    setIsGoogleLoading(true);
+-    setTimeout(() => {
+-      setIsGoogleLoading(false);
+-      const token = `nexora_oauth_token_${Date.now()}`;
+-      localStorage.setItem('nexora_user_session', JSON.stringify({
+-        token,
+-        email: 'priya.procurement@radiantbeauty.in',
+-        name: 'Priya Sharma',
+-        role,
+-        authenticatedAt: new Date().toISOString()
+-      }));
+-      localStorage.setItem('nexora_is_logged_in', 'true');
+-      localStorage.setItem('nexora_user_role', role);
+-      setVerified(true);
+-    }, 900);
++  const resetFeedback = () => {
++    setSuccessMessage(null);
++    setErrorMessage(null);
+   };
+ 
+-  const handleGuestContinue = () => {
+-    localStorage.setItem('nexora_is_logged_in', 'false');
+-    localStorage.setItem('nexora_user_role', 'buyer');
+-    localStorage.setItem('nexora_guest_mode', 'true');
+-    onSuccess('buyer', false);
++  const finishAuth = (nextRole: 'buyer' | 'supplier', isNewUser = false) => {
++    localStorage.setItem('nexora_user_role', nextRole);
++    localStorage.setItem('nexora_is_logged_in', 'true');
++    onSuccess(nextRole, isNewUser);
+     onClose();
+   };
+ 
+-  const handleSubmit = (e: React.FormEvent) => {
+-    e.preventDefault();
+-    if (!phoneOrEmail.trim()) return;
+-
+-    if (authMethod === 'otp') {
+-      setOtpMode(true);
+-    } else {
+-      // Password login simulation
+-      if (password.length >= 4) {
+-        const token = `nexora_jwt_${Date.now()}`;
+-        localStorage.setItem('nexora_user_session', JSON.stringify({
+-          token,
+-          email: phoneOrEmail,
+-          name: businessName || (role === 'buyer' ? 'Priya Sharma' : 'Aura Beauty Labs'),
+-          role,
+-          authenticatedAt: new Date().toISOString()
+-        }));
+-        localStorage.setItem('nexora_is_logged_in', 'true');
+-        localStorage.setItem('nexora_user_role', role);
+-        setVerified(true);
+-      } else {
+-        alert('Please enter a password with at least 4 characters.');
+-      }
++  const handleGoogle = async () => {
++    resetFeedback();
++    if (!isSupabaseConfigured()) {
++      setErrorMessage('Authentication is not configured yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY first.');
++      return;
+     }
+-  };
+-
+-  const handleVerifyOtp = (e: React.FormEvent) => {
+-    e.preventDefault();
+-    if (otp === '1234' || otp.length === 4) {
+-      const token = `nexora_jwt_${Date.now()}`;
+-      localStorage.setItem('nexora_user_session', JSON.stringify({
+-        token,
+-        email: phoneOrEmail,
+-        name: businessName || (role === 'buyer' ? 'Priya Sharma' : 'Aura Beauty Labs'),
+-        role,
+-        authenticatedAt: new Date().toISOString()
+-      }));
+-      localStorage.setItem('nexora_is_logged_in', 'true');
++    setBusy(true);
++    try {
+       localStorage.setItem('nexora_user_role', role);
+-      setVerified(true);
+-    } else {
+-      alert('Invalid OTP. For Demo, please enter: 1234');
+-      setOtp('');
++      const { error } = await supabase.auth.signInWithOAuth({
++        provider: 'google',
++        options: { redirectTo: window.location.origin },
++      });
++      if (error) throw error;
++    } catch (error: any) {
++      setErrorMessage(error?.message || 'Unable to start Google sign-in.');
++    } finally {
++      setBusy(false);
+     }
+   };
+ 
+-  const handleReset = () => {
+-    const isNew = mode === 'register';
+-    setOtpMode(false);
+-    setVerified(false);
+-    setOtp('');
+-    setPhoneOrEmail('');
+-    setPassword('');
+-    setBusinessName('');
+-    onSuccess(role, isNew);
+-    onClose();
++  const handleSubmit = async (event: React.FormEvent) => {
++    event.preventDefault();
++    resetFeedback();
++
++    if (!isSupabaseConfigured()) {
++      setErrorMessage('Authentication is not configured yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY first.');
++      return;
++    }
++
++    if (!email.trim()) {
++      setErrorMessage('Please enter your email address.');
++      return;
++    }
++    if (password.length < 6) {
++      setErrorMessage('Password must be at least 6 characters.');
++      return;
++    }
++    if (mode === 'register' && password !== confirmPassword) {
++      setErrorMessage('Passwords do not match.');
++      return;
++    }
++
++    setBusy(true);
++    try {
++      if (mode === 'login') {
++        const { data, error } = await supabase.auth.signInWithPassword({
++          email: email.trim().toLowerCase(),
++          password,
++        });
++        if (error) throw error;
++        const roleFromMetadata = data.user?.user_metadata?.role;
++        const nextRole = roleFromMetadata === 'supplier' || roleFromMetadata === 'buyer' ? roleFromMetadata : role;
++        finishAuth(nextRole, false);
++        return;
++      }
++
++      const { data, error } = await supabase.auth.signUp({
++        email: email.trim().toLowerCase(),
++        password,
++        options: {
++          data: {
++            role,
++            full_name: fullName.trim() || email.split('@')[0],
++            business_name: businessName.trim() || null,
++          },
++        },
++      });
++      if (error) throw error;
++
++      if (data.session) {
++        finishAuth(role, true);
++        return;
++      }
++
++      setSuccessMessage('Account created. Please confirm your email, then sign in here or from the main website portal.');
++      setMode('login');
++      setPassword('');
++      setConfirmPassword('');
++    } catch (error: any) {
++      setErrorMessage(error?.message || 'Authentication failed. Please try again.');
++    } finally {
++      setBusy(false);
++    }
+   };
+ 
+   const content = (
+     <div className="bg-white rounded-3xl border border-[#e8e8e8] w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+-      
+-      {/* Modal Header */}
+       <div className="p-5 border-b border-[#e8e8e8] flex items-center justify-between bg-[#fcf9f8]">
+         <div>
+           <h3 className="text-base font-black text-[#1c1b1b]">
+-            {verified ? 'Authentication Verified' : otpMode ? 'Verify Sourcing OTP' : mode === 'login' ? 'Sign In to Nexora Luxe' : 'Create Business Account'}
++            {mode === 'login' ? 'Sign In to Nexora Luxe' : 'Create Business Account'}
+           </h3>
+           <p className="text-[12px] text-[#594047] font-medium">
+-            {verified ? 'Session activated & security checks passed' : otpMode ? `OTP sent to ${phoneOrEmail}` : 'Access India\'s premier B2B beauty sourcing network'}
++            Shared Supabase PKCE login for Nexora buyers and suppliers.
+           </p>
+         </div>
+         {!isFullPage && (
+@@ -137,291 +166,197 @@ export const AuthModal: React.FC<AuthModalProps> = ({
+         )}
+       </div>
+ 
+-      {/* Modal Body */}
+-      <div className="p-6">
+-        {verified ? (
+-          <div className="text-center py-6 space-y-4">
+-            <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-sm">
+-              <CheckCircle2 className="w-8 h-8" />
+-            </div>
+-            <div>
+-              <h4 className="text-lg font-black text-[#1c1b1b]">Verification Complete!</h4>
+-              <p className="text-[13px] text-[#594047] mt-1">
+-                You are securely logged in as a <strong>{role === 'buyer' ? 'Professional Buyer' : 'Verified Supplier'}</strong>.
+-              </p>
+-            </div>
+-            <button
+-              onClick={handleReset}
+-              className="w-full bg-[#b90064] hover:bg-[#8e004b] text-white font-extrabold text-[13px] py-3 rounded-xl shadow-md transition-all cursor-pointer"
+-            >
+-              Continue to {role === 'buyer' ? 'Buyer Dashboard' : 'Supplier Portal'}
+-            </button>
+-          </div>
+-        ) : otpMode ? (
+-          <form onSubmit={handleVerifyOtp} className="space-y-6">
+-            <div className="text-center space-y-6">
+-              <div>
+-                <p className="text-[13px] text-[#594047] mb-4">Please enter the 4-digit code sent to your device.</p>
+-                <div className="flex justify-center gap-3">
+-                  {[0, 1, 2, 3].map((i) => (
+-                    <input
+-                      key={i}
+-                      type="text"
+-                      maxLength={1}
+-                      value={otp[i] || ''}
+-                      onChange={(e) => {
+-                        const val = e.target.value;
+-                        if (/^\d*$/.test(val)) {
+-                          const newOtp = otp.split('');
+-                          newOtp[i] = val;
+-                          const combined = newOtp.join('');
+-                          setOtp(combined);
+-                          
+-                          // Auto-focus next input
+-                          if (val && i < 3) {
+-                            const inputs = e.target.parentElement?.querySelectorAll('input');
+-                            if (inputs && inputs[i + 1]) inputs[i + 1].focus();
+-                          }
+-                        }
+-                      }}
+-                      onKeyDown={(e) => {
+-                        if (e.key === 'Backspace' && !otp[i] && i > 0) {
+-                          const inputs = (e.target as HTMLInputElement).parentElement?.querySelectorAll('input');
+-                          if (inputs && inputs[i - 1]) inputs[i - 1].focus();
+-                        }
+-                      }}
+-                      className="w-12 h-14 bg-[#f7f2f2] border-2 border-[#e8e8e8] focus:border-[#b90064] rounded-xl text-center text-xl font-bold text-[#1c1b1b] focus:outline-none transition-all"
+-                    />
+-                  ))}
+-                </div>
+-              </div>
+-
+-              {/* Demo Hint */}
+-              <div className="inline-block bg-[#fde7f3] border border-[#b90064]/20 px-4 py-2 rounded-xl animate-pulse mx-auto">
+-                <p className="text-[11px] font-black text-[#b90064] uppercase tracking-wider flex items-center gap-2">
+-                  <Sparkles className="w-3.5 h-3.5" />
+-                  For Demo, enter OTP: 1234
+-                </p>
+-              </div>
+-            </div>
+-
+-            <div className="space-y-3">
+-              <button
+-                type="submit"
+-                disabled={otp.length !== 4}
+-                className="w-full bg-[#b90064] hover:bg-[#8e004b] disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold text-[13px] py-3 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+-              >
+-                <span>Verify &amp; Continue</span>
+-                <ArrowRight className="w-4 h-4" />
+-              </button>
+-              <button
+-                type="button"
+-                onClick={() => setOtpMode(false)}
+-                className="w-full text-[12px] font-bold text-[#b90064] hover:underline cursor-pointer"
+-              >
+-                Change Contact Details
+-              </button>
+-            </div>
++      <div className="p-6 space-y-4">
++        <div className="grid grid-cols-2 gap-2 p-1 bg-[#f7f2f2] rounded-xl border border-[#e8e8e8]">
++          <button
++            type="button"
++            onClick={() => setRole('buyer')}
++            className={`py-2 text-[12px] font-black rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
++              role === 'buyer' ? 'bg-white text-[#b90064] shadow-xs' : 'text-[#594047] hover:text-[#1c1b1b]'
++            }`}
++          >
++            <ShoppingBag className="w-3.5 h-3.5" />
++            <span>Buyer</span>
++          </button>
++          <button
++            type="button"
++            onClick={() => setRole('supplier')}
++            className={`py-2 text-[12px] font-black rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
++              role === 'supplier' ? 'bg-white text-[#b90064] shadow-xs' : 'text-[#594047] hover:text-[#1c1b1b]'
++            }`}
++          >
++            <Building2 className="w-3.5 h-3.5" />
++            <span>Supplier</span>
++          </button>
++        </div>
+ 
+-            <div className="text-center">
+-              <p className="text-[12px] text-[#8c7077]">
+-                Didn't receive code? <button type="button" onClick={() => setOtp('1234')} className="text-[#b90064] font-bold hover:underline cursor-pointer">Auto-fill 1234</button>
+-              </p>
+-            </div>
+-          </form>
+-        ) : (
+-          <form onSubmit={handleSubmit} className="space-y-4">
+-            
+-            {/* Role Toggle Selector (Buyer, Supplier) */}
+-            <div className="grid grid-cols-2 gap-2 p-1 bg-[#f7f2f2] rounded-xl border border-[#e8e8e8]">
+-              <button
+-                type="button"
+-                onClick={() => setRole('buyer')}
+-                className={`py-2 text-[12px] font-black rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+-                  role === 'buyer'
+-                    ? 'bg-white text-[#b90064] shadow-xs'
+-                    : 'text-[#594047] hover:text-[#1c1b1b]'
+-                }`}
+-              >
+-                <ShoppingBag className="w-3.5 h-3.5" />
+-                <span>Buyer Account</span>
+-              </button>
+-              <button
+-                type="button"
+-                onClick={() => setRole('supplier')}
+-                className={`py-2 text-[12px] font-black rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+-                  role === 'supplier'
+-                    ? 'bg-white text-[#b90064] shadow-xs'
+-                    : 'text-[#594047] hover:text-[#1c1b1b]'
+-                }`}
+-              >
+-                <Building2 className="w-3.5 h-3.5" />
+-                <span>Supplier Account</span>
+-              </button>
+-            </div>
++        <div className="flex border-b border-[#e8e8e8] text-[13px] font-bold">
++          <button
++            type="button"
++            onClick={() => {
++              resetFeedback();
++              setMode('login');
++            }}
++            className={`flex-1 pb-2.5 border-b-2 transition-all cursor-pointer ${
++              mode === 'login' ? 'border-[#b90064] text-[#b90064]' : 'border-transparent text-[#594047]'
++            }`}
++          >
++            Sign In
++          </button>
++          <button
++            type="button"
++            onClick={() => {
++              resetFeedback();
++              setMode('register');
++            }}
++            className={`flex-1 pb-2.5 border-b-2 transition-all cursor-pointer ${
++              mode === 'register' ? 'border-[#b90064] text-[#b90064]' : 'border-transparent text-[#594047]'
++            }`}
++          >
++            Register
++          </button>
++        </div>
+ 
+-            {/* Mode Toggle Tabs (Sign In vs Register) */}
+-            <div className="flex border-b border-[#e8e8e8] text-[13px] font-bold">
+-              <button
+-                type="button"
+-                onClick={() => setMode('login')}
+-                className={`flex-1 pb-2.5 border-b-2 transition-all cursor-pointer ${
+-                  mode === 'login'
+-                    ? 'border-[#b90064] text-[#b90064]'
+-                    : 'border-transparent text-[#594047]'
+-                }`}
+-              >
+-                Sign In
+-              </button>
+-              <button
+-                type="button"
+-                onClick={() => setMode('register')}
+-                className={`flex-1 pb-2.5 border-b-2 transition-all cursor-pointer ${
+-                  mode === 'register'
+-                    ? 'border-[#b90064] text-[#b90064]'
+-                    : 'border-transparent text-[#594047]'
+-                }`}
+-              >
+-                Register Business
+-              </button>
+-            </div>
++        <button
++          type="button"
++          onClick={handleGoogle}
++          disabled={busy}
++          className="w-full bg-white hover:bg-stone-50 border border-[#e8e8e8] hover:border-stone-300 text-[#1c1b1b] font-bold text-[13px] py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs disabled:opacity-60"
++        >
++          <svg className="w-4 h-4" viewBox="0 0 24 24">
++            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
++            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
++            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
++            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
++          </svg>
++          <span>{busy ? 'Connecting…' : `Continue with Google (${role === 'buyer' ? 'Buyer' : 'Supplier'})`}</span>
++        </button>
+ 
+-            {/* Auth Method (OTP vs Password) */}
+-            <div className="flex items-center justify-end gap-3 text-[11px] font-bold text-[#594047]">
+-              <span>Sign in using:</span>
+-              <button
+-                type="button"
+-                onClick={() => setAuthMethod('otp')}
+-                className={`px-2 py-0.5 rounded cursor-pointer ${authMethod === 'otp' ? 'bg-[#fde7f3] text-[#b90064]' : 'hover:text-[#1c1b1b]'}`}
+-              >
+-                Mobile OTP
+-              </button>
+-              <span className="text-stone-300">|</span>
+-              <button
+-                type="button"
+-                onClick={() => setAuthMethod('password')}
+-                className={`px-2 py-0.5 rounded cursor-pointer ${authMethod === 'password' ? 'bg-[#fde7f3] text-[#b90064]' : 'hover:text-[#1c1b1b]'}`}
+-              >
+-                Password
+-              </button>
+-            </div>
++        <div className="flex items-center gap-3 my-2">
++          <div className="h-px bg-[#e8e8e8] flex-1" />
++          <span className="text-[11px] font-bold text-[#8c7077] uppercase tracking-wider">or</span>
++          <div className="h-px bg-[#e8e8e8] flex-1" />
++        </div>
+ 
+-            {/* Google OAuth Trigger */}
+-            <button
+-              type="button"
+-              onClick={handleOAuthGoogle}
+-              disabled={isGoogleLoading}
+-              className="w-full bg-white hover:bg-stone-50 border border-[#e8e8e8] hover:border-stone-300 text-[#1c1b1b] font-bold text-[13px] py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs"
+-            >
+-              <svg className="w-4 h-4" viewBox="0 0 24 24">
+-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+-              </svg>
+-              <span>{isGoogleLoading ? 'Connecting to Google...' : `Continue with Google (${role === 'buyer' ? 'Buyer' : 'Supplier'})`}</span>
+-            </button>
++        {successMessage && (
++          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-medium text-emerald-800 flex items-start gap-2">
++            <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
++            <span>{successMessage}</span>
++          </div>
++        )}
+ 
+-            <div className="flex items-center gap-3 my-2">
+-              <div className="h-px bg-[#e8e8e8] flex-1" />
+-              <span className="text-[11px] font-bold text-[#8c7077] uppercase tracking-wider">or</span>
+-              <div className="h-px bg-[#e8e8e8] flex-1" />
+-            </div>
++        {errorMessage && (
++          <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] font-medium text-rose-700 flex items-start gap-2">
++            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
++            <span>{errorMessage}</span>
++          </div>
++        )}
+ 
+-            {mode === 'register' && (
++        <form onSubmit={handleSubmit} className="space-y-4">
++          {mode === 'register' && (
++            <>
+               <div>
+-                <label className="block text-[12px] font-bold text-[#1c1b1b] mb-1">
+-                  Business / Company Name
+-                </label>
++                <label className="block text-[12px] font-bold text-[#1c1b1b] mb-1">Full Name</label>
+                 <input
+                   type="text"
+-                  value={businessName}
+-                  onChange={(e) => setBusinessName(e.target.value)}
+-                  placeholder="e.g. Luxe Skin Clinic / Aura Cosmetics"
++                  value={fullName}
++                  onChange={(event) => setFullName(event.target.value)}
++                  placeholder="Your name"
+                   className="w-full bg-[#f7f2f2] border border-[#e8e8e8] focus:border-[#b90064] rounded-xl px-3.5 py-2.5 text-[13px] text-[#1c1b1b] focus:outline-none"
+-                  required
+                 />
+               </div>
+-            )}
+-
+-            <div>
+-              <label className="block text-[12px] font-bold text-[#1c1b1b] mb-1">
+-                {authMethod === 'otp' ? 'Mobile Number / Business Email' : 'Business Email Address'}
+-              </label>
+-              <div className="relative">
++              <div>
++                <label className="block text-[12px] font-bold text-[#1c1b1b] mb-1">Business / Company Name</label>
+                 <input
+                   type="text"
+-                  value={phoneOrEmail}
+-                  onChange={(e) => setPhoneOrEmail(e.target.value)}
+-                  placeholder={authMethod === 'otp' ? '+91 98201 54321 or name@business.com' : 'procurement@company.com'}
+-                  className="w-full bg-[#f7f2f2] border border-[#e8e8e8] focus:border-[#b90064] rounded-xl pl-9 pr-3.5 py-2.5 text-[13px] text-[#1c1b1b] focus:outline-none"
+-                  required
++                  value={businessName}
++                  onChange={(event) => setBusinessName(event.target.value)}
++                  placeholder="e.g. Aura Beauty Labs"
++                  className="w-full bg-[#f7f2f2] border border-[#e8e8e8] focus:border-[#b90064] rounded-xl px-3.5 py-2.5 text-[13px] text-[#1c1b1b] focus:outline-none"
+                 />
+-                {authMethod === 'otp' ? (
+-                  <Phone className="w-4 h-4 text-[#8c7077] absolute left-3 top-1/2 -translate-y-1/2" />
+-                ) : (
+-                  <Mail className="w-4 h-4 text-[#8c7077] absolute left-3 top-1/2 -translate-y-1/2" />
+-                )}
+               </div>
+-            </div>
++            </>
++          )}
+ 
+-            {authMethod === 'password' && (
+-              <div>
+-                <label className="block text-[12px] font-bold text-[#1c1b1b] mb-1">
+-                  Password
+-                </label>
+-                <div className="relative">
+-                  <input
+-                    type={showPassword ? 'text' : 'password'}
+-                    value={password}
+-                    onChange={(e) => setPassword(e.target.value)}
+-                    placeholder="Enter account password"
+-                    className="w-full bg-[#f7f2f2] border border-[#e8e8e8] focus:border-[#b90064] rounded-xl pl-9 pr-10 py-2.5 text-[13px] text-[#1c1b1b] focus:outline-none"
+-                    required
+-                  />
+-                  <Lock className="w-4 h-4 text-[#8c7077] absolute left-3 top-1/2 -translate-y-1/2" />
+-                  <button
+-                    type="button"
+-                    onClick={() => setShowPassword(!showPassword)}
+-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+-                  >
+-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+-                  </button>
+-                </div>
+-              </div>
+-            )}
+-
+-            <button
+-              type="submit"
+-              className="w-full bg-[#b90064] hover:bg-[#8e004b] text-white font-extrabold text-[13px] py-3 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+-            >
+-              <span>
+-                {authMethod === 'otp'
+-                  ? mode === 'login' ? 'Get Login OTP' : 'Send Registration OTP'
+-                  : mode === 'login' ? 'Sign In Securely' : 'Complete Registration'}
+-              </span>
+-              <ArrowRight className="w-4 h-4" />
+-            </button>
++          <div>
++            <label className="block text-[12px] font-bold text-[#1c1b1b] mb-1">Email Address</label>
++            <div className="relative">
++              <input
++                type="email"
++                value={email}
++                onChange={(event) => setEmail(event.target.value)}
++                placeholder="hello@business.com"
++                className="w-full bg-[#f7f2f2] border border-[#e8e8e8] focus:border-[#b90064] rounded-xl pl-9 pr-3.5 py-2.5 text-[13px] text-[#1c1b1b] focus:outline-none"
++                required
++              />
++              <Mail className="w-4 h-4 text-[#8c7077] absolute left-3 top-1/2 -translate-y-1/2" />
++            </div>
++          </div>
+ 
+-            {/* Continue as Guest option */}
+-            <div className="pt-2 text-center border-t border-[#f0edec]">
++          <div>
++            <label className="block text-[12px] font-bold text-[#1c1b1b] mb-1">Password</label>
++            <div className="relative">
++              <input
++                type={showPassword ? 'text' : 'password'}
++                value={password}
++                onChange={(event) => setPassword(event.target.value)}
++                placeholder="Enter account password"
++                className="w-full bg-[#f7f2f2] border border-[#e8e8e8] focus:border-[#b90064] rounded-xl pl-9 pr-10 py-2.5 text-[13px] text-[#1c1b1b] focus:outline-none"
++                required
++              />
++              <Lock className="w-4 h-4 text-[#8c7077] absolute left-3 top-1/2 -translate-y-1/2" />
+               <button
+                 type="button"
+-                onClick={handleGuestContinue}
+-                className="text-[12px] font-bold text-[#594047] hover:text-[#b90064] hover:underline cursor-pointer"
++                onClick={() => setShowPassword((value) => !value)}
++                className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+               >
+-                Continue Browsing as Guest
++                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+               </button>
+             </div>
++          </div>
+ 
+-            <p className="text-[11px] text-[#8c7077] text-center">
+-              By continuing, you agree to Nexora Luxe's B2B Terms of Sourcing &amp; Verified Supplier Privacy Code.
+-            </p>
++          {mode === 'register' && (
++            <div>
++              <label className="block text-[12px] font-bold text-[#1c1b1b] mb-1">Confirm Password</label>
++              <input
++                type={showPassword ? 'text' : 'password'}
++                value={confirmPassword}
++                onChange={(event) => setConfirmPassword(event.target.value)}
++                placeholder="Re-enter password"
++                className="w-full bg-[#f7f2f2] border border-[#e8e8e8] focus:border-[#b90064] rounded-xl px-3.5 py-2.5 text-[13px] text-[#1c1b1b] focus:outline-none"
++                required
++              />
++            </div>
++          )}
+ 
+-          </form>
+-        )}
+-      </div>
++          <button
++            type="submit"
++            disabled={busy}
++            className="w-full bg-[#b90064] hover:bg-[#8e004b] text-white font-extrabold text-[13px] py-3 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 disabled:opacity-60"
++          >
++            <span>{busy ? 'Please wait…' : mode === 'login' ? 'Sign In Securely' : 'Create Account'}</span>
++            <ArrowRight className="w-4 h-4" />
++          </button>
++        </form>
++
++        <div className="rounded-xl border border-[#e2bdc7] bg-[#fde7f3] px-3 py-2 text-[11px] text-[#5a3f47] flex items-start gap-2">
++          <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0 text-[#b90064]" />
++          <span>
++            Nexora uses the shared Supabase PKCE session with the storage key
++            <strong className="text-[#b90064]"> nexora.auth.qwaehqsmodekbgvnaavz</strong>.
++          </span>
++        </div>
+ 
++        <div className="pt-2 text-center border-t border-[#f0edec]">
++          <button
++            type="button"
++            onClick={onClose}
++            className="text-[12px] font-bold text-[#594047] hover:text-[#b90064] hover:underline cursor-pointer"
++          >
++            Continue Browsing as Guest
++          </button>
++        </div>
++      </div>
+     </div>
+   );
+ 
+@@ -439,4 +374,3 @@ export const AuthModal: React.FC<AuthModalProps> = ({
+     </div>
+   );
+ };
+-
+diff --git a/src/hooks/useLocationSync.ts b/src/hooks/useLocationSync.ts
+new file mode 100644
+index 0000000..b8b9377
+--- /dev/null
++++ b/src/hooks/useLocationSync.ts
+@@ -0,0 +1,95 @@
++import { useEffect } from 'react';
++import type { SupabaseClient } from '@supabase/supabase-js';
++
++type UseLocationSyncOptions = {
++  client: SupabaseClient | null | undefined;
++  userId: string | null | undefined;
++  enabled?: boolean;
++};
++
++const GEO_OPTIONS: PositionOptions = {
++  enableHighAccuracy: true,
++  timeout: 15_000,
++  maximumAge: 0,
++};
++
++async function writeLocation(client: SupabaseClient, userId: string, position: GeolocationPosition) {
++  const capturedAt = new Date(position.timestamp).toISOString();
++  const latitude = position.coords.latitude;
++  const longitude = position.coords.longitude;
++  const accuracy = Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null;
++  const attempts = [
++    () => client.from('user_locations').upsert({
++      user_id: userId,
++      latitude,
++      longitude,
++      accuracy_m: accuracy,
++      source: 'gps',
++      captured_at: capturedAt,
++      updated_at: capturedAt,
++    }, { onConflict: 'user_id' }),
++    () => client.from('user_locations').upsert({
++      user_id: userId,
++      latitude,
++      longitude,
++      accuracy,
++      updated_at: capturedAt,
++    }, { onConflict: 'user_id' }),
++    () => client.rpc('save_my_private_location', {
++      p_latitude: latitude,
++      p_longitude: longitude,
++      p_accuracy_m: accuracy,
++      p_altitude_m: position.coords.altitude ?? null,
++      p_altitude_accuracy_m: position.coords.altitudeAccuracy ?? null,
++      p_speed_mps: position.coords.speed ?? null,
++      p_heading_degrees: position.coords.heading ?? null,
++      p_captured_at: capturedAt,
++    }),
++  ];
++
++  let lastError: unknown = null;
++  for (const attempt of attempts) {
++    const { error } = await attempt();
++    if (!error) return;
++    lastError = error;
++  }
++  throw lastError instanceof Error ? lastError : new Error(String(lastError || 'Location sync failed.'));
++}
++
++export function useLocationSync({ client, userId, enabled = true }: UseLocationSyncOptions) {
++  useEffect(() => {
++    if (!enabled || !client || !userId) return;
++    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) return;
++
++    let active = true;
++    let lastSignature = '';
++    let saveChain: Promise<void> = Promise.resolve();
++
++    const watchId = navigator.geolocation.watchPosition(
++      (position) => {
++        if (!active) return;
++        const signature = `${userId}:${position.timestamp}:${position.coords.latitude.toFixed(6)}:${position.coords.longitude.toFixed(6)}`;
++        if (signature === lastSignature) return;
++        lastSignature = signature;
++        saveChain = saveChain
++          .catch(() => undefined)
++          .then(async () => {
++            if (!active) return;
++            await writeLocation(client, userId, position);
++          })
++          .catch((error) => {
++            console.warn('[Nexora] location sync skipped:', error);
++          });
++      },
++      (error) => {
++        console.warn('[Nexora] location permission/status:', error.message);
++      },
++      GEO_OPTIONS,
++    );
++
++    return () => {
++      active = false;
++      navigator.geolocation.clearWatch(watchId);
++    };
++  }, [client, enabled, userId]);
++}
+diff --git a/src/lib/mainWebsiteAuth.ts b/src/lib/mainWebsiteAuth.ts
+new file mode 100644
+index 0000000..f9ee6c5
+--- /dev/null
++++ b/src/lib/mainWebsiteAuth.ts
+@@ -0,0 +1,14 @@
++const env = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
++
++export const MAIN_WEBSITE_LOGIN_URL = 'https://nexora-main-website.vercel.app/';
++export const DEFAULT_NEXORA_STORAGE_KEY = 'nexora.auth.qwaehqsmodekbgvnaavz';
++export const NEXORA_STORAGE_KEY = env?.VITE_SUPABASE_STORAGE_KEY?.trim() || DEFAULT_NEXORA_STORAGE_KEY;
++
++export function redirectToMainWebsiteLogin(reason = 'signed_out') {
++  if (typeof window === 'undefined') return;
++  const url = new URL(MAIN_WEBSITE_LOGIN_URL);
++  url.searchParams.set('source', window.location.origin);
++  url.searchParams.set('reason', reason);
++  url.searchParams.set('next', window.location.href);
++  window.location.assign(url.toString());
++}
+diff --git a/src/lib/supabase.ts b/src/lib/supabase.ts
+index 7c12d79..4f61a0f 100644
+--- a/src/lib/supabase.ts
++++ b/src/lib/supabase.ts
+@@ -1,26 +1,31 @@
+ import React, { createContext, useContext } from 'react';
+ import { createClient, SupabaseClient } from '@supabase/supabase-js';
++import { NEXORA_STORAGE_KEY } from './mainWebsiteAuth';
+ import { DatabaseState } from '../db/database';
+ 
+-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mock-nexora-project.supabase.co';
+-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1vY2stbmV4b3JhLXByb2plY3QiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTcwMDA0MDAwMCwiZXhwIjoyMDE1NjE2MDAwfQ.mock_key_nexora';
++const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://qwaehqsmodekbgvnaavz.supabase.co';
++const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF3YWVocXNtb2Rla2Jndm5hYXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxNjQ5MjksImV4cCI6MjEwMDc0MDkyOX0.K92b2vkEb77dyu8fYYZpMTIbTyP98Vo80TaMo_Hmq_E';
+ 
+ export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
+   auth: {
+     persistSession: true,
+     autoRefreshToken: true,
++    detectSessionInUrl: true,
++    flowType: 'pkce',
++    storageKey: NEXORA_STORAGE_KEY,
+   },
+   realtime: {
+     params: {
+       eventsPerSecond: 10,
+     },
+   },
++  global: { headers: { 'x-nexora-client': 'beauty-shop-2/auth-sync' } },
+ });
+ 
+ export function isSupabaseConfigured(): boolean {
+   const url = import.meta.env.VITE_SUPABASE_URL;
+   const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+-  return Boolean(url && key && !url.includes('mock-nexora-project') && !url.includes('your-project'));
++  return Boolean(url && key && !url.includes('your-project'));
+ }
+ 
+ export function getSupabaseConfigInfo() {
+diff --git a/src/vite-env.d.ts b/src/vite-env.d.ts
+index 11f02fe..860e82c 100644
+--- a/src/vite-env.d.ts
++++ b/src/vite-env.d.ts
+@@ -1 +1,11 @@
+ /// <reference types="vite/client" />
++
++interface ImportMetaEnv {
++  readonly VITE_SUPABASE_URL?: string;
++  readonly VITE_SUPABASE_ANON_KEY?: string;
++  readonly VITE_SUPABASE_STORAGE_KEY?: string;
++}
++
++interface ImportMeta {
++  readonly env: ImportMetaEnv;
++}
+-- 
+2.39.5
+
