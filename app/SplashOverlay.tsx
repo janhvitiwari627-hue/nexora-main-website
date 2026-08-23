@@ -60,7 +60,10 @@ export function SplashOverlay() {
       // Ignore — worst case the splash replays on the next visit.
     }
 
-    setVisible(true);
+    // Defer the presentation state transition. React's effect lint correctly
+    // rejects a synchronous setState here; a timer also keeps the dashboard as
+    // the first committed route surface.
+    later(() => setVisible(true), 0);
     later(dismiss, SPLASH_MIN_MS);
 
     return () => {

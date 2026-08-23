@@ -6417,7 +6417,7 @@ function ForgotPasswordPage({ navigate }: { navigate: (path: string) => void }) 
           <div className="w-full h-full bg-cover bg-center" style={{backgroundImage: "url('https://lh3.googleusercontent.com/aida/AP1WRLuZJGt2jU-aVd8g9Bx6JZT2TilncGqAQMAyueOmggwdsR0-md5_cgcmFZRzdb0OMUIWFhwAwEVmuAhnYDVTbCOaH6H8spZH7K-NrD8l3bpf_V3_mGYWYLMjSKgX-4G3rC6qAG3IeRvY8fXL4hBGlJqDfUJvl77VOOBNpp8ZlrB596kQJeFl3-4o1ZCEYdw9Y37jKWuaHgwAm5ihppW9hQCp0174FbpfV_HU1DL3UN2GeZfBzGYoIMxCJfRs')"}}></div>
           <div className="absolute inset-0 bg-gradient-to-t from-[#3c2c31]/85 via-transparent to-transparent"></div>
           <div className="absolute bottom-0 left-0 right-0 p-8 text-white">
-            <h2 className="text-[34px] leading-[1] font-[600] mb-3">Don't worry,<br/>we've got you.</h2>
+            <h2 className="text-[34px] leading-[1] font-[600] mb-3">Don&apos;t worry,<br/>we&apos;ve got you.</h2>
             <p className="text-[14px] text-white/70">Reset securely with PKCE — link expires after first use.</p>
           </div>
         </div>
