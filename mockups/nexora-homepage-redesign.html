@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+
+<html lang="en" style=""><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Nexora Jaipur - Premium Beauty Tech</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&amp;family=Inter:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary-fixed": "#2b151c",
+                        "primary": "#8e004b",
+                        "on-secondary-fixed-variant": "#003da9",
+                        "on-primary-fixed-variant": "#8e004b",
+                        "secondary-container": "#346bf0",
+                        "on-error": "#ffffff",
+                        "surface-tint": "#b90064",
+                        "tertiary-fixed-dim": "#e2bdc7",
+                        "on-tertiary-container": "#f5ced8",
+                        "surface-container-low": "#f7f2f2",
+                        "secondary": "#0150d6",
+                        "on-tertiary-fixed-variant": "#5a3f47",
+                        "on-primary-container": "#ffcbd9",
+                        "surface-bright": "#fdf8f8",
+                        "error-container": "#ffdad6",
+                        "primary-fixed": "#ffd9e2",
+                        "surface-container-lowest": "#ffffff",
+                        "on-background": "#1c1b1b",
+                        "outline-subtle": "#e8e8e8",
+                        "surface-container": "#f0edec",
+                        "tertiary-fixed": "#ffd9e2",
+                        "surface-container-high": "#ece7e7",
+                        "primary-container": "#b90064",
+                        "tertiary-container": "#74565f",
+                        "surface": "#fdf8f8",
+                        "secondary-fixed-dim": "#b4c5ff",
+                        "surface-container-highest": "#e6e1e1",
+                        "surface-dim": "#ddd9d8",
+                        "primary-fixed-dim": "#ffb0c8",
+                        "on-secondary": "#ffffff",
+                        "tertiary": "#5a3f47",
+                        "outline-variant": "#e0bec6",
+                        "inverse-on-surface": "#f4f0ef",
+                        "surface-variant": "#e6e1e1",
+                        "on-surface-variant": "#594047",
+                        "on-tertiary": "#ffffff",
+                        "background": "#fdf8f8",
+                        "secondary-fixed": "#dbe1ff",
+                        "on-primary-fixed": "#3e001e",
+                        "on-error-container": "#93000a",
+                        "on-primary": "#ffffff",
+                        "on-surface": "#1c1b1b",
+                        "primary-pink-soft": "#fde7f3",
+                        "on-secondary-fixed": "#00174b",
+                        "outline": "#8c7077",
+                        "surface-off-white": "#fcf9f8",
+                        "on-secondary-container": "#fefcff",
+                        "inverse-primary": "#ffb0c8",
+                        "inverse-surface": "#313030",
+                        "error": "#ba1a1a"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px",
+                        "2xl": "1rem",
+                        "3xl": "1.5rem"
+                    },
+                    "spacing": {
+                        "section-gap": "4rem",
+                        "margin-desktop": "2.5rem",
+                        "max-width": "1440px",
+                        "stack-lg": "2rem",
+                        "stack-sm": "0.5rem",
+                        "stack-md": "1rem",
+                        "gutter": "1rem",
+                        "margin-mobile": "1.25rem"
+                    },
+                    "fontFamily": {
+                        "headline-sm": ["Playfair Display"],
+                        "headline-lg": ["Playfair Display"],
+                        "label-sm": ["Inter"],
+                        "headline-md": ["Playfair Display"],
+                        "label-md": ["Inter"],
+                        "body-md": ["Inter"],
+                        "title-md": ["Inter"],
+                        "display-lg": ["Playfair Display"],
+                        "headline-lg-mobile": ["Playfair Display"],
+                        "body-lg": ["Inter"]
+                    },
+                    "fontSize": {
+                        "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                        "label-sm": ["11px", { "lineHeight": "16px", "letterSpacing": "0.08em", "fontWeight": "700" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "fontWeight": "600" }],
+                        "label-md": ["13px", { "lineHeight": "18px", "letterSpacing": "0.02em", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "title-md": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "display-lg": ["48px", { "lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "headline-lg-mobile": ["28px", { "lineHeight": "36px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.4);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            box-shadow: 0 8px 32px 0 rgba(142, 0, 75, 0.05);
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .nav-glass {
+            background: rgba(255, 255, 255, 0.55);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.7);
+        }
+        .mobile-drawer-enter {
+            transform: translateX(100%);
+        }
+        .mobile-drawer-enter-active {
+            transform: translateX(0);
+            transition: transform 300ms ease-in-out;
+        }
+        .mobile-drawer-exit {
+            transform: translateX(0);
+        }
+        .mobile-drawer-exit-active {
+            transform: translateX(100%);
+            transition: transform 300ms ease-in-out;
+        }
+    </style>
+<script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const header = document.getElementById('main-header');
+            const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+            const mobileDrawer = document.getElementById('mobile-drawer');
+            const closeMenuBtn = document.getElementById('close-menu-btn');
+
+            window.addEventListener('scroll', () => {
+                if (window.scrollY > 20) {
+                    header.classList.add('py-2', 'shadow-md');
+                    header.classList.remove('py-4');
+                } else {
+                    header.classList.add('py-4');
+                    header.classList.remove('py-2', 'shadow-md');
+                }
+            });
+
+            const toggleMenu = () => {
+                const isExpanded = mobileMenuBtn.getAttribute('aria-expanded') === 'true';
+                mobileMenuBtn.setAttribute('aria-expanded', !isExpanded);
+                if (!isExpanded) {
+                    mobileDrawer.classList.remove('translate-x-full');
+                    document.body.style.overflow = 'hidden';
+                } else {
+                    mobileDrawer.classList.add('translate-x-full');
+                    document.body.style.overflow = '';
+                }
+            };
+
+            mobileMenuBtn.addEventListener('click', toggleMenu);
+            closeMenuBtn.addEventListener('click', toggleMenu);
+        });
+    </script>
+</head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col">
+<!-- Announcement Bar -->
+<div class="bg-primary text-on-primary py-1.5 px-margin-mobile md:px-margin-desktop text-center font-label-md text-label-md relative flex justify-center items-center">
+<span class="">✦ Discover Jaipur's Best Salons on Nexora</span>
+<a class="absolute right-margin-mobile md:right-margin-desktop font-bold hover:underline hidden sm:inline-block" href="#">Explore Now →</a>
+</div>
+<!-- Header/Navbar -->
+<header class="sticky top-0 z-50 nav-glass transition-all duration-300 py-4 w-full" id="main-header">
+<div class="max-w-max-width mx-auto px-margin-mobile md:px-margin-desktop flex justify-between items-center">
+<!-- Mobile Left: Logo -->
+<div class="flex items-center gap-4">
+<a class="flex items-center group" href="#">
+<img alt="Nexora Logo" class="h-10 w-10 object-contain transition-transform duration-300 group-hover:scale-105 group-hover:drop-shadow-md" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBsl-oR1C97gS5mZq_h6pI_6gE09tD7P4jOclZtC4kK28G6L9pW0MndlX9r1Pq9lE8bB8mP0B-61h0ZJ-v1Q8G2hT1tG9mZq9X2m2C5jX4V1K-5qL3eX-k3m1C2hP0j8Q"/>
+<span class="ml-2 font-headline-md text-headline-md font-bold text-primary hidden md:block">Nexora</span>
+</a>
+</div>
+<!-- Desktop Navigation -->
+<nav aria-label="Main Navigation" class="hidden md:flex items-center gap-6">
+<a class="text-primary border-b-2 border-primary pb-1 font-bold font-label-md text-label-md transition-transform duration-150 active:scale-95" href="#">Home</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors hover:bg-primary-pink-soft rounded-lg px-3 py-2 font-label-md text-label-md transition-all duration-300" href="#">Salons</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors hover:bg-primary-pink-soft rounded-lg px-3 py-2 font-label-md text-label-md transition-all duration-300" href="#">Services</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors hover:bg-primary-pink-soft rounded-lg px-3 py-2 font-label-md text-label-md transition-all duration-300" href="#">Offers</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors hover:bg-primary-pink-soft rounded-lg px-3 py-2 font-label-md text-label-md transition-all duration-300" href="#">Membership</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors hover:bg-primary-pink-soft rounded-lg px-3 py-2 font-label-md text-label-md transition-all duration-300" href="#">Jobs</a>
+<a class="text-on-surface-variant hover:text-primary transition-colors hover:bg-primary-pink-soft rounded-lg px-3 py-2 font-label-md text-label-md transition-all duration-300" href="#">About</a>
+</nav>
+<!-- Desktop Right Actions -->
+<div class="hidden md:flex items-center gap-4">
+<div class="flex gap-2 text-on-surface-variant">
+<button aria-label="Search" class="p-2 hover:bg-primary-pink-soft rounded-lg transition-all duration-300"><span class="material-symbols-outlined">search</span></button>
+<button aria-label="Location" class="p-2 hover:bg-primary-pink-soft rounded-lg transition-all duration-300"><span class="material-symbols-outlined">location_on</span></button>
+</div>
+<a class="text-primary font-label-md text-label-md hover:underline font-bold px-2" href="#">Login</a>
+<button class="bg-primary-container text-on-primary hover:bg-primary-container/90 px-6 py-2 rounded-lg font-label-md text-label-md font-bold transition-all duration-300 shadow-md">Book Now</button>
+</div>
+<!-- Mobile Right Actions -->
+<div class="flex md:hidden items-center gap-2">
+<button aria-label="Search" class="p-2 text-on-surface-variant hover:bg-primary-pink-soft rounded-lg transition-all duration-300"><span class="material-symbols-outlined">search</span></button>
+<button aria-expanded="false" aria-label="Toggle Menu" class="p-2 text-on-surface-variant hover:bg-primary-pink-soft rounded-lg transition-all duration-300" id="mobile-menu-btn">
+<span class="material-symbols-outlined">menu</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Mobile Navigation Drawer -->
+<div class="fixed inset-0 z-[60] bg-surface-container-lowest flex flex-col transform translate-x-full transition-transform duration-300 ease-in-out md:hidden" id="mobile-drawer">
+<div class="flex justify-between items-center p-margin-mobile border-b border-outline-subtle">
+<div class="font-headline-md text-headline-md font-bold text-primary">Menu</div>
+<button aria-label="Close Menu" class="p-2 text-on-surface-variant hover:bg-primary-pink-soft rounded-lg transition-all duration-300" id="close-menu-btn">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<nav aria-label="Mobile Navigation" class="flex flex-col p-margin-mobile gap-2 overflow-y-auto">
+<a class="text-primary font-bold bg-primary-pink-soft rounded-lg p-4 font-title-md text-title-md" href="#">Home</a>
+<a class="text-on-surface-variant hover:bg-surface-container-low rounded-lg p-4 font-title-md text-title-md transition-colors" href="#">Salons</a>
+<a class="text-on-surface-variant hover:bg-surface-container-low rounded-lg p-4 font-title-md text-title-md transition-colors" href="#">Services</a>
+<a class="text-on-surface-variant hover:bg-surface-container-low rounded-lg p-4 font-title-md text-title-md transition-colors" href="#">Offers</a>
+<a class="text-on-surface-variant hover:bg-surface-container-low rounded-lg p-4 font-title-md text-title-md transition-colors" href="#">Membership</a>
+<a class="text-on-surface-variant hover:bg-surface-container-low rounded-lg p-4 font-title-md text-title-md transition-colors" href="#">Jobs</a>
+<a class="text-on-surface-variant hover:bg-surface-container-low rounded-lg p-4 font-title-md text-title-md transition-colors" href="#">About</a>
+<div class="h-px bg-outline-subtle my-4 w-full"></div>
+<a class="text-on-surface-variant hover:bg-surface-container-low rounded-lg p-4 font-title-md text-title-md transition-colors flex items-center gap-3" href="#"><span class="material-symbols-outlined">location_on</span> Set Location</a>
+<a class="text-primary hover:bg-primary-pink-soft rounded-lg p-4 font-title-md text-title-md font-bold transition-colors mt-2" href="#">Login</a>
+<button class="bg-primary-container text-on-primary hover:bg-primary-container/90 p-4 rounded-xl font-title-md text-title-md font-bold transition-all duration-300 shadow-md mt-4 w-full text-center">Book Now</button>
+</nav>
+</div>
+<!-- Main Content -->
+<main class="flex-grow flex flex-col pb-24 md:pb-0">
+<!-- Cinematic Hero -->
+<section class="relative w-full h-[819px] min-h-[600px] flex items-center justify-center overflow-hidden">
+<div class="absolute inset-0 z-0">
+<div class="bg-cover bg-center w-full h-full opacity-80" data-alt="A luxurious high-end beauty salon interior in Jaipur, softly lit with warm pink and golden ambient lighting. The space features premium minimalist furniture, marble textures, and elegant architectural lines. The atmosphere is serene, editorial, and highly professional, reflecting a sophisticated modern beauty-tech brand." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuDL5RYDBnOjynZzg8M5rwmYbzTNoVZ55rnXVzi9QRjl0V4lyfeiG4s0zLFnIGTJD-eeQZwMqr6TtTcDBVVoHVMU6hpocebbKOdBYzMtDdMK2dA8BoOmCawLLcQoQaOB9c6avbEI-Ay90eZH9EA42ubWZYpkv1CWL3qOwpsXSDhduPGH5n5qeCiopP0SBP9iO6EYssU9xK5Vz2VyEPzC2mDrQ1TtuBzbhS8ulWEDBFuxl8cagRNC2aHJPA')"></div>
+<div class="absolute inset-0 bg-gradient-to-r from-surface/80 via-surface/40 to-transparent"></div>
+</div>
+<div class="relative z-10 w-full max-w-max-width mx-auto px-margin-mobile md:px-margin-desktop grid grid-cols-1 md:grid-cols-2 gap-stack-lg items-center">
+<div class="space-y-stack-md max-w-xl">
+<div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-pink-soft text-primary font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-sm">auto_awesome</span>
+<span class="">Jaipur's Premier Beauty Network</span>
+</div>
+<h1 class="font-display-lg text-display-lg text-on-background">Elevate Your Elegance.</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant">Discover top-rated salons, exclusive treatments, and seamless bookings in a unified luxury experience.</p>
+<div class="pt-stack-sm flex flex-col sm:flex-row gap-4">
+<button class="bg-primary-container text-on-primary px-8 py-3 rounded-lg font-label-md text-label-md font-bold shadow-lg hover:shadow-xl transition-all w-full sm:w-auto">Find a Salon</button>
+<button class="bg-transparent border-2 border-primary-container text-primary-container px-8 py-3 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-all w-full sm:w-auto">Explore Services</button>
+</div>
+</div>
+<div class="hidden md:flex flex-col gap-6 items-end relative">
+<div class="glass-panel p-6 rounded-2xl w-72 transform translate-x-4 hover:-translate-y-2 transition-transform duration-500">
+<div class="flex items-center gap-4 mb-4">
+<div class="w-12 h-12 rounded-full bg-surface-container-low flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">verified</span>
+</div>
+<div>
+<div class="font-title-md text-title-md">Verified Salons</div>
+<div class="font-label-sm text-label-sm text-on-surface-variant">Top 1% in Jaipur</div>
+</div>
+</div>
+<p class="font-body-md text-sm text-on-surface-variant">Every salon is vetted for quality, hygiene, and premium service delivery.</p>
+</div>
+<div class="glass-panel p-6 rounded-2xl w-80 -translate-x-8 hover:-translate-y-2 transition-transform duration-500">
+<div class="flex justify-between items-center mb-4">
+<div class="font-title-md text-title-md">Upcoming Booking</div>
+<span class="bg-surface-container text-on-surface-variant px-2 py-1 rounded-md font-label-sm text-[10px]">Tomorrow, 2 PM</span>
+</div>
+<div class="flex items-center gap-3">
+<img class="w-10 h-10 rounded-lg object-cover" data-alt="A close-up portrait of a sophisticated modern hairstyle or subtle elegant makeup look on a model with warm lighting, reflecting high-end salon work in an editorial style. The lighting highlights texture and professionalism." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBgvs6qUml-cpULZRCtIyqNHKy0s6LF1S1icqheU42e5a3BFrPFDpeLhoWLuh-HcqoaYoO8xF_yZzBt4mN7m9vL7ZpzpoBaUwG7-ASOcqWPDd5wKyk_3_lSqxOWlqdogP_jLF6fFO1441EYUF-M5NFoTO-CjoYI489AiorTsH1g__HPUvbSNxQAyNN7qgjHxD_HtFriCH9mHg7LPYka5zLVN1d3JTNBJStKZK6_kCxPzzUNWyOM-cNJSw"/>
+<div>
+<div class="font-label-md text-label-md">Aura Luxury Spa</div>
+<div class="font-label-sm text-label-sm text-on-surface-variant">Signature Facial • 60 min</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Spacer -->
+<section class="w-full max-w-max-width mx-auto px-margin-mobile md:px-margin-desktop py-section-gap">
+<div class="mb-stack-lg">
+<h2 class="font-headline-md text-headline-md text-on-background">Explore Beauty Services</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-2">Apni favourite beauty service quickly discover karein.</p>
+</div>
+<div class="flex gap-4 overflow-x-auto hide-scrollbar snap-x snap-mandatory pb-4">
+<div class="min-w-[120px] flex-shrink-0 snap-start group cursor-pointer">
+<div class="bg-surface-container-lowest border border-outline-subtle rounded-2xl p-6 flex flex-col items-center justify-center gap-3 transition-all duration-[250ms] ease-in-out hover:scale-[1.03] hover:shadow-lg">
+<span class="material-symbols-outlined text-primary text-3xl">content_cut</span>
+<span class="font-label-md text-label-md">Haircut</span>
+</div>
+</div>
+<div class="min-w-[120px] flex-shrink-0 snap-start group cursor-pointer">
+<div class="bg-surface-container-lowest border border-outline-subtle rounded-2xl p-6 flex flex-col items-center justify-center gap-3 transition-all duration-[250ms] ease-in-out hover:scale-[1.03] hover:shadow-lg">
+<span class="material-symbols-outlined text-primary text-3xl">water_drop</span>
+<span class="font-label-md text-label-md">Hair Spa</span>
+</div>
+</div>
+<div class="min-w-[120px] flex-shrink-0 snap-start group cursor-pointer">
+<div class="bg-surface-container-lowest border border-outline-subtle rounded-2xl p-6 flex flex-col items-center justify-center gap-3 transition-all duration-[250ms] ease-in-out hover:scale-[1.03] hover:shadow-lg">
+<span class="material-symbols-outlined text-primary text-3xl">face</span>
+<span class="font-label-md text-label-md">Facial</span>
+</div>
+</div>
+<div class="min-w-[120px] flex-shrink-0 snap-start group cursor-pointer">
+<div class="bg-surface-container-lowest border border-outline-subtle rounded-2xl p-6 flex flex-col items-center justify-center gap-3 transition-all duration-[250ms] ease-in-out hover:scale-[1.03] hover:shadow-lg">
+<span class="material-symbols-outlined text-primary text-3xl">brush</span>
+<span class="font-label-md text-label-md">Makeup</span>
+</div>
+</div>
+<div class="min-w-[120px] flex-shrink-0 snap-start group cursor-pointer">
+<div class="bg-surface-container-lowest border border-outline-subtle rounded-2xl p-6 flex flex-col items-center justify-center gap-3 transition-all duration-[250ms] ease-in-out hover:scale-[1.03] hover:shadow-lg">
+<span class="material-symbols-outlined text-primary text-3xl">back_hand</span>
+<span class="font-label-md text-label-md">Manicure</span>
+</div>
+</div>
+<div class="min-w-[120px] flex-shrink-0 snap-start group cursor-pointer">
+<div class="bg-surface-container-lowest border border-outline-subtle rounded-2xl p-6 flex flex-col items-center justify-center gap-3 transition-all duration-[250ms] ease-in-out hover:scale-[1.03] hover:shadow-lg">
+<span class="material-symbols-outlined text-primary text-3xl">footprint</span>
+<span class="font-label-md text-label-md">Pedicure</span>
+</div>
+</div>
+<div class="min-w-[120px] flex-shrink-0 snap-start group cursor-pointer">
+<div class="bg-surface-container-lowest border border-outline-subtle rounded-2xl p-6 flex flex-col items-center justify-center gap-3 transition-all duration-[250ms] ease-in-out hover:scale-[1.03] hover:shadow-lg">
+<span class="material-symbols-outlined text-primary text-3xl">celebration</span>
+<span class="font-label-md text-label-md">Bridal</span>
+</div>
+</div>
+<div class="min-w-[120px] flex-shrink-0 snap-start group cursor-pointer">
+<div class="bg-surface-container-lowest border border-outline-subtle rounded-2xl p-6 flex flex-col items-center justify-center gap-3 transition-all duration-[250ms] ease-in-out hover:scale-[1.03] hover:shadow-lg">
+<span class="material-symbols-outlined text-primary text-3xl">face_6</span>
+<span class="font-label-md text-label-md">Grooming</span>
+</div>
+</div>
+<div class="min-w-[120px] flex-shrink-0 snap-start group cursor-pointer">
+<div class="bg-surface-container-lowest border border-outline-subtle rounded-2xl p-6 flex flex-col items-center justify-center gap-3 transition-all duration-[250ms] ease-in-out hover:scale-[1.03] hover:shadow-lg">
+<span class="material-symbols-outlined text-primary text-3xl">spa</span>
+<span class="font-label-md text-label-md">Spa</span>
+</div>
+</div>
+</div>
+</section>
+<!-- Live Marketplace -->
+<section class="w-full max-w-max-width mx-auto px-margin-mobile md:px-margin-desktop py-section-gap">
+<div class="flex flex-col gap-6">
+<!-- Header -->
+<div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+<div>
+<div class="flex items-center gap-2 text-primary font-label-md text-label-md mb-2">
+<span class="material-symbols-outlined text-[10px] animate-pulse">circle</span>
+<span class="uppercase tracking-wider">Live Marketplace</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-background">Discover Verified Salons</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-2">Jaipur ke verified salons discover karein.</p>
+</div>
+<a class="text-primary font-label-md text-label-md hover:underline decoration-primary/30 underline-offset-4 hidden sm:flex items-center gap-1 group" href="#">
+                View All Salons <span class="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform">arrow_forward</span>
+</a>
+</div>
+<!-- Control Bar -->
+<div class="glass-panel rounded-2xl p-4 flex flex-col lg:flex-row gap-4 items-center w-full">
+<div class="w-full lg:w-auto flex-grow flex flex-col sm:flex-row gap-4">
+<div class="relative w-full lg:w-96">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant">search</span>
+<input class="w-full bg-surface-container-lowest border-outline-subtle rounded-xl pl-10 pr-4 py-2.5 font-body-md text-body-md focus:border-primary focus:ring-primary transition-colors" placeholder="Search salons..." type="text"/>
+</div>
+<div class="relative w-full sm:w-48 flex-shrink-0">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-primary">location_on</span>
+<select class="w-full bg-surface-container-lowest border-outline-subtle rounded-xl pl-10 pr-8 py-2.5 font-body-md text-body-md appearance-none focus:border-primary focus:ring-primary transition-colors cursor-pointer text-primary font-semibold">
+<option>Jaipur</option>
+<option>C Scheme</option>
+<option>Malviya Nagar</option>
+<option>Vaishali Nagar</option>
+</select>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">expand_more</span>
+</div>
+</div>
+<div class="flex gap-2 overflow-x-auto hide-scrollbar w-full lg:w-auto pb-2 lg:pb-0">
+<button class="flex-shrink-0 border border-outline-subtle bg-surface-container-lowest text-on-surface-variant px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">Area</button>
+<button class="flex-shrink-0 border border-outline-subtle bg-surface-container-lowest text-on-surface-variant px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">Rating 4.5+</button>
+<button class="flex-shrink-0 border border-outline-subtle bg-surface-container-lowest text-on-surface-variant px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">Price</button>
+<button class="flex-shrink-0 bg-primary-pink-soft text-primary px-4 py-2 rounded-lg font-label-md text-label-md border border-primary/20 hover:bg-primary-fixed transition-colors">Open Now</button>
+<div class="h-6 w-px bg-outline-subtle mx-2 my-auto hidden sm:block"></div>
+<div class="relative hidden sm:block flex-shrink-0">
+<select class="pl-4 pr-8 py-2 bg-transparent border-none font-label-md text-label-md text-on-surface-variant cursor-pointer appearance-none hover:text-primary focus:ring-0">
+<option>Recommended</option>
+<option>Highest Rated</option>
+<option>Nearest</option>
+<option>Price: Low to High</option>
+</select>
+<span class="material-symbols-outlined absolute right-0 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">sort</span>
+</div>
+</div>
+</div>
+<!-- Salon Grid / Carousel -->
+<div class="flex md:grid md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-x-auto md:overflow-visible hide-scrollbar pb-6 pt-2 -mx-margin-mobile px-margin-mobile md:mx-0 md:px-0 snap-x snap-mandatory">
+<!-- Salon Card 1 -->
+<div class="min-w-[300px] w-[300px] md:w-auto flex-shrink-0 snap-start bg-surface-container-lowest rounded-2xl border border-outline-subtle overflow-hidden hover:shadow-[0_12px_40px_rgba(142,0,75,0.08)] transition-all duration-300 hover:-translate-y-1 group flex flex-col h-full cursor-pointer">
+<div class="relative h-48 w-full overflow-hidden">
+<img alt="Luxury Salon Interior" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.04]" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBc0etWdN2J59GoP5UVe_IHAeOYInr4mGcS0UfZqFiqZ0YQG1j5BSudaws_rgW7wEwYMPYfgD05SI0xihTjl18AdW4UFJ0G38NBAVqb1TPHBRfLpiKlfbkOTb9HKO-q3w1L19b1h073yrkt5WIhVypWdYz2ZsUSNgE1dMrLp6H11MUXmWlsW_l8bc6vtfrPAWzfkPkjcCDMukso6HIqG4vBjAzLtSyowKuGLV0fWcWuSmCtKfqqxr736w"/>
+<div class="absolute top-3 left-3 bg-surface/90 backdrop-blur-md px-2.5 py-1 rounded-md text-primary font-label-sm text-[10px] font-bold flex items-center gap-1 shadow-sm">
+<span class="material-symbols-outlined text-[12px]">verified</span> Verified
+                    </div>
+<div class="absolute bottom-3 right-3 bg-surface-container-lowest/90 backdrop-blur-sm px-2 py-1 rounded text-on-background font-label-sm flex items-center gap-1">
+<span class="text-yellow-500">★</span> 5.0 <span class="text-on-surface-variant font-normal">(124)</span>
+</div>
+</div>
+<div class="p-5 flex flex-col flex-grow">
+<div class="flex justify-between items-start mb-1">
+<h3 class="font-title-md text-title-md text-on-background">Aura Luxury Spa</h3>
+</div>
+<div class="font-label-md text-label-md text-primary mb-3 flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">trending_up</span> 120 Bookings this week
+                    </div>
+<div class="space-y-2 mb-6">
+<div class="flex justify-between items-center text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="font-body-md truncate">C Scheme, Jaipur</span>
+</div>
+<span class="text-on-surface-variant font-label-sm whitespace-nowrap">2.4 km</span>
+</div>
+<div class="flex justify-between items-center text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">payments</span>
+<span class="font-body-md">From ₹600</span>
+</div>
+<span class="text-green-600 font-label-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px] animate-pulse">circle</span> Open Now
+                            </span>
+</div>
+</div>
+<div class="mt-auto flex gap-3">
+<button class="flex-1 bg-transparent border border-primary text-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-colors text-center">View Salon</button>
+<button class="flex-1 bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary/90 transition-colors shadow-sm text-center">Book Now</button>
+</div>
+</div>
+</div>
+<!-- Salon Card 2 -->
+<div class="min-w-[300px] w-[300px] md:w-auto flex-shrink-0 snap-start bg-surface-container-lowest rounded-2xl border border-outline-subtle overflow-hidden hover:shadow-[0_12px_40px_rgba(142,0,75,0.08)] transition-all duration-300 hover:-translate-y-1 group flex flex-col h-full cursor-pointer">
+<div class="relative h-48 w-full overflow-hidden">
+<img alt="Serene Spa Environment" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.04]" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDOEZ667Vs3lZOQX29t6TthI_HmSMahUd8UG-DZ6c3KCs_ryxEmz7OqthzFAonPz0S9EZq6RbNGO5e44uizXTP6SpfW86PZYUUL0qCssArhNt9fElUJiQ70pdhO9IanWJ_ZGrAPbGOws__xLeNdPhgBShi0Ca4jG38IT-lyG_3l05RQzt2sLWVMP-RjieoXiGbVfv6qk9pM97x9pNasubzsfsDWlEXnFKMoHaCtiDGhXDAdi2E7UyYA8A"/>
+<div class="absolute top-3 left-3 bg-surface/90 backdrop-blur-md px-2.5 py-1 rounded-md text-primary font-label-sm text-[10px] font-bold flex items-center gap-1 shadow-sm">
+<span class="material-symbols-outlined text-[12px]">verified</span> Verified
+                    </div>
+<div class="absolute bottom-3 right-3 bg-surface-container-lowest/90 backdrop-blur-sm px-2 py-1 rounded text-on-background font-label-sm flex items-center gap-1">
+<span class="text-yellow-500">★</span> 4.8 <span class="text-on-surface-variant font-normal">(89)</span>
+</div>
+</div>
+<div class="p-5 flex flex-col flex-grow">
+<div class="flex justify-between items-start mb-1">
+<h3 class="font-title-md text-title-md text-on-background">Zenith Beauty Hub</h3>
+</div>
+<div class="font-label-md text-label-md text-primary mb-3 flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">trending_up</span> 85 Bookings this week
+                    </div>
+<div class="space-y-2 mb-6">
+<div class="flex justify-between items-center text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="font-body-md truncate">Malviya Nagar, Jaipur</span>
+</div>
+<span class="text-on-surface-variant font-label-sm whitespace-nowrap">5.1 km</span>
+</div>
+<div class="flex justify-between items-center text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">payments</span>
+<span class="font-body-md">From ₹800</span>
+</div>
+<span class="text-green-600 font-label-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px] animate-pulse">circle</span> Open Now
+                            </span>
+</div>
+</div>
+<div class="mt-auto flex gap-3">
+<button class="flex-1 bg-transparent border border-primary text-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-colors text-center">View Salon</button>
+<button class="flex-1 bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary/90 transition-colors shadow-sm text-center">Book Now</button>
+</div>
+</div>
+</div>
+<!-- Salon Card 3 -->
+<div class="min-w-[300px] w-[300px] md:w-auto flex-shrink-0 snap-start bg-surface-container-lowest rounded-2xl border border-outline-subtle overflow-hidden hover:shadow-[0_12px_40px_rgba(142,0,75,0.08)] transition-all duration-300 hover:-translate-y-1 group flex flex-col h-full cursor-pointer">
+<div class="relative h-48 w-full overflow-hidden">
+<img alt="Modern Hair Salon" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.04]" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA6tIRAa6ie7VjkcvnImsrdej6SEZq7gHtFADGCdyPAVEhXalGq9P4qXch1GZL5HN7rR5yhJAi8mp4DGGPAdRyNqxG9a-Tk2o67nj8j6o-_2MnufpglIr2GnhHw02e2L--X6nObH4Zzyja3UL8Qg5qrJOROUxGqUjdGGcPZdKNGM6-BVX3sZ0c5GyxaXqLZ1WPAZW1K9drVioBlzqFtRSiGYItn6BKtQgxDslnuKQu9U9q9gQJaRlUYWQ"/>
+<div class="absolute top-3 left-3 bg-surface/90 backdrop-blur-md px-2.5 py-1 rounded-md text-primary font-label-sm text-[10px] font-bold flex items-center gap-1 shadow-sm">
+<span class="material-symbols-outlined text-[12px]">verified</span> Verified
+                    </div>
+<div class="absolute bottom-3 right-3 bg-surface-container-lowest/90 backdrop-blur-sm px-2 py-1 rounded text-on-background font-label-sm flex items-center gap-1">
+<span class="text-yellow-500">★</span> 4.9 <span class="text-on-surface-variant font-normal">(215)</span>
+</div>
+</div>
+<div class="p-5 flex flex-col flex-grow">
+<div class="flex justify-between items-start mb-1">
+<h3 class="font-title-md text-title-md text-on-background">Studio Elegance</h3>
+</div>
+<div class="font-label-md text-label-md text-primary mb-3 flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">trending_up</span> 150 Bookings this week
+                    </div>
+<div class="space-y-2 mb-6">
+<div class="flex justify-between items-center text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="font-body-md truncate">Vaishali Nagar, Jaipur</span>
+</div>
+<span class="text-on-surface-variant font-label-sm whitespace-nowrap">8.2 km</span>
+</div>
+<div class="flex justify-between items-center text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">payments</span>
+<span class="font-body-md">From ₹1,200</span>
+</div>
+<span class="text-green-600 font-label-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px] animate-pulse">circle</span> Open Now
+                            </span>
+</div>
+</div>
+<div class="mt-auto flex gap-3">
+<button class="flex-1 bg-transparent border border-primary text-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-colors text-center">View Salon</button>
+<button class="flex-1 bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary/90 transition-colors shadow-sm text-center">Book Now</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Mobile View All Button -->
+<div class="sm:hidden w-full pt-4">
+<button class="w-full bg-surface-container-low text-primary py-3 rounded-xl font-label-md text-label-md font-bold flex justify-center items-center gap-2">
+                 View All Salons <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Top 5 Salons Section -->
+<section class="w-full max-w-max-width mx-auto px-margin-mobile md:px-margin-desktop py-section-gap" id="top-salons-section">
+<!-- Header -->
+<div class="flex flex-col items-center text-center mb-stack-lg"><div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-pink-soft text-primary font-label-sm text-label-sm mb-3"><span class="">✦ Top Rated • 10k+ Monthly Customer Reviews</span></div><h2 class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-background">Jaipur Ke Top 5 Salons</h2><p class="font-body-md text-body-md text-on-surface-variant mt-2">Jaipur ke sabse zyada customers aur 4.5+ ★ rating wale top-verified salons</p><p class="font-label-sm text-label-sm text-outline mt-3 max-w-lg">Ranking marketplace activity aur available customer data ke basis par</p></div>
+<div class="flex flex-col lg:flex-row gap-6">
+<!-- Rank #1 Featured -->
+<div class="w-full lg:w-1/2 flex"><div class="w-full bg-surface-container-lowest rounded-2xl border border-outline-subtle overflow-hidden hover:shadow-xl transition-all duration-500 hover:-translate-y-2 group flex flex-col h-full cursor-pointer relative">
+<div class="relative w-full overflow-hidden h-[75%]">
+<img alt="Aura Luxury Spa - Premier Leader" class="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDYFQJXrHp8Z21TGTNNXHygpZsb-tE9fnHw_6dsU0nJsejNY-sts7_YTEWW8E4qrg1mnryy00KzS42a4tzi0wgFhey4trrrrJ-YhpmqPTyLikicbhwKa_XlxwbRPoXxnt36qZs7uWS1FDjPShvKPu7_UyPGhH9E0f6Fd9bhIrQuFCG51RiGDLZDEudRfDnYGtPcCGx541N_9eIm4ijZJnpNxPCy8xkSuuvRKo6X3eUguFc__NTRennsuA"/>
+<div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent"></div>
+<div class="absolute top-6 left-6 backdrop-blur-xl bg-white/20 border border-white/30 w-16 h-16 flex items-center justify-center rounded-2xl text-white font-display-lg text-3xl font-bold shadow-2xl">01</div>
+<div class="absolute top-6 right-6 bg-primary/90 backdrop-blur-md px-4 py-2 rounded-full text-on-primary font-label-sm text-[12px] font-bold flex items-center gap-1.5 shadow-lg">
+<span class="material-symbols-outlined text-[16px]">verified</span> ✦ Verified
+        </div>
+<div class="absolute bottom-6 left-6 right-6 flex justify-between items-end">
+<div class="text-white">
+<h3 class="font-headline-lg text-headline-lg mb-1">Aura Luxury Spa</h3>
+<div class="flex items-center gap-2 text-white/90 font-label-md"><span class="material-symbols-outlined text-sm">location_on</span> C Scheme • 2.4 km</div>
+</div>
+<div class="bg-white/90 backdrop-blur-md px-3 py-2 rounded-xl text-on-background font-bold flex items-center gap-1 shadow-lg">
+<span class="text-yellow-500 text-lg">★</span> 5.0 <span class="text-on-surface-variant font-normal text-sm">(124)</span>
+</div>
+</div>
+</div>
+<div class="p-8 flex flex-col flex-grow bg-surface-container-lowest h-[25%]"><div class="flex items-center gap-2 text-primary font-bold mb-4"><span class="material-symbols-outlined">trending_up</span><span class="font-label-md">150+ Bookings this week</span></div><div class="glass-panel rounded-xl mb-4 border border-primary/10 p-3"><div class="flex items-center gap-4 mb-4"><img alt="Priya Sharma" class="w-12 h-12 rounded-full object-cover border-2 border-primary/20" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAOY46-c0qyualr5dqVG0OBwwOzIaITvivRNPu0Hh1CcfdYEgcgMRCA6s6_v4F-RDUyhCooLPpOMNm7ofnnm2PlnEbeH3vLH_E_GyW7VEcM6YoishQeQAjym5KbnFJyKm0T4T7CuvJs9OrVhWoFTLJc3ZTMzTZzB921UqjoRbf8E08v9Oj7nh5JynYtNwQtU8oQ06k_CR15lPA_0muWJeZ5Q-WdlrRRG7R-d-5CUowKQhy-Ojbo8s8ePA"/><div><div class="font-title-md text-lg">Priya Sharma</div><div class="text-sm text-on-surface-variant">Founder &amp; Master Stylist</div></div></div><div class="grid grid-cols-2 gap-3 mb-2"><div class="text-sm bg-primary/5 p-2.5 rounded-xl text-center"><div class="font-bold text-primary">10+ Years</div><div class="text-on-surface-variant text-[11px]">Experience</div></div><div class="text-sm bg-primary/5 p-2.5 rounded-xl text-center"><div class="font-bold text-primary">15,000+</div><div class="text-on-surface-variant text-[11px]">Happy Clients</div></div></div><p class="text-sm text-on-surface-variant leading-relaxed italic">"Ranked #1 based on highest repeat bookings and 4.9★ verified customer reviews"</p></div><div class="mt-auto flex flex-col sm:flex-row gap-4"><button class="flex-1 bg-primary text-on-primary py-4 rounded-xl font-label-md text-label-md font-bold hover:bg-primary/90 transition-all shadow-lg">Book Now</button><button class="flex-1 bg-transparent border-2 border-primary text-primary py-4 rounded-xl font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-all">View Salon</button></div></div>
+</div></div>
+<!-- Ranks #2-5 Grid -->
+<div class="w-full lg:w-1/2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6 h-full">
+<!-- Rank 02 -->
+<div class="bg-surface-container-lowest rounded-2xl border border-outline-subtle overflow-hidden hover:shadow-lg transition-all duration-300 hover:-translate-y-1 group flex flex-col h-full cursor-pointer relative">
+<div class="relative h-48 w-full overflow-hidden">
+<img alt="Zenith Beauty Hub" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDOEZ667Vs3lZOQX29t6TthI_HmSMahUd8UG-DZ6c3KCs_ryxEmz7OqthzFAonPz0S9EZq6RbNGO5e44uizXTP6SpfW86PZYUUL0qCssArhNt9fElUJiQ70pdhO9IanWJ_ZGrAPbGOws__xLeNdPhgBShi0Ca4jG38IT-lyG_3l05RQzt2sLWVMP-RjieoXiGbVfv6qk9pM97x9pNasubzsfsDWlEXnFKMoHaCtiDGhXDAdi2E7UyYA8A"/>
+<div class="absolute top-3 left-3 bg-surface/90 backdrop-blur-md w-10 h-10 flex items-center justify-center rounded-xl border border-white/50 text-primary font-bold shadow-sm">02</div>
+<div class="absolute top-3 right-3 bg-primary/10 backdrop-blur-md px-2 py-1 rounded-lg text-primary font-label-sm text-[10px] font-bold flex items-center gap-1">✦ Verified</div>
+<div class="absolute bottom-3 right-3 bg-surface-container-lowest/90 backdrop-blur-md px-2 py-1 rounded-lg text-on-background font-label-sm flex items-center gap-1 shadow-sm">
+<span class="text-yellow-500">★</span> 4.8 <span class="text-on-surface-variant font-normal">(89)</span>
+</div>
+</div>
+<div class="p-5 flex flex-col flex-grow">
+<h3 class="font-title-md text-title-md text-on-background mb-1 truncate">Zenith Beauty Hub</h3>
+<div class="flex items-center gap-1 text-primary font-label-sm mb-3">
+<span class="material-symbols-outlined text-sm">trending_up</span> 85 Bookings this week
+</div>
+<div class="space-y-2 mb-6">
+<div class="flex items-center gap-1.5 text-on-surface-variant text-sm">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="font-body-md truncate">Malviya Nagar • 5.1 km</span>
+</div>
+</div>
+<div class="mt-auto flex flex-col gap-2">
+<button class="w-full bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary/90 transition-colors">Book Now</button>
+<button class="w-full bg-transparent border border-primary text-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-colors">View Salon</button>
+</div>
+</div>
+</div>
+<!-- Rank 03 -->
+<div class="bg-surface-container-lowest rounded-2xl border border-outline-subtle overflow-hidden hover:shadow-lg transition-all duration-300 hover:-translate-y-1 group flex flex-col h-full cursor-pointer relative">
+<div class="relative h-48 w-full overflow-hidden">
+<img alt="Studio Elegance" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA6tIRAa6ie7VjkcvnImsrdej6SEZq7gHtFADGCdyPAVEhXalGq9P4qXch1GZL5HN7rR5yhJAi8mp4DGGPAdRyNqxG9a-Tk2o67nj8j6o-_2MnufpglIr2GnhHw02e2L--X6nObH4Zzyja3UL8Qg5qrJOROUxGqUjdGGcPZdKNGM6-BVX3sZ0c5GyxaXqLZ1WPAZW1K9drVioBlzqFtRSiGYItn6BKtQgxDslnuKQu9U9q9gQJaRlUYWQ"/>
+<div class="absolute top-3 left-3 bg-surface/90 backdrop-blur-md w-10 h-10 flex items-center justify-center rounded-xl border border-white/50 text-primary font-bold shadow-sm">03</div>
+<div class="absolute top-3 right-3 bg-primary/10 backdrop-blur-md px-2 py-1 rounded-lg text-primary font-label-sm text-[10px] font-bold flex items-center gap-1">✦ Verified</div>
+<div class="absolute bottom-3 right-3 bg-surface-container-lowest/90 backdrop-blur-md px-2 py-1 rounded-lg text-on-background font-label-sm flex items-center gap-1 shadow-sm">
+<span class="text-yellow-500">★</span> 4.9 <span class="text-on-surface-variant font-normal">(215)</span>
+</div>
+</div>
+<div class="p-5 flex flex-col flex-grow">
+<h3 class="font-title-md text-title-md text-on-background mb-1 truncate">Studio Elegance</h3>
+<div class="flex items-center gap-1 text-primary font-label-sm mb-3">
+<span class="material-symbols-outlined text-sm">trending_up</span> 150 Bookings this week
+</div>
+<div class="space-y-2 mb-6">
+<div class="flex items-center gap-1.5 text-on-surface-variant text-sm">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="font-body-md truncate">Vaishali Nagar • 8.2 km</span>
+</div>
+</div>
+<div class="mt-auto flex flex-col gap-2">
+<button class="w-full bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary/90 transition-colors">Book Now</button>
+<button class="w-full bg-transparent border border-primary text-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-colors">View Salon</button>
+</div>
+</div>
+</div>
+<!-- Rank 04 -->
+<div class="bg-surface-container-lowest rounded-2xl border border-outline-subtle overflow-hidden hover:shadow-lg transition-all duration-300 hover:-translate-y-1 group flex flex-col h-full cursor-pointer relative">
+<div class="relative h-48 w-full overflow-hidden">
+<img alt="Pink City Parlour" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBfPQrD365IdopSB1BuO5ugCa80msjz3yUL4Sxp1qfDCKqZa9rgXj2RjuZuDaKMZ9usbd2Fh2lwKj3yaj6demExdDrgw6SmLYI7Na4bGgJu5AQMmoaLmrh0mxnJ_yk8MRj7V61voSWnZuyunHx3NddLi5wZXyOrkRE5BGGK4MSTdc0piRs6b3NZAjI-ev267oB3IbajoBWsQQC6t4ugbz0G8wsVQHPohwg4x4jntkxh6vEqXdkX4QK1NQ"/>
+<div class="absolute top-3 left-3 bg-surface/90 backdrop-blur-md w-10 h-10 flex items-center justify-center rounded-xl border border-white/50 text-primary font-bold shadow-sm">04</div>
+<div class="absolute top-3 right-3 bg-primary/10 backdrop-blur-md px-2 py-1 rounded-lg text-primary font-label-sm text-[10px] font-bold flex items-center gap-1">✦ Verified</div>
+<div class="absolute bottom-3 right-3 bg-surface-container-lowest/90 backdrop-blur-md px-2 py-1 rounded-lg text-on-background font-label-sm flex items-center gap-1 shadow-sm">
+<span class="text-yellow-500">★</span> 4.7 <span class="text-on-surface-variant font-normal">(112)</span>
+</div>
+</div>
+<div class="p-5 flex flex-col flex-grow">
+<h3 class="font-title-md text-title-md text-on-background mb-1 truncate">Pink City Parlour</h3>
+<div class="flex items-center gap-1 text-primary font-label-sm mb-3">
+<span class="material-symbols-outlined text-sm">trending_up</span> 92 Bookings this week
+</div>
+<div class="space-y-2 mb-6">
+<div class="flex items-center gap-1.5 text-on-surface-variant text-sm">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="font-body-md truncate">Mansarovar • 6.5 km</span>
+</div>
+</div>
+<div class="mt-auto flex flex-col gap-2">
+<button class="w-full bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary/90 transition-colors">Book Now</button>
+<button class="w-full bg-transparent border border-primary text-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-colors">View Salon</button>
+</div>
+</div>
+</div>
+<!-- Rank 05 -->
+<div class="bg-surface-container-lowest rounded-2xl border border-outline-subtle overflow-hidden hover:shadow-lg transition-all duration-300 hover:-translate-y-1 group flex flex-col h-full cursor-pointer relative">
+<div class="relative h-48 w-full overflow-hidden">
+<img alt="Royal Grooming" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDQhliwJzkumZKxGKjMkpHzvdgFpAzA7wXO6DkNR0b1105buC3NNjS06kuE1jDAf7qhATdI1xwKDD0hJrBJF_RcGh1smy9xtvycOJdU3oEnoR10yrn8tFHCJ5urn_sxzQUgntND46j8rLgzJAogesQ2jg9uE148FPyNZKjtwaUlEbfhYJxMMmxktVq0DtsJJhiV3tZ6jDXyv8hNCvV_C403oD9-6t6oFiTMjN7ah3kvQn0Aj5LmEiZZhg"/>
+<div class="absolute top-3 left-3 bg-surface/90 backdrop-blur-md w-10 h-10 flex items-center justify-center rounded-xl border border-white/50 text-primary font-bold shadow-sm">05</div>
+<div class="absolute top-3 right-3 bg-primary/10 backdrop-blur-md px-2 py-1 rounded-lg text-primary font-label-sm text-[10px] font-bold flex items-center gap-1">✦ Verified</div>
+<div class="absolute bottom-3 right-3 bg-surface-container-lowest/90 backdrop-blur-md px-2 py-1 rounded-lg text-on-background font-label-sm flex items-center gap-1 shadow-sm">
+<span class="text-yellow-500">★</span> 4.6 <span class="text-on-surface-variant font-normal">(78)</span>
+</div>
+</div>
+<div class="p-5 flex flex-col flex-grow">
+<h3 class="font-title-md text-title-md text-on-background mb-1 truncate">Royal Grooming</h3>
+<div class="flex items-center gap-1 text-primary font-label-sm mb-3">
+<span class="material-symbols-outlined text-sm">trending_up</span> 64 Bookings this week
+</div>
+<div class="space-y-2 mb-6">
+<div class="flex items-center gap-1.5 text-on-surface-variant text-sm">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="font-body-md truncate">Raja Park • 3.8 km</span>
+</div>
+</div>
+<div class="mt-auto flex flex-col gap-2">
+<button class="w-full bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary/90 transition-colors">Book Now</button>
+<button class="w-full bg-transparent border border-primary text-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-colors">View Salon</button>
+</div>
+</div>
+</div>
+<!-- Rank 06 -->
+</div>
+</div>
+</section>
+<!-- Aapke Paas Ke Salons Section -->
+<section class="w-full max-w-max-width mx-auto px-margin-mobile md:px-margin-desktop py-section-gap bg-surface-off-white" id="nearby-salons-section">
+<div class="flex flex-col gap-6">
+<!-- Header -->
+<div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+<div>
+<h2 class="font-headline-lg font-bold text-headline-lg-mobile md:text-headline-lg text-on-background">Aapke Paas Ke Salons</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-2">Apne area ke nearby verified salons discover karein</p>
+</div>
+<div class="glass-panel px-4 py-2 rounded-full flex items-center gap-2">
+<span class="text-primary font-label-md text-label-md">📍 Jhotwara, Jaipur</span>
+<button class="bg-primary-pink-soft text-primary px-3 py-1 rounded-full font-label-sm text-label-sm hover:bg-primary-fixed transition-colors">Change Area</button>
+</div>
+</div>
+<!-- Discovery Navigation -->
+<div class="flex flex-col gap-4">
+<div class="flex gap-2 overflow-x-auto hide-scrollbar pb-2">
+<button class="flex-shrink-0 bg-primary text-on-primary px-4 py-2 rounded-lg font-label-md text-label-md border border-primary/20 hover:bg-primary/90 transition-colors shadow-sm">Jhotwara</button>
+<button class="flex-shrink-0 border border-outline-subtle bg-surface-container-lowest text-on-surface-variant px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">Vaishali Nagar</button>
+<button class="flex-shrink-0 border border-outline-subtle bg-surface-container-lowest text-on-surface-variant px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">Malviya Nagar</button>
+<button class="flex-shrink-0 border border-outline-subtle bg-surface-container-lowest text-on-surface-variant px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">Mansarovar</button>
+<button class="flex-shrink-0 border border-outline-subtle bg-surface-container-lowest text-on-surface-variant px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">Raja Park</button>
+<button class="flex-shrink-0 border border-outline-subtle bg-surface-container-lowest text-on-surface-variant px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">C-Scheme</button>
+<button class="flex-shrink-0 border border-outline-subtle bg-surface-container-lowest text-on-surface-variant px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors">Jagatpura</button>
+</div>
+<div class="flex gap-2 overflow-x-auto hide-scrollbar w-full pb-2">
+<button class="flex-shrink-0 border border-outline-subtle bg-surface-container-lowest text-on-surface-variant px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors flex items-center gap-1"><span class="material-symbols-outlined text-[16px]">map</span> Distance</button>
+<button class="flex-shrink-0 border border-outline-subtle bg-surface-container-lowest text-on-surface-variant px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors flex items-center gap-1"><span class="material-symbols-outlined text-[16px]">star</span> Rating</button>
+<button class="flex-shrink-0 border border-outline-subtle bg-surface-container-lowest text-on-surface-variant px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors flex items-center gap-1"><span class="material-symbols-outlined text-[16px]">payments</span> Price</button>
+<button class="flex-shrink-0 border border-outline-subtle bg-surface-container-lowest text-on-surface-variant px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors flex items-center gap-1"><span class="material-symbols-outlined text-[16px]">schedule</span> Open Now</button>
+<button class="flex-shrink-0 border border-outline-subtle bg-surface-container-lowest text-on-surface-variant px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors flex items-center gap-1"><span class="material-symbols-outlined text-[16px]">category</span> Services</button>
+<div class="h-6 w-px bg-outline-subtle mx-2 my-auto hidden sm:block"></div>
+<div class="relative hidden sm:block flex-shrink-0 ml-auto">
+<select class="pl-4 pr-8 py-2 bg-transparent border-none font-label-md text-label-md text-on-surface-variant cursor-pointer appearance-none hover:text-primary focus:ring-0">
+<option>Sort: Recommended</option>
+<option>Highest Rated</option>
+<option>Nearest</option>
+<option>Price: Low to High</option>
+</select>
+<span class="material-symbols-outlined absolute right-0 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">expand_more</span>
+</div>
+</div>
+</div>
+<!-- Salon Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-2">
+<!-- Card 1 -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-subtle overflow-hidden hover:shadow-lg transition-all duration-300 hover:-translate-y-1 group flex flex-col h-full cursor-pointer">
+<div class="relative h-48 w-full overflow-hidden">
+<img alt="Vijay Salon" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.04]" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBfPQrD365IdopSB1BuO5ugCa80msjz3yUL4Sxp1qfDCKqZa9rgXj2RjuZuDaKMZ9usbd2Fh2lwKj3yaj6demExdDrgw6SmLYI7Na4bGgJu5AQMmoaLmrh0mxnJ_yk8MRj7V61voSWnZuyunHx3NddLi5wZXyOrkRE5BGGK4MSTdc0piRs6b3NZAjI-ev267oB3IbajoBWsQQC6t4ugbz0G8wsVQHPohwg4x4jntkxh6vEqXdkX4QK1NQ"/>
+<div class="absolute top-3 left-3 bg-surface/90 backdrop-blur-md px-2.5 py-1 rounded-md text-primary font-label-sm text-[10px] font-bold flex items-center gap-1 shadow-sm">
+<span class="material-symbols-outlined text-[12px]">verified</span> Verified
+                    </div>
+<div class="absolute bottom-3 right-3 bg-surface-container-lowest/90 backdrop-blur-sm px-2 py-1 rounded text-on-background font-label-sm flex items-center gap-1">
+<span class="text-yellow-500">★</span> 4.9 <span class="text-on-surface-variant font-normal">(98)</span>
+</div>
+</div>
+<div class="p-5 flex flex-col flex-grow">
+<h3 class="font-title-md text-title-md text-on-background mb-3">Vijay Salon</h3>
+<div class="space-y-2 mb-6">
+<div class="flex justify-between items-center text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="font-body-md truncate">Jhotwara, Jaipur</span>
+</div>
+<span class="text-on-surface-variant font-label-sm whitespace-nowrap">2.1 km</span>
+</div>
+<div class="flex justify-between items-center text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">payments</span>
+<span class="font-body-md">From ₹199</span>
+</div>
+<span class="text-green-600 font-label-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px] animate-pulse">circle</span> Open Now
+                            </span>
+</div>
+</div>
+<div class="mt-auto flex gap-3">
+<button class="flex-1 bg-transparent border border-primary text-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-colors text-center">View Salon</button>
+<button class="flex-1 bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary/90 transition-colors shadow-sm text-center">Book Now</button>
+</div>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-subtle overflow-hidden hover:shadow-lg transition-all duration-300 hover:-translate-y-1 group flex flex-col h-full cursor-pointer">
+<div class="relative h-48 w-full overflow-hidden">
+<img alt="Grace &amp; Glow" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.04]" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA6tIRAa6ie7VjkcvnImsrdej6SEZq7gHtFADGCdyPAVEhXalGq9P4qXch1GZL5HN7rR5yhJAi8mp4DGGPAdRyNqxG9a-Tk2o67nj8j6o-_2MnufpglIr2GnhHw02e2L--X6nObH4Zzyja3UL8Qg5qrJOROUxGqUjdGGcPZdKNGM6-BVX3sZ0c5GyxaXqLZ1WPAZW1K9drVioBlzqFtRSiGYItn6BKtQgxDslnuKQu9U9q9gQJaRlUYWQ"/>
+<div class="absolute top-3 left-3 bg-surface/90 backdrop-blur-md px-2.5 py-1 rounded-md text-primary font-label-sm text-[10px] font-bold flex items-center gap-1 shadow-sm">
+<span class="material-symbols-outlined text-[12px]">verified</span> Verified
+                    </div>
+<div class="absolute bottom-3 right-3 bg-surface-container-lowest/90 backdrop-blur-sm px-2 py-1 rounded text-on-background font-label-sm flex items-center gap-1">
+<span class="text-yellow-500">★</span> 4.7 <span class="text-on-surface-variant font-normal">(150)</span>
+</div>
+</div>
+<div class="p-5 flex flex-col flex-grow">
+<h3 class="font-title-md text-title-md text-on-background mb-3">Grace &amp; Glow</h3>
+<div class="space-y-2 mb-6">
+<div class="flex justify-between items-center text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="font-body-md truncate">Jhotwara, Jaipur</span>
+</div>
+<span class="text-on-surface-variant font-label-sm whitespace-nowrap">1.4 km</span>
+</div>
+<div class="flex justify-between items-center text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">payments</span>
+<span class="font-body-md">From ₹299</span>
+</div>
+<span class="text-green-600 font-label-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px] animate-pulse">circle</span> Open Now
+                            </span>
+</div>
+</div>
+<div class="mt-auto flex gap-3">
+<button class="flex-1 bg-transparent border border-primary text-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-colors text-center">View Salon</button>
+<button class="flex-1 bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary/90 transition-colors shadow-sm text-center">Book Now</button>
+</div>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface-container-lowest rounded-xl border border-outline-subtle overflow-hidden hover:shadow-lg transition-all duration-300 hover:-translate-y-1 group flex flex-col h-full cursor-pointer">
+<div class="relative h-48 w-full overflow-hidden">
+<img alt="Classic Cuts" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.04]" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDOEZ667Vs3lZOQX29t6TthI_HmSMahUd8UG-DZ6c3KCs_ryxEmz7OqthzFAonPz0S9EZq6RbNGO5e44uizXTP6SpfW86PZYUUL0qCssArhNt9fElUJiQ70pdhO9IanWJ_ZGrAPbGOws__xLeNdPhgBShi0Ca4jG38IT-lyG_3l05RQzt2sLWVMP-RjieoXiGbVfv6qk9pM97x9pNasubzsfsDWlEXnFKMoHaCtiDGhXDAdi2E7UyYA8A"/>
+<div class="absolute bottom-3 right-3 bg-surface-container-lowest/90 backdrop-blur-sm px-2 py-1 rounded text-on-background font-label-sm flex items-center gap-1">
+<span class="text-yellow-500">★</span> 4.6 <span class="text-on-surface-variant font-normal">(85)</span>
+</div>
+</div>
+<div class="p-5 flex flex-col flex-grow">
+<h3 class="font-title-md text-title-md text-on-background mb-3">Classic Cuts</h3>
+<div class="space-y-2 mb-6">
+<div class="flex justify-between items-center text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="font-body-md truncate">Jhotwara, Jaipur</span>
+</div>
+<span class="text-on-surface-variant font-label-sm whitespace-nowrap">3.2 km</span>
+</div>
+<div class="flex justify-between items-center text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">payments</span>
+<span class="font-body-md">From ₹150</span>
+</div>
+<span class="text-error font-label-sm flex items-center gap-1">
+<span class="material-symbols-outlined text-[10px]">circle</span> Closed
+                            </span>
+</div>
+</div>
+<div class="mt-auto flex gap-3">
+<button class="flex-1 bg-transparent border border-primary text-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-colors text-center">View Salon</button>
+<button class="flex-1 bg-surface-container text-on-surface-variant py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-surface-container-high transition-colors shadow-sm text-center">Book Now</button>
+</div>
+</div>
+</div>
+</div>
+<!-- View All Link -->
+<div class="w-full flex justify-center pt-4">
+<a class="text-primary font-label-md text-label-md font-bold hover:underline decoration-primary/30 underline-offset-4 flex items-center gap-1 group" href="#">
+        View All Nearby Salons <span class="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform">arrow_forward</span>
+</a>
+</div>
+</div>
+</section><section class="w-full max-w-max-width mx-auto px-margin-mobile md:px-margin-desktop py-section-gap bg-surface-container-low/30" id="trending-section">
+<div class="flex flex-col gap-8">
+<div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+<div>
+<div class="inline-flex items-center gap-2 px-3 py-1 rounded-full glass-panel text-primary font-label-sm text-label-sm mb-3">
+<span class="material-symbols-outlined text-[10px] text-green-600 animate-pulse">circle</span>
+<span class="uppercase tracking-wider">Recently Updated</span>
+</div>
+<h2 class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-background">TRENDING ON NEXORA</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-2">Abhi Jaipur mein kya popular hai?</p>
+</div>
+</div>
+<div class="flex flex-col gap-6">
+<div class="flex p-1 bg-surface-container rounded-xl w-fit">
+<button class="trending-tab px-6 py-2 rounded-lg font-label-md text-label-md transition-all duration-300 bg-primary text-on-primary shadow-sm" id="tab-salons" onclick="switchTrendingTab('salons')">Trending Salons</button>
+<button class="trending-tab px-6 py-2 rounded-lg font-label-md text-label-md transition-all duration-300 text-on-surface-variant hover:bg-surface-container-high" id="tab-services" onclick="switchTrendingTab('services')">Most Booked Services</button>
+<button class="trending-tab px-6 py-2 rounded-lg font-label-md text-label-md transition-all duration-300 text-on-surface-variant hover:bg-surface-container-high" id="tab-areas" onclick="switchTrendingTab('areas')">Trending Areas</button>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-1 gap-4" id="trending-content">
+<div class="flex flex-col gap-3">
+<div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-subtle flex items-center justify-between hover:shadow-md transition-all group">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center font-display-lg text-primary text-xl font-bold">01</div>
+<div>
+<h4 class="font-title-md text-on-background">Aura Luxury Spa</h4>
+<p class="text-sm text-on-surface-variant">C-Scheme • ★ 5.0 (124)</p>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="hidden md:block text-right">
+<div class="text-primary font-bold text-sm">150+ Bookings</div>
+<div class="text-[10px] text-green-600 flex items-center justify-end gap-1">Trending <span class="material-symbols-outlined text-[12px]">trending_up</span></div>
+</div>
+<button class="text-primary font-bold text-sm hover:underline">View Salon</button>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-subtle flex items-center justify-between hover:shadow-md transition-all group">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center font-display-lg text-on-surface-variant text-xl font-bold">02</div>
+<div>
+<h4 class="font-title-md text-on-background">Zenith Beauty Hub</h4>
+<p class="text-sm text-on-surface-variant">Malviya Nagar • ★ 4.8 (89)</p>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="hidden md:block text-right">
+<div class="text-on-surface-variant font-bold text-sm">85 Bookings</div>
+<div class="text-[10px] text-green-600">+12% this week</div>
+</div>
+<button class="text-primary font-bold text-sm hover:underline">View Salon</button>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-subtle flex items-center justify-between hover:shadow-md transition-all group">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center font-display-lg text-on-surface-variant text-xl font-bold">03</div>
+<div>
+<h4 class="font-title-md text-on-background">Studio Elegance</h4>
+<p class="text-sm text-on-surface-variant">Vaishali Nagar • ★ 4.9 (215)</p>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="hidden md:block text-right">
+<div class="text-on-surface-variant font-bold text-sm">150 Bookings</div>
+</div>
+<button class="text-primary font-bold text-sm hover:underline">View Salon</button>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-subtle flex items-center justify-between hover:shadow-md transition-all group">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center font-display-lg text-on-surface-variant text-xl font-bold">04</div>
+<div>
+<h4 class="font-title-md text-on-background">Pink City Parlour</h4>
+<p class="text-sm text-on-surface-variant">Mansarovar • ★ 4.7 (112)</p>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="hidden md:block text-right">
+<div class="text-on-surface-variant font-bold text-sm">92 Bookings</div>
+</div>
+<button class="text-primary font-bold text-sm hover:underline">View Salon</button>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-subtle flex items-center justify-between hover:shadow-md transition-all group">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center font-display-lg text-on-surface-variant text-xl font-bold">05</div>
+<div>
+<h4 class="font-title-md text-on-background">Royal Grooming</h4>
+<p class="text-sm text-on-surface-variant">Raja Park • ★ 4.6 (78)</p>
+</div>
+</div>
+<div class="flex items-center gap-6">
+<div class="hidden md:block text-right">
+<div class="text-on-surface-variant font-bold text-sm">64 Bookings</div>
+</div>
+<button class="text-primary font-bold text-sm hover:underline">View Salon</button>
+</div>
+</div>
+</div>
+</div>
+<div class="py-3 px-4 bg-primary/5 rounded-lg border border-primary/10 flex items-center gap-2">
+<span class="text-primary text-[10px]">●</span>
+<p class="text-sm text-on-surface-variant font-label-md">Marketplace Activity: <span class="text-primary font-bold">Hair Spa</span> is currently trending in Malviya Nagar</p>
+</div>
+</div>
+</div>
+<script>
+    function switchTrendingTab(tab) {
+      const content = document.getElementById('trending-content');
+      const tabs = document.querySelectorAll('.trending-tab');
+      
+      tabs.forEach(t => {
+        t.classList.remove('bg-primary', 'text-on-primary', 'shadow-sm');
+        t.classList.add('text-on-surface-variant', 'hover:bg-surface-container-high');
+      });
+
+      const activeTab = document.getElementById('tab-' + tab);
+      activeTab.classList.add('bg-primary', 'text-on-primary', 'shadow-sm');
+      activeTab.classList.remove('text-on-surface-variant', 'hover:bg-surface-container-high');
+
+      let html = '';
+      if (tab === 'salons') {
+        html = `<div class="flex flex-col gap-3">
+          <div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-subtle flex items-center justify-between hover:shadow-md transition-all group">
+            <div class="flex items-center gap-4">
+              <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center font-display-lg text-primary text-xl font-bold">01</div>
+              <div>
+                <h4 class="font-title-md text-on-background">Aura Luxury Spa</h4>
+                <p class="text-sm text-on-surface-variant">C-Scheme • ★ 5.0 (124)</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-6">
+              <div class="hidden md:block text-right">
+                <div class="text-primary font-bold text-sm">150+ Bookings</div>
+                <div class="text-[10px] text-green-600 flex items-center justify-end gap-1">Trending <span class="material-symbols-outlined text-[12px]">trending_up</span></div>
+              </div>
+              <button class="text-primary font-bold text-sm hover:underline">View Salon</button>
+            </div>
+          </div>
+          <div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-subtle flex items-center justify-between hover:shadow-md transition-all group">
+            <div class="flex items-center gap-4">
+              <div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center font-display-lg text-on-surface-variant text-xl font-bold">02</div>
+              <div>
+                <h4 class="font-title-md text-on-background">Zenith Beauty Hub</h4>
+                <p class="text-sm text-on-surface-variant">Malviya Nagar • ★ 4.8 (89)</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-6">
+              <div class="hidden md:block text-right">
+                <div class="text-on-surface-variant font-bold text-sm">85 Bookings</div>
+                <div class="text-[10px] text-green-600">+12% this week</div>
+              </div>
+              <button class="text-primary font-bold text-sm hover:underline">View Salon</button>
+            </div>
+          </div>
+          <div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-subtle flex items-center justify-between hover:shadow-md transition-all group">
+            <div class="flex items-center gap-4">
+              <div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center font-display-lg text-on-surface-variant text-xl font-bold">03</div>
+              <div>
+                <h4 class="font-title-md text-on-background">Studio Elegance</h4>
+                <p class="text-sm text-on-surface-variant">Vaishali Nagar • ★ 4.9 (215)</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-6">
+              <div class="hidden md:block text-right">
+                <div class="text-on-surface-variant font-bold text-sm">150 Bookings</div>
+              </div>
+              <button class="text-primary font-bold text-sm hover:underline">View Salon</button>
+            </div>
+          </div>
+        </div>`;
+      } else if (tab === 'services') {
+        html = `<div class="flex flex-col gap-3">
+          <div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-subtle flex items-center justify-between hover:shadow-md transition-all">
+            <div class="flex items-center gap-4">
+              <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center font-display-lg text-primary text-xl font-bold">01</div>
+              <h4 class="font-title-md text-on-background">Hair Spa</h4>
+            </div>
+            <div class="text-on-surface-variant font-bold text-sm">48 Bookings today</div>
+          </div>
+          <div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-subtle flex items-center justify-between hover:shadow-md transition-all">
+            <div class="flex items-center gap-4">
+              <div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center font-display-lg text-on-surface-variant text-xl font-bold">02</div>
+              <h4 class="font-title-md text-on-background">Facial</h4>
+            </div>
+            <div class="text-on-surface-variant font-bold text-sm">42 Bookings today</div>
+          </div>
+          <div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-subtle flex items-center justify-between hover:shadow-md transition-all">
+            <div class="flex items-center gap-4">
+              <div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center font-display-lg text-on-surface-variant text-xl font-bold">03</div>
+              <h4 class="font-title-md text-on-background">Haircut</h4>
+            </div>
+            <div class="text-on-surface-variant font-bold text-sm">38 Bookings today</div>
+          </div>
+        </div>`;
+      } else if (tab === 'areas') {
+        html = `<div class="flex flex-col gap-3">
+          <div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-subtle flex items-center justify-between hover:shadow-md transition-all">
+            <div class="flex items-center gap-4">
+              <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center font-display-lg text-primary text-xl font-bold">01</div>
+              <h4 class="font-title-md text-on-background">Vaishali Nagar</h4>
+            </div>
+            <div class="text-on-surface-variant font-bold text-sm">120 Bookings</div>
+          </div>
+          <div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-subtle flex items-center justify-between hover:shadow-md transition-all">
+            <div class="flex items-center gap-4">
+              <div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center font-display-lg text-on-surface-variant text-xl font-bold">02</div>
+              <h4 class="font-title-md text-on-background">Malviya Nagar</h4>
+            </div>
+            <div class="text-on-surface-variant font-bold text-sm">95 Bookings</div>
+          </div>
+          <div class="bg-surface-container-lowest p-4 rounded-xl border border-outline-subtle flex items-center justify-between hover:shadow-md transition-all">
+            <div class="flex items-center gap-4">
+              <div class="w-10 h-10 rounded-lg bg-surface-container flex items-center justify-center font-display-lg text-on-surface-variant text-xl font-bold">03</div>
+              <h4 class="font-title-md text-on-background">C-Scheme</h4>
+            </div>
+            <div class="text-on-surface-variant font-bold text-sm">88 Bookings</div>
+          </div>
+        </div>`;
+      }
+      content.innerHTML = html;
+    }
+  </script>
+</section>
+<!-- Nexora Par Popular Salons Section -->
+<section class="w-full max-w-max-width mx-auto px-margin-mobile md:px-margin-desktop py-section-gap">
+<div class="flex flex-col gap-6">
+<!-- Header -->
+<div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+<div>
+<h2 class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-background">Nexora Par Popular Salons</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-2">Jaipur mein customers ke favourite salon picks</p>
+</div>
+<button class="hidden md:flex items-center gap-2 bg-surface-container-lowest border border-outline-subtle text-on-surface-variant px-4 py-2 rounded-lg font-label-md text-label-md hover:bg-surface-container-low transition-colors shadow-sm">
+<span class="material-symbols-outlined text-[18px]">refresh</span> Refresh Picks
+            </button>
+</div>
+<!-- Curated Intro Card -->
+<div class="glass-panel p-6 rounded-2xl border-l-4 border-l-primary flex flex-col md:flex-row items-start md:items-center gap-4">
+<div class="bg-primary-pink-soft p-3 rounded-full text-primary shrink-0">
+<span class="material-symbols-outlined">favorite</span>
+</div>
+<div>
+<h3 class="font-title-md text-title-md text-on-background mb-1">Handpicked for you</h3>
+<p class="font-body-md text-sm text-on-surface-variant">Popular ratings, activity aur marketplace signals ke basis par selected salons explore karein.</p>
+</div>
+</div>
+<!-- Popular Salon Grid -->
+<div class="flex md:grid md:grid-cols-3 gap-6 overflow-x-auto md:overflow-visible hide-scrollbar snap-x snap-mandatory pb-4">
+<!-- Card 1 -->
+<div class="min-w-[300px] flex-shrink-0 snap-start bg-surface-container-lowest rounded-2xl border border-outline-subtle overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-4 hover:scale-[1.01] group flex flex-col h-full cursor-pointer">
+<div class="relative h-56 w-full overflow-hidden">
+<img alt="The Glam Studio" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAeEZNLveMnhuKpx-TIQbi8pjUCuIfkSBiYrnl3GGTnh_eAvRxU4m5TUZuVzo_lWR03UPTJHArnpbiQg4HvJ7ej0A39qWLcwNQLxYXQEM07h1NDHIMFcW-YIUz12IbByo8rV0Dym4W5y96u0hysY_itUMD8owZDoKmAsfsDE8XEROCwC3HcVgjrD9AvtjwyL8wuQRYCx2D0J_SLS3JNiGFyHk-wb6bTyP4YzZJl4Zd7ovAxdnnI97NsNw"/>
+<div class="absolute top-3 left-3 flex flex-col gap-2">
+<div class="bg-surface/90 backdrop-blur-md px-2.5 py-1 rounded-md text-primary font-label-sm text-[10px] font-bold flex items-center gap-1 shadow-sm">
+                            🔥 Popular Pick
+                        </div>
+<div class="bg-surface/90 backdrop-blur-md px-2.5 py-1 rounded-md text-primary font-label-sm text-[10px] font-bold flex items-center gap-1 shadow-sm w-fit">
+<span class="material-symbols-outlined text-[12px]">verified</span> Verified
+                        </div>
+</div>
+</div>
+<div class="p-5 flex flex-col flex-grow">
+<div class="flex justify-between items-start mb-2">
+<h3 class="font-title-md text-title-md text-on-background">The Glam Studio</h3>
+<div class="bg-surface-container-low px-2 py-1 rounded text-on-background font-label-sm flex items-center gap-1">
+<span class="text-yellow-500">★</span> 4.9 <span class="text-on-surface-variant font-normal">(124 Reviews)</span>
+</div>
+</div>
+<div class="font-label-md text-label-md text-primary mb-4 flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">trending_up</span> Trending with customers
+                    </div>
+<div class="space-y-2 mb-6 text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="">📍 Vaishali Nagar, Jaipur</span>
+</div>
+<div class="flex justify-between items-center">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">payments</span>
+<span class="">From ₹199</span>
+</div>
+<span class="text-green-600 font-label-sm flex items-center gap-1">
+                                ● Open Now
+                            </span>
+</div>
+</div>
+<div class="mt-auto flex gap-3">
+<button class="flex-1 bg-transparent border border-primary text-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-colors text-center">View Salon</button>
+<button class="flex-1 bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary/90 transition-colors shadow-sm text-center">Book Now</button>
+</div>
+</div>
+</div>
+<!-- Card 2 -->
+<div class="min-w-[300px] flex-shrink-0 snap-start bg-surface-container-lowest rounded-2xl border border-outline-subtle overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-4 hover:scale-[1.01] group flex flex-col h-full cursor-pointer">
+<div class="relative h-56 w-full overflow-hidden">
+<img alt="Elite Beauty Care" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDlOOC6vUVn2Mq6N-cFlvg5gJvhBa1u1Ij0d98jyC5FsqINfv80ARTV9gu-bb1QsGpkJ_puJ9c0PlQHLzhkVZggRp0CO0QutcVwyKA5VA05CFWcoSpqdwOQATMq2Vi-bnOBIheIzqJ1-dQ0wSB47kCvqeqk9aS-AM_RJpDMwWvvjy7lkI25_wXxt5oAmaipjH2jvi2v9N1HVQXB7cV--m1E6LDbFjEI5B-v-JiXEtWI6YFS_Jptq4C0-w"/>
+<div class="absolute top-3 left-3 flex flex-col gap-2">
+<div class="bg-surface/90 backdrop-blur-md px-2.5 py-1 rounded-md text-primary font-label-sm text-[10px] font-bold flex items-center gap-1 shadow-sm">
+                            🔥 Popular Pick
+                        </div>
+<div class="bg-surface/90 backdrop-blur-md px-2.5 py-1 rounded-md text-primary font-label-sm text-[10px] font-bold flex items-center gap-1 shadow-sm w-fit">
+<span class="material-symbols-outlined text-[12px]">verified</span> Verified
+                        </div>
+</div>
+</div>
+<div class="p-5 flex flex-col flex-grow">
+<div class="flex justify-between items-start mb-2">
+<h3 class="font-title-md text-title-md text-on-background">Elite Beauty Care</h3>
+<div class="bg-surface-container-low px-2 py-1 rounded text-on-background font-label-sm flex items-center gap-1">
+<span class="text-yellow-500">★</span> 4.8 <span class="text-on-surface-variant font-normal">(98 Reviews)</span>
+</div>
+</div>
+<div class="font-label-md text-label-md text-primary mb-4 flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">trending_up</span> 120 Bookings this week
+                    </div>
+<div class="space-y-2 mb-6 text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="">📍 Malviya Nagar, Jaipur</span>
+</div>
+<div class="flex justify-between items-center">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">payments</span>
+<span class="">From ₹299</span>
+</div>
+<span class="text-green-600 font-label-sm flex items-center gap-1">
+                                ● Open Now
+                            </span>
+</div>
+</div>
+<div class="mt-auto flex gap-3">
+<button class="flex-1 bg-transparent border border-primary text-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-colors text-center">View Salon</button>
+<button class="flex-1 bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary/90 transition-colors shadow-sm text-center">Book Now</button>
+</div>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="min-w-[300px] flex-shrink-0 snap-start bg-surface-container-lowest rounded-2xl border border-outline-subtle overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-4 hover:scale-[1.01] group flex flex-col h-full cursor-pointer">
+<div class="relative h-56 w-full overflow-hidden">
+<img alt="Radiance Spa" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCznY4G7rCqK8d9PJv4VRgZrF_JowhAtNvqqA4HP8n65W24zS54wOLTH5K0UlUNbf5Q2B8BaGaKjWLBYkDqGZhqDxQZM3sN5FEp_kGlwk6B5Ea-8TwxYrXC0p3kPlMuM4XagHPtkpkMhOAID8TlEcTKspDUKLvJCROE275tuDZtROhsXc2jnQlOkpaVjingv9wsL8p-MfTk3Bvby5H2d4K4YWdKjhNIpg7l_6-zvo-oQy47FwJwl4iYRA"/>
+<div class="absolute top-3 left-3 flex flex-col gap-2">
+<div class="bg-surface/90 backdrop-blur-md px-2.5 py-1 rounded-md text-primary font-label-sm text-[10px] font-bold flex items-center gap-1 shadow-sm">
+                            🔥 Popular Pick
+                        </div>
+</div>
+</div>
+<div class="p-5 flex flex-col flex-grow">
+<div class="flex justify-between items-start mb-2">
+<h3 class="font-title-md text-title-md text-on-background">Radiance Spa</h3>
+<div class="bg-surface-container-low px-2 py-1 rounded text-on-background font-label-sm flex items-center gap-1">
+<span class="text-yellow-500">★</span> 4.7 <span class="text-on-surface-variant font-normal">(156 Reviews)</span>
+</div>
+</div>
+<div class="font-label-md text-label-md text-primary mb-4 flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">trending_up</span> Trending with customers
+                    </div>
+<div class="space-y-2 mb-6 text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="">📍 C-Scheme, Jaipur</span>
+</div>
+<div class="flex justify-between items-center">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">payments</span>
+<span class="">From ₹399</span>
+</div>
+<span class="text-green-600 font-label-sm flex items-center gap-1">
+                                ● Open Now
+                            </span>
+</div>
+</div>
+<div class="mt-auto flex gap-3">
+<button class="flex-1 bg-transparent border border-primary text-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-colors text-center">View Salon</button>
+<button class="flex-1 bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary/90 transition-colors shadow-sm text-center">Book Now</button>
+</div>
+</div>
+</div>
+<!-- Card 4 -->
+<div class="min-w-[300px] flex-shrink-0 snap-start bg-surface-container-lowest rounded-2xl border border-outline-subtle overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-4 hover:scale-[1.01] group flex flex-col h-full cursor-pointer">
+<div class="relative h-56 w-full overflow-hidden">
+<img alt="Aura Luxury Spa" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCM9Bo09oubcvmXaT9LvWHKeI_XW2EgBULeNUZIDc4BNBXR-26-lBuc1ZhETyswFpjDk5cwRFDA7Wzx1ao960Q_8HRGPHHm5nES7mIM4MgIpy6MZ4x9TgTQUcAa1pFno_IMgoNmptUtWukSFp5hIaHHqQ34vqVX4_SJqJKXHAj3PjdJRTfXiXmxRr_98nuXy_J61h6w4c2zdhd2SznaRIESNO2zJWZvzye26QecM70FdKcnRn_dC7jvsA"/>
+<div class="absolute top-3 left-3 flex flex-col gap-2">
+<div class="bg-surface/90 backdrop-blur-md px-2.5 py-1 rounded-md text-primary font-label-sm text-[10px] font-bold flex items-center gap-1 shadow-sm">🔥 Popular Pick</div>
+<div class="bg-surface/90 backdrop-blur-md px-2.5 py-1 rounded-md text-primary font-label-sm text-[10px] font-bold flex items-center gap-1 shadow-sm w-fit">
+<span class="material-symbols-outlined text-[12px]">verified</span> Verified
+      </div>
+</div>
+</div>
+<div class="p-5 flex flex-col flex-grow">
+<div class="flex justify-between items-start mb-2">
+<h3 class="font-title-md text-title-md text-on-background">Aura Luxury Spa</h3>
+<div class="bg-surface-container-low px-2 py-1 rounded text-on-background font-label-sm flex items-center gap-1">
+<span class="text-yellow-500">★</span> 5.0 <span class="text-on-surface-variant font-normal">(124 Reviews)</span>
+</div>
+</div>
+<div class="font-label-md text-label-md text-primary mb-4 flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">trending_up</span> Trending with customers
+    </div>
+<div class="space-y-2 mb-6 text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="">📍 C-Scheme, Jaipur</span>
+</div>
+<div class="flex justify-between items-center">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">payments</span>
+<span class="">From ₹600</span>
+</div>
+<span class="text-green-600 font-label-sm flex items-center gap-1">● Open Now</span>
+</div>
+</div>
+<div class="mt-auto flex gap-3">
+<button class="flex-1 bg-transparent border border-primary text-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-colors text-center">View Salon</button>
+<button class="flex-1 bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary/90 transition-colors shadow-sm text-center">Book Now</button>
+</div>
+</div>
+</div>
+<!-- Card 5 -->
+<div class="min-w-[300px] flex-shrink-0 snap-start bg-surface-container-lowest rounded-2xl border border-outline-subtle overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-4 hover:scale-[1.01] group flex flex-col h-full cursor-pointer">
+<div class="relative h-56 w-full overflow-hidden">
+<img alt="Zenith Beauty Hub" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAlC891WOeIXqjmoCbYlKT_QNn26WBHhIQDw63H2RtCXEI7KlzystdJQhOWk1xjMM4LkkwpL-5RXvfPbQCC-eXlyPQWj7aYiBJnOy2Puia2VWb-Sv5w7RGS3jlPGm0VmTkBBhx_bmD3JVfQO9fJpnkiyXk3B2SGOgvohqcIQfZhJNeVHpxFdEHlHBNq_iOadcQhDUFBJRLCMjgmQ1DJilW4U3zNFYyV0WcfZ49EXBiKtJ1b4mdWjUIFkQ"/>
+<div class="absolute top-3 left-3 flex flex-col gap-2">
+<div class="bg-surface/90 backdrop-blur-md px-2.5 py-1 rounded-md text-primary font-label-sm text-[10px] font-bold flex items-center gap-1 shadow-sm">🔥 Popular Pick</div>
+<div class="bg-surface/90 backdrop-blur-md px-2.5 py-1 rounded-md text-primary font-label-sm text-[10px] font-bold flex items-center gap-1 shadow-sm w-fit">
+<span class="material-symbols-outlined text-[12px]">verified</span> Verified
+      </div>
+</div>
+</div>
+<div class="p-5 flex flex-col flex-grow">
+<div class="flex justify-between items-start mb-2">
+<h3 class="font-title-md text-title-md text-on-background">Zenith Beauty Hub</h3>
+<div class="bg-surface-container-low px-2 py-1 rounded text-on-background font-label-sm flex items-center gap-1">
+<span class="text-yellow-500">★</span> 4.8 <span class="text-on-surface-variant font-normal">(89 Reviews)</span>
+</div>
+</div>
+<div class="font-label-md text-label-md text-primary mb-4 flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">trending_up</span> 85 Bookings this week
+    </div>
+<div class="space-y-2 mb-6 text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="">📍 Malviya Nagar, Jaipur</span>
+</div>
+<div class="flex justify-between items-center">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">payments</span>
+<span class="">From ₹800</span>
+</div>
+<span class="text-green-600 font-label-sm flex items-center gap-1">● Open Now</span>
+</div>
+</div>
+<div class="mt-auto flex gap-3">
+<button class="flex-1 bg-transparent border border-primary text-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-colors text-center">View Salon</button>
+<button class="flex-1 bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary/90 transition-colors shadow-sm text-center">Book Now</button>
+</div>
+</div>
+</div>
+<!-- Card 6 -->
+<div class="min-w-[300px] flex-shrink-0 snap-start bg-surface-container-lowest rounded-2xl border border-outline-subtle overflow-hidden hover:shadow-xl transition-all duration-300 hover:-translate-y-4 hover:scale-[1.01] group flex flex-col h-full cursor-pointer">
+<div class="relative h-56 w-full overflow-hidden">
+<img alt="Studio Elegance" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDSOTfiTl9qLgI97PKMvvjD-AZ7Q5-AVR7z6ArkbAki8pSLE2aV59CmpfPbgs7aGsJzaKq-_CByrGv4FYqk_4Pjy1q6WDg9QtCXJt8R-Czmty4lsJDL5i5PG37GajM-4l-d9n8gDpgBhKehoKsYtSBuuJAj0_rsYxOX4dSqsyHWUHS34LTq5uRx0BHAstcj7LKxLzY92AUZaknZq26INaq5xy9i2yKn1qSqHhn7BF3D1hPskvnoNCPAkw"/>
+<div class="absolute top-3 left-3 flex flex-col gap-2">
+<div class="bg-surface/90 backdrop-blur-md px-2.5 py-1 rounded-md text-primary font-label-sm text-[10px] font-bold flex items-center gap-1 shadow-sm">🔥 Popular Pick</div>
+<div class="bg-surface/90 backdrop-blur-md px-2.5 py-1 rounded-md text-primary font-label-sm text-[10px] font-bold flex items-center gap-1 shadow-sm w-fit">
+<span class="material-symbols-outlined text-[12px]">verified</span> Verified
+      </div>
+</div>
+</div>
+<div class="p-5 flex flex-col flex-grow">
+<div class="flex justify-between items-start mb-2">
+<h3 class="font-title-md text-title-md text-on-background">Studio Elegance</h3>
+<div class="bg-surface-container-low px-2 py-1 rounded text-on-background font-label-sm flex items-center gap-1">
+<span class="text-yellow-500">★</span> 4.9 <span class="text-on-surface-variant font-normal">(215 Reviews)</span>
+</div>
+</div>
+<div class="font-label-md text-label-md text-primary mb-4 flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">trending_up</span> 150 Bookings this week
+    </div>
+<div class="space-y-2 mb-6 text-sm">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="">📍 Vaishali Nagar, Jaipur</span>
+</div>
+<div class="flex justify-between items-center">
+<div class="flex items-center gap-1.5 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">payments</span>
+<span class="">From ₹1,200</span>
+</div>
+<span class="text-green-600 font-label-sm flex items-center gap-1">● Open Now</span>
+</div>
+</div>
+<div class="mt-auto flex gap-3">
+<button class="flex-1 bg-transparent border border-primary text-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary-pink-soft transition-colors text-center">View Salon</button>
+<button class="flex-1 bg-primary text-on-primary py-2.5 rounded-lg font-label-md text-label-md font-bold hover:bg-primary/90 transition-colors shadow-sm text-center">Book Now</button>
+</div>
+</div>
+</div></div>
+<!-- Customer App Banner -->
+<div class="w-full relative overflow-hidden rounded-2xl bg-gradient-to-r from-primary-container to-primary text-on-primary p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-lg mt-4">
+<div class="absolute inset-0 opacity-10 bg-[url('https://lh3.googleusercontent.com/aida-public/AB6AXuBsl-oR1C97gS5mZq_h6pI_6gE09tD7P4jOclZtC4kK28G6L9pW0MndlX9r1Pq9lE8bB8mP0B-61h0ZJ-v1Q8G2hT1tG9mZq9X2m2C5jX4V1K-5qL3eX-k3m1C2hP0j8Q')] bg-cover bg-center"></div>
+<div class="relative z-10 flex flex-col md:flex-row items-center md:items-start text-center md:text-left gap-4">
+<div class="bg-white/20 p-4 rounded-full backdrop-blur-md shrink-0">
+<span class="material-symbols-outlined text-3xl">smartphone</span>
+</div>
+<div>
+<h3 class="font-headline-md text-headline-md mb-2">Apne favourites ko Customer App mein dekhein</h3>
+<p class="font-body-md text-white/90 max-w-xl">Salons save karein, bookings manage karein aur apne favourite beauty experiences ko ek jagah access karein.</p>
+</div>
+</div>
+<button class="relative z-10 bg-surface-container-lowest text-primary px-6 py-3 rounded-xl font-bold font-label-md text-label-md hover:bg-surface-container-low transition-colors shadow-md whitespace-nowrap flex items-center gap-2">
+                Open Customer App <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar (Mobile) -->
+<nav class="flex md:hidden justify-around items-center w-full pb-safe pt-2 px-2 fixed bottom-0 z-50 rounded-t-xl bg-surface/95 backdrop-blur-lg border-t border-outline-subtle shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+<a class="flex flex-col items-center justify-center bg-primary-pink-soft text-primary rounded-xl px-4 py-2 scale-90 transition-transform duration-200" href="#">
+<span class="material-symbols-outlined text-2xl mb-1" style="font-variation-settings: 'FILL' 1;">home</span>
+<span class="font-label-sm text-label-sm">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-2 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-2xl mb-1">storefront</span>
+<span class="font-label-sm text-label-sm">Salons</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-2 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-2xl mb-1">event_available</span>
+<span class="font-label-sm text-label-sm">Bookings</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant px-4 py-2 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-2xl mb-1">person</span>
+<span class="font-label-sm text-label-sm">Profile</span>
+</a>
+</nav>
+</body></html>

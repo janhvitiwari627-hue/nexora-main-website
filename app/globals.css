@@ -171,10 +171,16 @@ button { cursor:pointer; }
 .top-jaipur-list { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:22px; }
 .top-jaipur-item { position:relative; min-width:0; }
 .top-jaipur-card { position:relative; }
-.rank-badge { position:absolute; top:12px; left:12px; z-index:2; background:#26181c; color:#fff; font-size:12px; font-weight:800; letter-spacing:.03em; padding:5px 10px; border-radius:999px; box-shadow:0 6px 16px #26181c33; }
+.rank-badge { position:absolute; top:12px; left:12px; z-index:3; background:rgba(38,24,28,.85); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); color:#fff; font-size:12px; font-weight:800; letter-spacing:.04em; padding:8px 12px; border-radius:12px; border:1px solid rgba(255,255,255,.16); box-shadow:0 8px 20px #26181c40; }
+/* Mockup layout: rank #1 is a large featured card on the left; ranks 2–5
+   fill a 2×2 grid beside it. Rank order in the DOM never changes. */
 @media(min-width:1024px) {
-  .top-jaipur-item:first-child { grid-column:span 2; }
-  .top-jaipur-card-featured .salon-visual { height:230px; }
+  .top-jaipur-list { grid-template-columns:minmax(0,1fr) minmax(0,1fr); grid-auto-rows:1fr; }
+  .top-jaipur-item:first-child { grid-row:span 2; }
+  .top-jaipur-item:first-child .top-jaipur-card { height:100%; }
+  .top-jaipur-card-featured { display:flex; flex-direction:column; }
+  .top-jaipur-card-featured .nx-salon-visual { flex:1 1 auto; height:auto; min-height:300px; }
+  .top-jaipur-card-featured .salon-visual:not(.nx-salon-visual) { height:230px; }
 }
 @media(max-width:920px) { .top-jaipur-list { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:620px) { .top-jaipur-list { grid-template-columns:1fr; } }
@@ -1120,4 +1126,358 @@ footer .brand { color:#fff; padding:0; }
   .premium-hero-title { font-size: 46px; }
   .premium-filter-row > button { padding-inline: 9px; }
   .premium-sort-select { flex-basis: 105px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Homepage mockup alignment layer ("Nexora Jaipur — Premium Beauty Tech")
+   ─────────────────────────────────────────────────────────────────────────
+   Additive restyle, scoped to .premium-home only. The classic .salon-card
+   anatomy is untouched for the /salons directory, salon pages and skeletons;
+   .nx-* modifiers add the mockup card anatomy (glass verified + rating chips
+   on the visual, icon info rows and a two-button action bar) to homepage
+   cards. All data comes from the existing live hooks — this layer is paint.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Shared mockup card anatomy ------------------------------------------------ */
+.premium-home .nx-salon-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid #eee1e6;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 13px 34px rgba(89,39,57,.05);
+  transition: transform .3s ease, box-shadow .3s ease, border-color .3s ease;
+}
+.premium-home .nx-salon-card:hover {
+  transform: translateY(-4px);
+  border-color: #e3bccd;
+  box-shadow: 0 18px 44px rgba(142,0,75,.09);
+}
+.premium-home .nx-salon-visual { height: 205px; }
+.premium-home .nx-verified-chip,
+.premium-home .nx-pick-chip {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 9px;
+  background: rgba(255,255,255,.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--premium-primary);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  box-shadow: 0 4px 12px rgba(38,24,29,.08);
+}
+.premium-home .nx-verified-chip span { font-size: 10px; }
+.premium-home .nx-rating-chip {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 9px;
+  border-radius: 9px;
+  background: rgba(255,255,255,.93);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #24191d;
+  font-size: 11px;
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgba(38,24,29,.09);
+}
+.premium-home .nx-rating-star { color: #f5a623; font-size: 12px; }
+.premium-home .nx-rating-count { color: #8a747d; font-weight: 600; }
+.premium-home .nx-rank-numeral {
+  position: absolute;
+  left: 14px;
+  bottom: 6px;
+  z-index: 2;
+  color: rgba(255,255,255,.94);
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 3px 14px rgba(24,10,16,.45);
+  pointer-events: none;
+}
+.premium-home .nx-salon-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  padding: 18px 19px 19px;
+}
+.premium-home .nx-salon-body h3 {
+  margin: 0 0 7px;
+  color: #24191d;
+  font-family: Inter, Arial, Helvetica, sans-serif;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -.015em;
+  line-height: 1.3;
+}
+.premium-home .nx-bookings-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 11px;
+  color: var(--premium-primary);
+  font-size: 12px;
+  font-weight: 750;
+}
+.premium-home .nx-trend-icon { font-size: 11px; }
+.premium-home .nx-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4.5px 0;
+  color: #6d5960;
+  font-size: 12.5px;
+}
+.premium-home .nx-info-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.premium-home .nx-info-icon { flex: none; width: 15px; text-align: center; font-size: 12px; font-style: normal; }
+.premium-home .nx-info-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.premium-home .nx-info-right { flex: none; max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #8a747d; font-size: 11px; font-weight: 700; }
+.premium-home .nx-open-chip,
+.premium-home .nx-closed-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+.premium-home .nx-open-chip { color: #16845b; }
+.premium-home .nx-closed-chip { color: #b3402f; font-size: 10.5px; }
+.premium-home .nx-closed-chip span { font-size: 7px; }
+.premium-home .nx-pulse-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: #2ea672;
+  animation: nx-pulse 1.6s ease-in-out infinite;
+}
+@keyframes nx-pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+.premium-home .nx-rating-line { margin-top: 9px; text-transform: none; letter-spacing: .01em; }
+.premium-home .nx-card-actions { margin-top: auto; padding-top: 15px; gap: 10px; }
+.premium-home .nx-card-actions button {
+  min-height: 44px;
+  border-radius: 11px;
+  font-size: 12px;
+  font-weight: 800;
+  transition: background-color .2s ease, border-color .2s ease, filter .2s ease;
+}
+.premium-home .nx-card-actions .premium-view-button { border: 1.5px solid var(--premium-primary); background: #fff; color: var(--premium-primary); }
+.premium-home .nx-card-actions .premium-view-button:hover { background: #fff0f5; filter: none; }
+.premium-home .nx-card-actions .premium-book-now-button { border: 1.5px solid var(--premium-primary); background: var(--premium-primary); color: #fff; box-shadow: 0 8px 18px rgba(142,0,75,.16); }
+.premium-home .nx-card-actions .premium-book-now-button:hover { background: var(--premium-primary-dark); filter: none; }
+.premium-home .nx-card-actions button:focus-visible { outline: 2px solid var(--premium-primary); outline-offset: 2px; }
+.premium-home .nx-card-actions button:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Nearby — quick area chips (mockup "Discovery Navigation") ----------------- */
+.premium-home .nx-area-chips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 0 0 14px;
+  padding: 2px 2px 8px;
+  scrollbar-width: none;
+}
+.premium-home .nx-area-chips::-webkit-scrollbar { display: none; }
+.premium-home .nx-area-chip {
+  flex: none;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 0 17px;
+  background: #fff;
+  color: #6d5960;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color .2s ease, border-color .2s ease, color .2s ease, box-shadow .2s ease;
+}
+.premium-home .nx-area-chip:hover { border-color: #d89ab4; background: #fff8fb; color: var(--premium-primary); }
+.premium-home .nx-area-chip.active,
+.premium-home .nx-area-chip[aria-pressed="true"] {
+  border-color: var(--premium-primary);
+  background: var(--premium-primary);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(142,0,75,.18);
+}
+.premium-home .nx-area-chip:focus-visible { outline: 2px solid var(--premium-primary); outline-offset: 2px; }
+
+/* Smart Picks — header row + curated intro card (mockup) -------------------- */
+.premium-home .smart-picks-header-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+.premium-home .smart-picks-header-row .section-heading { margin-bottom: 22px; }
+.premium-home .smart-picks-header-row .smart-picks-actions { margin: 0 0 22px; flex: none; }
+.premium-home .nx-handpicked-card {
+  display: flex;
+  align-items: center;
+  gap: 17px;
+  margin: 0 0 24px;
+  padding: 19px 22px;
+  border: 1px solid #f0dde5;
+  border-left: 4px solid var(--premium-primary);
+  border-radius: 18px;
+  background: rgba(255,255,255,.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 12px 32px rgba(142,0,75,.05);
+}
+.premium-home .nx-handpicked-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  flex: none;
+  border-radius: 50%;
+  background: #fde7f3;
+  color: var(--premium-primary);
+  font-size: 18px;
+}
+.premium-home .nx-handpicked-copy { min-width: 0; }
+.premium-home .nx-handpicked-copy h3 { margin: 0 0 5px; color: #24191d; font-size: 16px; font-weight: 800; letter-spacing: -.01em; }
+.premium-home .nx-handpicked-copy p { margin: 0; color: #6d5960; font-size: 13px; line-height: 1.6; }
+
+/* Marketplace Activity strip (mockup "TRENDING ON NEXORA" footer banner) ---- */
+.premium-home .nx-marketplace-activity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -6px clamp(24px,7vw,110px) 42px;
+  padding: 13px 17px;
+  border: 1px solid #f0d5e1;
+  border-radius: 12px;
+  background: #fdf1f6;
+  color: #6d5960;
+  font-size: 13px;
+}
+.premium-home .nx-marketplace-activity p { margin: 0; line-height: 1.55; }
+.premium-home .nx-marketplace-activity b { color: var(--premium-primary); }
+.premium-home .nx-activity-dot {
+  flex: none;
+  color: var(--premium-primary);
+  font-size: 9px;
+  animation: nx-pulse 1.6s ease-in-out infinite;
+}
+
+/* Customer App banner (mockup gradient CTA) --------------------------------- */
+.premium-home .nx-customer-app-banner {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  overflow: hidden;
+  margin: 0 clamp(24px,7vw,110px) 10px;
+  padding: 34px 38px;
+  border-radius: 24px;
+  background: linear-gradient(105deg, #b90064 0%, var(--premium-primary) 58%, #650034 100%);
+  color: #fff;
+  box-shadow: 0 24px 55px rgba(142,0,75,.28);
+}
+.premium-home .nx-customer-app-banner::before {
+  content: "";
+  position: absolute;
+  inset: -40% -10% auto auto;
+  width: 420px;
+  height: 420px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,.14) 0%, rgba(255,255,255,0) 68%);
+  z-index: -1;
+  pointer-events: none;
+}
+.premium-home .nx-banner-icon {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  flex: none;
+  border-radius: 50%;
+  background: rgba(255,255,255,.16);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #fff;
+}
+.premium-home .nx-banner-icon svg { width: 30px; height: 30px; }
+.premium-home .nx-banner-copy { flex: 1 1 auto; min-width: 0; }
+.premium-home .nx-banner-copy h2 {
+  margin: 0 0 8px;
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: clamp(21px, 2.4vw, 28px);
+  font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.2;
+}
+.premium-home .nx-banner-copy p { margin: 0; max-width: 580px; color: rgba(255,255,255,.87); font-size: 14px; line-height: 1.65; }
+.premium-home .nx-banner-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: none;
+  min-height: 52px;
+  border: 0;
+  border-radius: 14px;
+  padding: 0 27px;
+  background: #fff;
+  color: var(--premium-primary);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  box-shadow: 0 12px 30px rgba(30,6,17,.22);
+  cursor: pointer;
+  transition: transform .2s ease, box-shadow .2s ease, background-color .2s ease;
+}
+.premium-home .nx-banner-cta:hover { transform: translateY(-2px); box-shadow: 0 16px 36px rgba(30,6,17,.26); background: #fff6fa; }
+.premium-home .nx-banner-cta:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.premium-home .nx-banner-cta:disabled { opacity: .75; cursor: wait; transform: none; }
+
+/* Mockup responsiveness ------------------------------------------------------ */
+@media (max-width: 680px) {
+  .premium-home .smart-picks-header-row { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .premium-home .smart-picks-header-row .smart-picks-actions { margin: 0 0 14px; }
+  .premium-home .nx-handpicked-card { align-items: flex-start; }
+  .premium-home .nx-marketplace-activity { margin: -4px 16px 30px; }
+  .premium-home .nx-customer-app-banner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 18px;
+    margin: 0 16px 10px;
+    padding: 26px 22px;
+  }
+  .premium-home .nx-banner-cta { width: 100%; }
+  .premium-home .nx-salon-body h3 { font-size: 17px; }
+}
+
+/* Reduced motion: decorative pulses stop, content stays */
+@media (prefers-reduced-motion: reduce) {
+  .premium-home .nx-pulse-dot,
+  .premium-home .nx-activity-dot { animation: none !important; }
+  .premium-home .nx-salon-card,
+  .premium-home .nx-banner-cta { transition: none !important; }
+  .premium-home .nx-salon-card:hover { transform: none; }
 }

@@ -1113,7 +1113,7 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
             {loading ? "Published salons load ho rahe hain…" : catalogError ? "Published salons load nahi ho sake." : "Published salons are loaded from the live Nexora marketplace."}
           </p>
           <div className="premium-marketplace-results">
-            <CatalogStrip navigate={navigate} online={online} statsBySalon={statsBySalon} />
+            <CatalogStrip navigate={navigate} online={online} statsBySalon={statsBySalon} hoursById={nearbyHours} fixUsable={nearbyFixUsable} gpsFix={gpsFix} />
           </div>
         </div>
       </section>
@@ -1232,6 +1232,21 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
             Filters{nearbyActiveFilterCount > 0 ? ` (${nearbyActiveFilterCount})` : ""}
           </button>
         </div>
+        {/* Popular-area quick chips — same single nearbyArea state + same
+            select semantics; a chip never invents an area outside JAIPUR_ZONES. */}
+        <div className="nx-area-chips" role="group" aria-label="Popular Jaipur areas — quick area change">
+          {NEARBY_QUICK_AREAS.map((quickArea) => (
+            <button
+              key={quickArea}
+              type="button"
+              className={`nx-area-chip${nearbyArea === quickArea ? " active" : ""}`}
+              aria-pressed={nearbyArea === quickArea}
+              onClick={() => setNearbyArea((current) => (current === quickArea ? "" : quickArea))}
+            >
+              {quickArea}
+            </button>
+          ))}
+        </div>
         <p className="nearby-gps-note">Nearby salons aur distance dikhane ke liye location access use hoga. Jaipur default location hai — bina GPS ke bhi results milte hain.</p>
         <p className="nearby-status" role="status" aria-live="polite">{nearbyStatus}{!online ? " Aap offline hain." : ""}{location.isImproving && location.candidateAccuracy != null ? ` (best so far ${formatAccuracy(location.candidateAccuracy)})` : ""}</p>
 
@@ -1338,6 +1353,14 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         );
       })()}
 
+      {/* Customer App CTA (mockup gradient banner) — sits with the popular
+          picks content; routing is auth-aware through the canonical portal. */}
+      <CustomerAppBanner
+        authLoading={authState.loading}
+        isAuthenticated={Boolean(authState.session && authState.role)}
+        navigate={navigate}
+      />
+
 {/*
   ── HOMEPAGE PHASE 1 · SECTION 12 — TRENDING AND MOST BOOKED ─────────────
   The two existing homepage render sites are consolidated here (stable
@@ -1347,19 +1370,30 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   visibility key remains the Section 12 admin gate. PHASE1_SECTION12.md.
 */}
 {visible('trending') && (
-  <TrendingMostBookedSection
-    trendingRows={trendingRows}
-    trendingLoading={trendingLoading}
-    trendingError={trendingError}
-    onRetryTrending={retryTrending}
-    popularServices={popularServices}
-    popularLoading={popularLoading}
-    popularError={popularError}
-    onRetryPopular={retryPopularServices}
-    salonReferences={section12SalonReferences}
-    online={online}
-    navigate={navigate}
-  />
+  <>
+    <TrendingMostBookedSection
+      trendingRows={trendingRows}
+      trendingLoading={trendingLoading}
+      trendingError={trendingError}
+      onRetryTrending={retryTrending}
+      popularServices={popularServices}
+      popularLoading={popularLoading}
+      popularError={popularError}
+      onRetryPopular={retryPopularServices}
+      salonReferences={section12SalonReferences}
+      online={online}
+      navigate={navigate}
+    />
+    {/* Live marketplace pulse (mockup "Marketplace Activity" strip) — same
+        live rows, same admin gate; hidden unless both sources are healthy. */}
+    <MarketplaceActivityBanner
+      online={online}
+      trendingError={trendingError}
+      popularError={popularError}
+      trendingRows={trendingRows}
+      popularServices={popularServices}
+    />
+  </>
 )}
 
 {visible('offers') && (
@@ -1529,7 +1563,7 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
  * articles with a real button (keyboard + screen-reader safe); counts come
  * from the live RPC only — unavailable counts are never faked as 0.
  */
-type PremiumIconName = "search" | "location" | "close" | "menu" | "verified" | "sparkles" | "home" | "store" | "booking" | "person";
+type PremiumIconName = "search" | "location" | "close" | "menu" | "verified" | "sparkles" | "home" | "store" | "booking" | "person" | "phone";
 
 /** Small inline glyphs keep the public homepage crisp without a third-party
  * icon runtime or a network dependency. They are decorative; surrounding
@@ -1556,6 +1590,7 @@ function PremiumIcon({ name, className }: { name: PremiumIconName; className?: s
     case "store": return <svg {...props}><path d="M4 10v10h16V10" /><path d="M3 10 5 4h14l2 6" /><path d="M3 10a3 3 0 0 0 5 2.2A3 3 0 0 0 12 10a3 3 0 0 0 4 2.2A3 3 0 0 0 21 10M9 20v-5h6v5" /></svg>;
     case "booking": return <svg {...props}><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M8 3v4M16 3v4M4 10h16M8 14h3" /></svg>;
     case "person": return <svg {...props}><circle cx="12" cy="8" r="3.2" /><path d="M5.5 20c.7-3.3 2.8-5 6.5-5s5.8 1.7 6.5 5" /></svg>;
+    case "phone": return <svg {...props}><rect x="7" y="3" width="10" height="18" rx="2.5" /><path d="M10.5 5.5h3M11 17.8h2" /></svg>;
   }
 }
 
@@ -1580,11 +1615,9 @@ function PremiumServiceRail({ navigate }: { navigate: (path: string) => void }) 
       <div className="premium-content-width">
         <div className="premium-services-heading">
           <div>
-            <p className="premium-section-eyebrow">Curated for you</p>
             <h2 id="premium-services-heading">Explore Beauty Services</h2>
             <p>Apni favourite beauty service quickly discover karein.</p>
           </div>
-          <span className="premium-services-note">Personalise your next ritual</span>
         </div>
         <div className="premium-service-track" role="list" aria-label="Beauty service shortcuts">
           {PREMIUM_SERVICE_SHORTCUTS.map((service) => (
@@ -1597,7 +1630,6 @@ function PremiumServiceRail({ navigate }: { navigate: (path: string) => void }) 
             >
               <span className="premium-service-icon"><CategoryIcon name={service.icon} /></span>
               <span className="premium-service-label">{service.label}</span>
-              <span aria-hidden="true" className="premium-service-arrow">↗</span>
             </button>
           ))}
         </div>
@@ -1914,12 +1946,25 @@ function PartnerPromosStrip({ navigate }: { navigate: (path: string) => void }) 
   return <div className="service-grid">{promos.map((promo) => <article className="service-card" key={promo.offer_id}><div><h3>{promo.offer_name ?? "Offer"} <em style={{ fontWeight: 400, fontSize: 10, color: "var(--primary)" }}>✦ partner approved</em></h3><p>{promo.description || ""}</p><small>{promo.salon_name} · {promo.discount_type === "percent" ? `${promo.discount_value}% off` : promo.discount_value != null ? `${money(promo.discount_value * 100)} off` : "Limited offer"}</small></div><button className="text-button" onClick={() => navigate(`/salons/${promo.salon_slug}`)}>View salon</button></article>)}</div>;
 }
 
-function CatalogStrip({ navigate, online, statsBySalon }: { navigate: (path: string) => void; online: boolean; statsBySalon?: Record<string, SalonStats> }) {
+function CatalogStrip({ navigate, online, statsBySalon, hoursById, fixUsable, gpsFix }: { navigate: (path: string) => void; online: boolean; statsBySalon?: Record<string, SalonStats>; hoursById?: Record<string, { opens_at: string | null; closes_at: string | null; is_closed: boolean }>; fixUsable?: boolean; gpsFix?: { latitude: number; longitude: number } | null }) {
   const { items, loading, error, load } = useCatalog(online);
   if (loading) return <SalonSkeletons count={3} />;
   if (error) return <StateCard title="Could not load salons" text={error} action="Retry" onAction={load} />;
   if (!items.length) return <StateCard title="No published salons yet" text="Owner-approved salon websites will appear here when published." />;
-  return <div className="salon-grid">{items.slice(0, 3).map((item) => <SalonCard key={item.id} item={item} navigate={navigate} stats={statsBySalon?.[item.id]} />)}</div>;
+  return (
+    <div className="salon-grid nx-marketplace-grid">
+      {items.slice(0, 3).map((item) => {
+        // Distance only from approved salon coordinates + a usable Section 06
+        // fix — never guessed. Open Now reuses the shared salon_hours fetch
+        // (salonOpenState keeps its config-hours fallback).
+        const distanceKm = fixUsable && gpsFix && item.approval_status === "approved" &&
+          typeof item.latitude === "number" && typeof item.longitude === "number"
+          ? haversineKm(gpsFix.latitude, gpsFix.longitude, Number(item.latitude), Number(item.longitude))
+          : null;
+        return <SalonCard key={item.id} item={item} navigate={navigate} stats={statsBySalon?.[item.id]} distanceKm={distanceKm} openState={salonOpenState(item, hoursById?.[item.id])} />;
+      })}
+    </div>
+  );
 }
 
 /**
@@ -2714,6 +2759,14 @@ function countActiveNearbyFilters(f: NearbyFilters): number {
 }
 
 /**
+ * Quick-pick localities shown as tappable chips (mockup "Discovery
+ * Navigation"). Every entry exists verbatim in JAIPUR_ZONES, so a chip sets
+ * the exact same `nearbyArea` value as the area <select> — one source of
+ * truth, identical filtering semantics.
+ */
+const NEARBY_QUICK_AREAS = ["Jhotwara", "Vaishali Nagar", "Malviya Nagar", "Mansarovar", "Raja Park", "C-Scheme", "Jagatpura"] as const;
+
+/**
  * Gender hint derived from the business category text — the same documented
  * heuristic the /salons client-side path uses. Unknown stays null (neutral),
  * never deleted and never guessed as a specific gender.
@@ -2857,34 +2910,46 @@ function NearbyShopCard({
   const rating = nearbyRatingCopy(item.rating_average, item.review_count);
   const gender = genderHintFromCategory(item.business_category);
   const openLabel = openState === null ? "Hours unavailable" : openState ? "Open now" : "Closed now";
+  const ratingValue = Number(item.rating_average ?? 0);
+  const reviewCount = Number(item.review_count ?? 0);
+  const hasRating = ratingValue > 0 && reviewCount > 0;
   return (
-    <article className="salon-card nearby-card">
+    <article className="salon-card nearby-card nx-salon-card">
       <div
-        className="salon-visual"
+        className="salon-visual nx-salon-visual"
         role="img"
         aria-label={`${item.name} salon photo`}
         style={cover ? { backgroundImage: `url("${cover.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
       >
         {!cover && <span aria-hidden="true">✦</span>}
+        <span className="nx-verified-chip"><span aria-hidden="true">✓</span> Verified</span>
+        {hasRating && (
+          <span className="nx-rating-chip" aria-label={`${ratingValue.toFixed(1)} out of 5, ${reviewCount} review${reviewCount === 1 ? "" : "s"}`}>
+            <span aria-hidden="true" className="nx-rating-star">★</span> {ratingValue.toFixed(1)} <span className="nx-rating-count">({reviewCount})</span>
+          </span>
+        )}
       </div>
-      <div className="salon-body">
-        <div className="salon-meta">
-          <span>{item.business_category ?? "Salon"}{gender ? ` · ${gender === "female" ? "Women" : gender === "male" ? "Men" : "Unisex"}` : ""}</span>
-          <span>{distanceKm != null ? `📍 ${formatDistance(distanceKm)} away` : "Distance unavailable"}</span>
-        </div>
+      <div className="salon-body nx-salon-body">
         <h3>{item.name}</h3>
-        <p>{item.area ?? item.city}, {item.city}</p>
-        <div className="salon-meta">
-          <span>{rating ?? "No ratings yet"}</span>
-          <span>{openLabel}</span>
+        <div className="nx-info-row">
+          <span className="nx-info-item"><span aria-hidden="true" className="nx-info-icon">📍</span><span className="nx-info-text">{item.area ?? item.city}, {item.city}{gender ? ` · ${gender === "female" ? "Women" : gender === "male" ? "Men" : "Unisex"}` : ""}</span></span>
+          <span className="nx-info-right">{distanceKm != null ? `📍 ${formatDistance(distanceKm)} away` : "Distance unavailable"}</span>
         </div>
-        <div className="salon-bottom">
-          <b>{nearbyPriceCopy(item.starting_price_paise)}</b>
+        <div className="nx-info-row">
+          <span className="nx-info-item"><span aria-hidden="true" className="nx-info-icon">₹</span><span className="nx-info-text">{nearbyPriceCopy(item.starting_price_paise)}</span></span>
+          {openState === true
+            ? <span className="nx-open-chip"><span aria-hidden="true" className="nx-pulse-dot" /> Open Now</span>
+            : openState === false
+              ? <span className="nx-closed-chip"><span aria-hidden="true">●</span> Closed</span>
+              : <span className="nx-info-right">{openLabel}</span>}
+        </div>
+        <div className="salon-meta nx-rating-line">
+          <span>{rating ?? "No ratings yet"}</span>
           <VerifiedBadge salonName={item.name} />
         </div>
-        <div className="button-row" style={{ marginTop: 10 }}>
-          <button className="secondary compact" disabled={!item.website.slug} onClick={() => item.website.slug && navigate(`/salons/${item.website.slug}`)}>View Salon</button>
-          <button className="secondary compact" disabled={!item.website.slug} onClick={() => item.website.slug && navigate(`/app/customer/?salon=${item.id}&returnTo=${encodeURIComponent(`/salons/${item.website.slug}`)}`)}>Book Now</button>
+        <div className="premium-salon-actions nx-card-actions">
+          <button type="button" className="premium-view-button" disabled={!item.website.slug} onClick={() => item.website.slug && navigate(`/salons/${item.website.slug}`)}>View Salon</button>
+          <button type="button" className="premium-book-now-button" disabled={!item.website.slug} onClick={() => item.website.slug && navigate(`/app/customer/?salon=${item.id}&returnTo=${encodeURIComponent(`/salons/${item.website.slug}`)}`)}>Book Now</button>
         </div>
       </div>
     </article>
@@ -3348,11 +3413,24 @@ function SmartPicksSection({
 
   return (
     <section id="smart-picks" aria-labelledby="smart-picks-heading" className="section scroll-mt-24">
-      <div className="section-heading"><span className="eyebrow">{heading.eyebrow}</span><h2 id="smart-picks-heading">{heading.title}</h2><p>{heading.copy}</p></div>
+      <div className="smart-picks-header-row">
+        <div className="section-heading"><span className="eyebrow">{heading.eyebrow}</span><h2 id="smart-picks-heading">{heading.title}</h2><p>{heading.copy}</p></div>
+        <div className="smart-picks-actions">
+          <button type="button" className="secondary compact nx-refresh-button focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b]" onClick={onRefresh} disabled={authLoading || loading}>Refresh Picks</button>
+        </div>
+      </div>
       {statusLine && <p className="nearby-status" role="status" aria-live="polite">{statusLine}</p>}
 
-      <div className="smart-picks-actions">
-        <button type="button" className="secondary compact focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#8e004b]" onClick={onRefresh} disabled={authLoading || loading}>Refresh Picks</button>
+      {/* Curated intro (mockup "Handpicked for you" glass card) — copy only;
+          every claim stays mode-honest (rule-based, never AI). */}
+      <div className="nx-handpicked-card">
+        <span className="nx-handpicked-icon" aria-hidden="true">♥</span>
+        <div className="nx-handpicked-copy">
+          <h3>{mode === "personalized" ? "Picked for you" : "Handpicked for you"}</h3>
+          <p>{mode === "personalized"
+            ? "Aapki Nexora activity aur preferences ke basis par selected salons — personalized picks, rule-based ranking se."
+            : "Popular ratings, activity aur marketplace signals ke basis par selected salons explore karein."}</p>
+        </div>
       </div>
 
       {authLoading || loading ? (
@@ -3361,7 +3439,7 @@ function SmartPicksSection({
              disappearance), skeletons only when nothing is on screen. */
           <div className="nearby-grid">
             {displayRows.map((row) => (
-              <RecommendationCard key={row.id} row={row} navigate={navigate} showReason={mode === "personalized"} reasonOverride={mode === "location" ? `Popular in ${area}` : undefined} distanceKm={distanceFor(row.id)} openLabel={openLabelFor(row.id)} />
+              <RecommendationCard key={row.id} row={row} navigate={navigate} showReason={mode === "personalized"} pickChip={mode === "personalized" ? undefined : "🔥 Popular Pick"} reasonOverride={mode === "location" ? `Popular in ${area}` : undefined} distanceKm={distanceFor(row.id)} openLabel={openLabelFor(row.id)} />
             ))}
           </div>
         ) : (
@@ -3375,7 +3453,7 @@ function SmartPicksSection({
             <p className="saved-results-label">Saved picks</p>
             <div className="nearby-grid">
               {displayRows.map((row) => (
-                <RecommendationCard key={row.id} row={row} navigate={navigate} showReason={mode === "personalized"} reasonOverride={mode === "location" ? `Popular in ${area}` : undefined} distanceKm={distanceFor(row.id)} openLabel="Timings unavailable" />
+                <RecommendationCard key={row.id} row={row} navigate={navigate} showReason={mode === "personalized"} pickChip={mode === "personalized" ? undefined : "🔥 Popular Pick"} reasonOverride={mode === "location" ? `Popular in ${area}` : undefined} distanceKm={distanceFor(row.id)} openLabel="Timings unavailable" />
               ))}
             </div>
           </>
@@ -3395,7 +3473,7 @@ function SmartPicksSection({
           {isCustomer && !isPersonalized && <p className="saved-results-label">Popular Picks</p>}
           <div className="nearby-grid">
             {displayRows.map((row) => (
-              <RecommendationCard key={row.id} row={row} navigate={navigate} showReason={mode === "personalized"} reasonOverride={mode === "location" ? `Popular in ${area}` : undefined} distanceKm={distanceFor(row.id)} openLabel={openLabelFor(row.id)} />
+              <RecommendationCard key={row.id} row={row} navigate={navigate} showReason={mode === "personalized"} pickChip={mode === "personalized" ? undefined : "🔥 Popular Pick"} reasonOverride={mode === "location" ? `Popular in ${area}` : undefined} distanceKm={distanceFor(row.id)} openLabel={openLabelFor(row.id)} />
             ))}
           </div>
         </>
@@ -3880,35 +3958,52 @@ function TopRatedCard({
   const hasRating = rating > 0 && reviews > 0;
   const ratingLine = hasRating ? `${rating.toFixed(1)} ★ · ${reviews} review${reviews === 1 ? "" : "s"}` : "No ratings yet";
   const cover = row.cover_image_path?.startsWith("http") ? row.cover_image_path : null;
+  const bookings = Number(row.booking_count ?? 0);
+  const hasBookings = Number.isFinite(bookings) && bookings > 0;
+  const openState = openLabel == null ? null : openLabel === "Open now" ? true : openLabel === "Closed now" ? false : null;
   return (
-    <article className={`salon-card top-jaipur-card${featured ? " top-jaipur-card-featured" : ""}`}>
+    <article className={`salon-card top-jaipur-card nx-salon-card${featured ? " top-jaipur-card-featured" : ""}`}>
       {rank != null && <span className="rank-badge" aria-label={`Rank ${rank}`}>#{rank}</span>}
       <div
-        className="salon-visual"
+        className="salon-visual nx-salon-visual"
         role="img"
         aria-label={`${row.name} salon photo`}
         style={cover ? { backgroundImage: `url("${cover.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
       >
         {!cover && <span aria-hidden="true">✦</span>}
+        {rank != null && <span aria-hidden="true" className="nx-rank-numeral">{String(rank).padStart(2, "0")}</span>}
+        <span className="nx-verified-chip"><span aria-hidden="true">✦</span> Verified</span>
+        {hasRating && (
+          <span className="nx-rating-chip" aria-label={`${rating.toFixed(1)} out of 5, ${reviews} review${reviews === 1 ? "" : "s"}`}>
+            <span aria-hidden="true" className="nx-rating-star">★</span> {rating.toFixed(1)} <span className="nx-rating-count">({reviews})</span>
+          </span>
+        )}
       </div>
-      <div className="salon-body">
-        <div className="salon-meta">
-          <span>{row.business_category ?? "Salon"}</span>
-          <span aria-label={hasRating ? `${rating.toFixed(1)} out of 5, ${reviews} review${reviews === 1 ? "" : "s"}` : "No ratings yet"}>{ratingLine}</span>
-        </div>
+      <div className="salon-body nx-salon-body">
         <h3>{row.name}</h3>
-        <p>{row.area ?? row.city}, {row.city}</p>
-        <div className="salon-meta">
-          <span>{distanceKm != null ? `📍 ${formatDistance(distanceKm)} away` : "Distance unavailable"}</span>
-          <span>{openLabel ?? "Timings unavailable"}</span>
+        <p className="nx-bookings-line">
+          <span aria-hidden="true" className="nx-trend-icon">↗</span>
+          {hasBookings ? `${bookings} booking${bookings === 1 ? "" : "s"}` : ratingLine}
+        </p>
+        <div className="nx-info-row">
+          <span className="nx-info-item"><span aria-hidden="true" className="nx-info-icon">📍</span><span className="nx-info-text">{row.area ?? row.city}, {row.city}{row.business_category ? ` · ${row.business_category}` : ""}</span></span>
+          <span className="nx-info-right">{distanceKm != null ? `📍 ${formatDistance(distanceKm)} away` : "Distance unavailable"}</span>
         </div>
-        <div className="salon-bottom">
-          <b>{nearbyPriceCopy(row.starting_price_paise)}</b>
+        <div className="nx-info-row">
+          <span className="nx-info-item"><span aria-hidden="true" className="nx-info-icon">₹</span><span className="nx-info-text">{nearbyPriceCopy(row.starting_price_paise)}</span></span>
+          {openState === true
+            ? <span className="nx-open-chip"><span aria-hidden="true" className="nx-pulse-dot" /> Open Now</span>
+            : openState === false
+              ? <span className="nx-closed-chip"><span aria-hidden="true">●</span> Closed</span>
+              : <span className="nx-info-right">{openLabel ?? "Timings unavailable"}</span>}
+        </div>
+        <div className="salon-meta nx-rating-line">
+          <span aria-label={hasRating ? `${rating.toFixed(1)} out of 5, ${reviews} review${reviews === 1 ? "" : "s"}` : "No ratings yet"}>{ratingLine}</span>
           <VerifiedBadge salonName={row.name} />
         </div>
-        <div className="button-row" style={{ marginTop: 10 }}>
-          <button className="secondary compact" disabled={!row.slug} onClick={() => row.slug && navigate(`/salons/${row.slug}`)}>View Salon</button>
-          <button className="secondary compact" disabled={!row.slug} onClick={() => row.slug && navigate(`/app/customer/?salon=${row.id}&returnTo=${encodeURIComponent(`/salons/${row.slug}`)}`)}>Book Now</button>
+        <div className="premium-salon-actions nx-card-actions">
+          <button type="button" className="premium-book-now-button" disabled={!row.slug} onClick={() => row.slug && navigate(`/app/customer/?salon=${row.id}&returnTo=${encodeURIComponent(`/salons/${row.slug}`)}`)}>Book Now</button>
+          <button type="button" className="premium-view-button" disabled={!row.slug} onClick={() => row.slug && navigate(`/salons/${row.slug}`)}>View Salon</button>
         </div>
       </div>
     </article>
@@ -4771,6 +4866,7 @@ function RecommendationCard({
   reasonOverride,
   distanceKm,
   openLabel,
+  pickChip,
 }: {
   row: RecommendationRow;
   navigate: (path: string) => void;
@@ -4778,6 +4874,9 @@ function RecommendationCard({
   reasonOverride?: string;
   distanceKm?: number | null;
   openLabel?: string;
+  /** Display-only popularity marker for the backend "popular" modes. Never
+      shown for personalized rows (those carry the backend reason instead). */
+  pickChip?: string;
 }) {
   const rating = Number(row.rating_avg ?? 0);
   const reviews = Number(row.review_count ?? 0);
@@ -4786,7 +4885,7 @@ function RecommendationCard({
   const cover = row.cover_image_path?.startsWith("http") ? row.cover_image_path : null;
   const reason = showReason && row.personalized && row.reason ? row.reason : reasonOverride ?? null;
   return (
-    <article className="salon-card smart-picks-card">
+    <article className="salon-card smart-picks-card nx-salon-card">
       <div
         className="salon-visual"
         role="img"
@@ -4794,6 +4893,12 @@ function RecommendationCard({
         style={cover ? { backgroundImage: `url("${cover.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
       >
         {!cover && <span aria-hidden="true">✦</span>}
+        {pickChip && <span className="nx-pick-chip">{pickChip}</span>}
+        {hasRating && (
+          <span className="nx-rating-chip" aria-label={`${rating.toFixed(1)} out of 5, ${reviews} review${reviews === 1 ? "" : "s"}`}>
+            <span aria-hidden="true" className="nx-rating-star">★</span> {rating.toFixed(1)} <span className="nx-rating-count">({reviews})</span>
+          </span>
+        )}
       </div>
       <div className="salon-body">
         <div className="salon-meta">
@@ -4820,16 +4925,51 @@ function RecommendationCard({
   );
 }
 
-function SalonCard({ item, navigate, stats }: { item: CatalogItem; navigate: (path: string) => void; stats?: SalonStats }) {
+function SalonCard({ item, navigate, stats, distanceKm, openState }: { item: CatalogItem; navigate: (path: string) => void; stats?: SalonStats; distanceKm?: number | null; openState?: boolean | null }) {
   const rating = stats ? Number(stats.rating_avg) : Number(item.rating_average);
   const reviews = stats ? Number(stats.review_count) : Number(item.review_count);
   const bookings = stats ? Number(stats.booking_count) : 0;
+  const cover = item.cover_image_path?.startsWith("http") ? item.cover_image_path : null;
+  const hasRating = rating > 0 && reviews > 0;
+  // Booking counts are the all-time marketplace aggregate — the UI never
+  // invents a time window ("this week") the data does not carry.
   return (
-    <article className="salon-card">
-      <div className="salon-visual" style={item.cover_image_path?.startsWith("http") ? { backgroundImage: `url("${item.cover_image_path.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}>{!item.cover_image_path?.startsWith("http") && <span>✦</span>}<em>Verified</em></div>
-      <div className="salon-body"><div className="salon-meta"><span>{item.business_category ?? "Salon"}</span><span>★ {rating.toFixed(1)} ({reviews}){bookings > 0 ? ` · ${bookings} bookings` : ""}</span></div>
-      <h3>{item.name}</h3><p>{item.area ?? item.city}, {item.city}</p><div className="salon-bottom"><b>From {money(item.starting_price_paise)}</b><button onClick={() => navigate(`/salons/${item.website.slug}`)}>View salon</button></div>
-        <div className="premium-salon-actions">
+    <article className="salon-card nx-salon-card">
+      <div
+        className="salon-visual nx-salon-visual"
+        role="img"
+        aria-label={`${item.name} salon photo`}
+        style={cover ? { backgroundImage: `url("${cover.replaceAll('"', "%22")}")`, backgroundSize: "cover", backgroundPosition: "center" } : undefined}
+      >
+        {!cover && <span aria-hidden="true">✦</span>}
+        <span className="nx-verified-chip"><span aria-hidden="true">✓</span> Verified</span>
+        {hasRating && (
+          <span className="nx-rating-chip" aria-label={`${rating.toFixed(1)} out of 5, ${reviews} review${reviews === 1 ? "" : "s"}`}>
+            <span aria-hidden="true" className="nx-rating-star">★</span> {rating.toFixed(1)} <span className="nx-rating-count">({reviews})</span>
+          </span>
+        )}
+      </div>
+      <div className="salon-body nx-salon-body">
+        <h3>{item.name}</h3>
+        <p className="nx-bookings-line">
+          <span aria-hidden="true" className="nx-trend-icon">↗</span>
+          {bookings > 0
+            ? `${bookings} booking${bookings === 1 ? "" : "s"}`
+            : `${item.business_category ?? "Salon"} in ${item.city ?? "Jaipur"}`}
+        </p>
+        <div className="nx-info-row">
+          <span className="nx-info-item"><span aria-hidden="true" className="nx-info-icon">📍</span><span className="nx-info-text">{item.area ?? item.city}, {item.city}</span></span>
+          <span className="nx-info-right">{distanceKm != null ? formatDistance(distanceKm) : "Distance unavailable"}</span>
+        </div>
+        <div className="nx-info-row">
+          <span className="nx-info-item"><span aria-hidden="true" className="nx-info-icon">₹</span><span className="nx-info-text">From {money(item.starting_price_paise)}</span></span>
+          {openState === true
+            ? <span className="nx-open-chip"><span aria-hidden="true" className="nx-pulse-dot" /> Open Now</span>
+            : openState === false
+              ? <span className="nx-closed-chip"><span aria-hidden="true">●</span> Closed</span>
+              : <span className="nx-info-right">Hours unavailable</span>}
+        </div>
+        <div className="premium-salon-actions nx-card-actions">
           <button type="button" className="premium-view-button" onClick={() => navigate(`/salons/${item.website.slug}`)}>View Salon</button>
           <button type="button" className="premium-book-now-button" onClick={() => navigate(`/app/customer/?salon=${item.id}&returnTo=${encodeURIComponent(`/salons/${item.website.slug}`)}`)}>Book Now</button>
         </div>
@@ -6572,6 +6712,91 @@ function LegalPage({ type }: { type: "terms" | "privacy" | "refund" }) {
     refund: { title: "Cancellation & Refund Policy", intro: "Refund eligibility is decided by trusted booking and payment state, never by the frontend.", sections: [["Customer cancellation", "Same-day customer cancellation and no-show are not refundable."], ["Salon cancellation", "A salon or Shop Owner cancellation qualifies the customer for a full advance refund through the verified server flow."], ["Service started", "A booking cannot be cancelled after service starts. The customer may open a dispute instead."], ["Refund timing", "Approved refunds are recorded against the original payment and remain pending until the payment provider confirms processing."]] },
   }[type];
   return <main className="legal page-top"><span className="eyebrow">Nexora legal</span><h1>{copy.title}</h1><p className="legal-intro">{copy.intro}</p>{copy.sections.map(([heading, body]) => <section key={heading}><h2>{heading}</h2><p>{body}</p></section>)}<p className="legal-date">Effective: 28 July 2026</p></main>;
+}
+
+/**
+ * Marketplace Activity strip (mockup "TRENDING ON NEXORA" footer banner).
+ * Every claim is taken verbatim from the live aggregates the homepage already
+ * loads: the top Most Booked Services row (backend booking order) and the
+ * first area present in the live Trending rows (same normalization Section 12
+ * uses). Rendered only when both live sources are online and error-free —
+ * otherwise the strip simply does not exist (nothing is ever guessed).
+ */
+function MarketplaceActivityBanner({
+  online,
+  trendingError,
+  popularError,
+  trendingRows,
+  popularServices,
+}: {
+  online: boolean;
+  trendingError: boolean;
+  popularError: boolean;
+  trendingRows: TrendingRow[];
+  popularServices: PopularService[];
+}) {
+  const topService = useMemo(() => {
+    for (const service of popularServices) {
+      if (isRenderablePopularService(service)) return service;
+    }
+    return null;
+  }, [popularServices]);
+  const topArea = useMemo(() => {
+    const seen = new Set<string>();
+    for (const row of trendingRows) {
+      if (!isRenderableTrendingSalonRow(row)) continue;
+      const area = normalizeTrendingAreaPart(row.area);
+      if (!area || seen.has(area.key)) continue;
+      seen.add(area.key);
+      return area.display;
+    }
+    return null;
+  }, [trendingRows]);
+  if (!online || trendingError || popularError || !topService || !topArea) return null;
+  return (
+    <div className="nx-marketplace-activity" role="status">
+      <span aria-hidden="true" className="nx-activity-dot">●</span>
+      <p>
+        Marketplace Activity: <b>{topService.service_name.trim()}</b> is the most-booked service on Nexora right now
+        {" · "}
+        <b>{topArea}</b> is appearing in live trending salon results.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * Customer App banner (mockup gradient CTA) — a navigation card, not a data
+ * section. Always routes to the canonical Customer portal mount; signed-out
+ * visitors continue through the existing secure login gate and return here.
+ */
+function CustomerAppBanner({
+  authLoading,
+  isAuthenticated,
+  navigate,
+}: {
+  authLoading: boolean;
+  isAuthenticated: boolean;
+  navigate: (path: string) => void;
+}) {
+  return (
+    <section id="customer-app-banner" aria-labelledby="customer-app-banner-heading" className="nx-customer-app-banner">
+      <div className="nx-banner-icon" aria-hidden="true"><PremiumIcon name="phone" /></div>
+      <div className="nx-banner-copy">
+        <h2 id="customer-app-banner-heading">Apne favourites ko Customer App mein dekhein</h2>
+        <p>Salons save karein, bookings manage karein aur apne favourite beauty experiences ko ek jagah access karein.</p>
+      </div>
+      <button
+        type="button"
+        className="nx-banner-cta"
+        disabled={authLoading}
+        aria-label={isAuthenticated ? "Open Customer App" : "Open Customer App — secure Nexora login first"}
+        onClick={() => navigate(PORTAL_PATHS.customer)}
+      >
+        {authLoading ? "Checking your account…" : "Open Customer App"}{" "}<span aria-hidden="true">→</span>
+      </button>
+    </section>
+  );
 }
 
 function StateCard({ title, text, action, onAction }: { title: string; text: string; action?: string; onAction?: () => void }) {
