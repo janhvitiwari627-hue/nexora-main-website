@@ -1,7 +1,7 @@
 import { Sparkles, CheckCircle2, Users, LayoutDashboard, Loader2, ChevronDown, MapPin, Calendar, CreditCard, Share2, Settings, Scissors, Camera, Clock, LogIn, LogOut, Store } from 'lucide-react';
 import { useState } from 'react';
 import { useAuthModal } from './AuthModalProvider';
-import { useAuth, signOut } from '../lib/useAuth';
+import { useAuth } from '../lib/useAuth';
 import { useBrandConfig } from '../config/brandConfig';
 
 export const SCREENS = [
@@ -46,7 +46,7 @@ interface Props {
 export default function TopBar({ step, activeModule, setActiveModule, saveStatus = 'saved', currentScreen, onNavigate }: Props) {
   const { platform } = useBrandConfig();
   const { openAuth } = useAuthModal();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, signOut } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const displayStep = step + 1; 
   const totalSteps = 15;

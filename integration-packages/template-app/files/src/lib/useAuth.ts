@@ -1,6 +1,7 @@
 import {
   createContext,
   createElement,
+  useCallback,
   useContext,
   useEffect,
   useRef,
@@ -22,7 +23,11 @@ export interface AuthState {
   loading: boolean;
 }
 
-const AuthContext = createContext<AuthState | null>(null);
+export interface AuthContextValue extends AuthState {
+  signOut: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
 
 /**
  * The Template App has many screens that need the current user. Auth state is
@@ -121,10 +126,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  return createElement(AuthContext.Provider, { value: state }, children);
+  const signOutFromProvider = useCallback(async () => {
+    // Clear the context before awaiting the network call. This keeps every
+    // consumer on the guest branch even when the session has already expired.
+    revisionRef.current += 1;
+    if (mountedRef.current) setState({ user: null, session: null, loading: false });
+    await signOut();
+  }, []);
+
+  return createElement(
+    AuthContext.Provider,
+    { value: { ...state, signOut: signOutFromProvider } },
+    children,
+  );
 }
 
-export function useAuth(): AuthState {
+export function useAuth(): AuthContextValue {
   const context = useContext(AuthContext);
   if (!context) {
     throw new Error('useAuth must be used within an <AuthProvider>.');
