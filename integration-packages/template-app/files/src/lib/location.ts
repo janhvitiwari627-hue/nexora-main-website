@@ -60,6 +60,9 @@ export function normalizeCoordinates(
   if (lat === null || lng === null) return null;
   if (lat < -90 || lat > 90) return null;
   if (lng < -180 || lng > 180) return null;
+  // 0,0 is the classic null-island/fabricated fallback sentinel, not a
+  // usable device or salon coordinate.
+  if (lat === 0 && lng === 0) return null;
   return { latitude: lat, longitude: lng };
 }
 
@@ -284,7 +287,8 @@ export function getBrowserLocation(): Promise<Coordinates> {
             : 'Could not get your location. Enter your address instead.';
         reject(new Error(message));
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+      // Always request a fresh device reading; cached coordinates may be stale.
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     );
   });
 }
