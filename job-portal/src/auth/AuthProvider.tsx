@@ -32,7 +32,15 @@ import {
 import type { AuthChangeEvent, Session, User } from '@supabase/supabase-js';
 import { supabase, supabaseConfigErrorMessage } from '../lib/supabase';
 
-/** The caller-owned row of the shared `profiles` table (RLS: owner only). */
+/** The caller-owned row of the shared `profiles` table (RLS: owner only).
+ *
+ * PHASE 4 — PROFILE SYNCHRONIZATION: the row is addressed exclusively by the
+ * authenticated user's id (auth.users.id → profiles.id). `platform_role` and
+ * `is_active` are the Main Website's canonical, server-owned authority
+ * fields: they are read here for display/routing only and are NEVER written
+ * from the browser — a database trigger (guard_profile_platform_role) is the
+ * single writer of `platform_role`.
+ */
 export type Profile = {
   id: string;
   full_name: string | null;
@@ -40,9 +48,14 @@ export type Profile = {
   avatar_path: string | null;
   preferred_city: string | null;
   preferred_area: string | null;
+  /** Canonical Main Website role — server-owned, read-only in the browser. */
+  readonly platform_role: string | null;
+  /** Server-owned account gate — read-only in the browser. */
+  readonly is_active: boolean | null;
 };
 
-const PROFILE_COLUMNS = 'id,full_name,phone,avatar_path,preferred_city,preferred_area';
+const PROFILE_COLUMNS =
+  'id,full_name,phone,avatar_path,preferred_city,preferred_area,platform_role,is_active';
 
 export type AuthContextValue = {
   session: Session | null;
@@ -100,6 +113,9 @@ export function AuthProvider({ children, onPasswordRecovery }: AuthProviderProps
 
   const fetchProfile = useCallback(async (userId: string): Promise<Profile | null> => {
     if (!supabase) return null;
+    // PHASE 4: fetch ONLY the current user's row (auth.users.id →
+    // profiles.id). The browser never queries arbitrary users; RLS enforces
+    // the same boundary server-side.
     const { data, error } = await supabase
       .from('profiles')
       .select(PROFILE_COLUMNS)

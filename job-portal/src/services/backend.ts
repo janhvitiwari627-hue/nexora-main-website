@@ -368,6 +368,14 @@ export const authBackend = {
   },
 
   async registerRole(role: UserRole) {
+    // PHASE 4 defense in depth: the browser may only ever request the two
+    // public portal roles. Privileged roles (admin, owner, partner, staff)
+    // are granted exclusively by the database/backend — job_register_role
+    // enforces the same rule server-side (ROLE_NOT_ALLOWED) keyed to
+    // auth.uid(), so no metadata, URL or storage value can promote a user.
+    if (role !== 'seeker' && role !== 'employer') {
+      throw new Error('This portal role cannot be self-assigned.');
+    }
     const { data, error } = await requireSupabase().rpc('job_register_role', { requested_role: backendRole(role) });
     if (error) throw mapPortalRoleError(error, role);
     if (data !== backendRole(role)) throw new Error(portalMismatchMessage(String(data), role));
@@ -612,7 +620,7 @@ export async function setBookmark(userId: string, jobId: string, bookmarked: boo
   const result = bookmarked
     ? await client.from('job_saved_jobs').upsert({ user_id: userId, job_id: jobId })
     : await client.from('job_saved_jobs').delete().eq('user_id', userId).eq('job_id', jobId);
-  if (result.error) throw result.error;
+  if (result.error) throw asError(result.error);
 }
 
 function salaryDetails(display: string): {
