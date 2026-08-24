@@ -24,7 +24,7 @@
     "test:section02": "node --import tsx --test tests/homepage-phase1-section02-contract.test.mjs",
     "test:back-to-main": "node --test tests/back-to-main-website.test.mjs",
     "test:location": "node --test tests/location-system.test.mjs && NODE_ENV=production node --import tsx --test tests/location-runtime.test.ts",
-    "test:security": "node --test tests/phase7-location-security.test.mjs tests/phase7-rls-runtime.test.mjs tests/salon-setup-review-rls-runtime.test.mjs tests/production-auth-security-contract.test.mjs tests/returnto-security.test.mjs",
+    "test:security": "node --test tests/phase7-location-security.test.mjs tests/phase7-rls-runtime.test.mjs tests/phase6-location-db-runtime.test.mjs tests/salon-setup-review-rls-runtime.test.mjs tests/production-auth-security-contract.test.mjs tests/returnto-security.test.mjs",
     "test:salon-setup-rls": "node --test tests/salon-setup-review-rls-runtime.test.mjs",
     "typecheck": "bash scripts/sites-env.sh -- tsc --noEmit",
     "validate:artifact": "bash scripts/validate-artifact.sh",
