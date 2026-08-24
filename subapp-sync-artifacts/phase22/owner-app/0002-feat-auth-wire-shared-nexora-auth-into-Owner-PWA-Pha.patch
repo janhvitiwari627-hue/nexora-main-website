@@ -1,0 +1,347 @@
+From 6f12f9c1a884bb3805384d7e00cb7ec7aae328f5 Mon Sep 17 00:00:00 2001
+From: Nexora Integration Bot <nexora-integration@arena.ai>
+Date: Mon, 24 Aug 2026 16:22:26 +0000
+Subject: [PATCH 2/2] =?UTF-8?q?feat(auth):=20wire=20shared=20@nexora/auth?=
+ =?UTF-8?q?=20into=20Owner=20PWA=20=E2=80=94=20Phase=206=20owner-workspace?=
+ =?UTF-8?q?=20gate,=20shared=20signIn/signUp/reset,=20env=20config?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+---
+ .env.example                        | 14 +++++-
+ src/App.tsx                         | 67 +++++++++++++++++++----------
+ src/lib/supabase.ts                 | 44 +++++++++++--------
+ src/main.tsx                        |  5 ++-
+ src/screens/Login.tsx               | 33 ++++++--------
+ src/screens/RegistrationStepper.tsx | 29 ++++++-------
+ 6 files changed, 111 insertions(+), 81 deletions(-)
+
+diff --git a/.env.example b/.env.example
+index 00e44bf..84f0332 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1,2 +1,12 @@
+-VITE_SUPABASE_ANON_KEY=
+-VITE_SUPABASE_URL=
+\ No newline at end of file
++# --- Nexora Supabase (shared project qwaehqsmodekbgvnaavz) -----------------
++# Supabase Dashboard → Project qwaehqsmodekbgvnaavz → Settings → API.
++# Browser-safe anon/publishable key only — never a service-role/secret key.
++# The shared @nexora/auth client refuses any other Supabase project.
++VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co
++VITE_SUPABASE_ANON_KEY=PASTE_REAL_ANON_KEY_HERE
++
++# Same-origin mount behind the main website (optional; default '/')
++# VITE_APP_BASE_PATH=/app/owner/
++
++# Extra allowed auth redirect origins for previews (comma-separated HTTPS)
++# VITE_NEXORA_ALLOWED_AUTH_ORIGINS=
+diff --git a/src/App.tsx b/src/App.tsx
+index cf62aa8..c4135e0 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -37,8 +37,8 @@ import { ThemeProvider } from './contexts/ThemeContext';
+ import { OfflineSyncProvider } from './contexts/OfflineSyncContext';
+ import AddToHomeScreenPrompt from './components/AddToHomeScreenPrompt';
+ import { ScreenName } from './types';
+-import { isSupabaseConfigured, supabase } from './lib/supabase';
+-import { Session } from '@supabase/supabase-js';
++import { isSupabaseConfigured } from './lib/supabase';
++import { requireOwnerWorkspace, useAuth } from '@nexora/auth';
+ import { Download, X, WifiOff, RefreshCw } from 'lucide-react';
+ import { motion, AnimatePresence } from 'motion/react';
+ import { useRegisterSW } from 'virtual:pwa-register/react';
+@@ -46,7 +46,8 @@ import { useRegisterSW } from 'virtual:pwa-register/react';
+ export default function App() {
+   const [currentScreen, setCurrentScreen] = useState<ScreenName>('splash');
+   const currentScreenRef = React.useRef(currentScreen);
+-  const [session, setSession] = useState<Session | null>(null);
++  const { session, loading: authLoading, signOut: signOutAuth, client: authClient } = useAuth();
++  const [ownerAccessError, setOwnerAccessError] = useState(false);
+   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+   const [showInstallToast, setShowInstallToast] = useState(false);
+   const [isAppInstalled, setIsAppInstalled] = useState(false);
+@@ -163,12 +164,8 @@ export default function App() {
+     };
+     window.addEventListener('appinstalled', handleAppInstalledGlobal);
+ 
+-    // Initial session check. Avoid a network call to placeholder credentials.
+-    if (isSupabaseConfigured()) {
+-      supabase.auth.getSession().then(({ data: { session }, error }) => {
+-        if (!error) setSession(session);
+-      });
+-    }
++    // Phase 2: session restoration is owned by the shared @nexora/auth
++    // provider mounted in main.tsx — no local getSession() call here.
+ 
+     // Handle initial hash routing and hash changes
+     const handleHashRouting = () => {
+@@ -192,27 +189,51 @@ export default function App() {
+     handleHashRouting();
+     window.addEventListener('hashchange', handleHashRouting);
+ 
+-    // Listen for auth changes only when a real Supabase project is configured.
+-    const subscription = isSupabaseConfigured()
+-      ? supabase.auth.onAuthStateChange((_event, nextSession) => {
+-          setSession(nextSession);
+-          const activeScreen = currentScreenRef.current;
+-          if (!nextSession && !['splash', 'welcome', 'login', 'register-stepper', 'reset-password', 'cancellation-refund-policy'].includes(activeScreen)) {
+-            setCurrentScreen('welcome');
+-          } else if (nextSession && ['splash', 'welcome', 'login'].includes(activeScreen)) {
+-            setCurrentScreen('dashboard');
+-          }
+-        }).data.subscription
+-      : null;
+-
+     return () => {
+-      subscription?.unsubscribe();
+       window.removeEventListener('hashchange', handleHashRouting);
+       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+       window.removeEventListener('appinstalled', handleAppInstalledGlobal);
+     };
+   }, []);
+ 
++  // Phase 6: the canonical owner gate. A session (or even a business_user
++  // role) is necessary but not sufficient — requireOwnerWorkspace re-verifies
++  // auth.getUser(), the active business_user profile, an active organization
++  // membership, and an active salon via auth.uid()-scoped
++  // public.owner_salon_ids(). The PWA never grants access from local state.
++  useEffect(() => {
++    if (!isSupabaseConfigured()) return;
++    if (authLoading) return;
++
++    if (!session) {
++      const activeScreen = currentScreenRef.current;
++      const publicScreens: ScreenName[] = ['splash', 'welcome', 'login', 'register-stepper', 'reset-password', 'role-conflict', 'cancellation-refund-policy'];
++      if (!publicScreens.includes(activeScreen)) setCurrentScreen('welcome');
++      return;
++    }
++    if (!authClient) return;
++
++    let active = true;
++    void requireOwnerWorkspace(authClient)
++      .then(() => {
++        if (!active) return;
++        setOwnerAccessError(false);
++        if (['splash', 'welcome', 'login'].includes(currentScreenRef.current)) {
++          setCurrentScreen('dashboard');
++        }
++      })
++      .catch(() => {
++        if (!active) return;
++        setOwnerAccessError(true);
++        if (currentScreenRef.current !== 'role-conflict') setCurrentScreen('role-conflict');
++        void signOutAuth();
++      });
++
++    return () => {
++      active = false;
++    };
++  }, [authLoading, authClient, session, signOutAuth]);
++
+   const handleInstall = async () => {
+     if (!deferredPrompt) return;
+     
+diff --git a/src/lib/supabase.ts b/src/lib/supabase.ts
+index 885e1ba..520cc7c 100644
+--- a/src/lib/supabase.ts
++++ b/src/lib/supabase.ts
+@@ -1,27 +1,33 @@
+ /// <reference types="vite/client" />
+-import { createClient } from '@supabase/supabase-js';
++/**
++ * Owner PWA Supabase client — routed through the vendored `@nexora/auth`
++ * shared client. The shared client enforces:
++ *  - the canonical Nexora Supabase project (`qwaehqsmodekbgvnaavz`) only
++ *  - browser-safe anon/publishable keys only (secret keys are rejected)
++ *  - PKCE auth flow with the shared namespaced storage key
++ *
++ * A placeholder client is kept for unconfigured local development so screens
++ * stay renderable; every auth entry point checks `isSupabaseConfigured()`
++ * before making a request, so placeholder values are never sent to Supabase.
++ */
++import { createClient, SupabaseClient } from '@supabase/supabase-js';
++import {
++  getSupabaseClient,
++  isSupabaseConfigured as isNexoraSupabaseConfigured,
++  supabaseConfigErrorMessage,
++} from '@nexora/auth';
+ 
+-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
+-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
++const sharedClient = getSupabaseClient();
+ 
+-// Keep client construction safe during local development. Every auth entry point
+-// checks `isSupabaseConfigured` before it makes a request, so placeholder values
+-// are never sent to Supabase in a misconfigured production deployment.
+-const effectiveUrl = supabaseUrl || 'https://placeholder.supabase.co';
+-const effectiveKey = supabaseAnonKey || 'placeholder';
++export const supabase: SupabaseClient =
++  sharedClient ?? createClient('https://placeholder.supabase.co', 'placeholder');
+ 
+-export const supabase = createClient(effectiveUrl, effectiveKey);
++export const isSupabaseConfigured = () =>
++  Boolean(sharedClient) && isNexoraSupabaseConfigured();
+ 
+-export const isSupabaseConfigured = () => {
+-  if (!supabaseUrl || !supabaseAnonKey || supabaseUrl.includes('placeholder')) return false;
+-
+-  try {
+-    const url = new URL(supabaseUrl);
+-    return url.protocol === 'https:' && url.hostname.endsWith('.supabase.co');
+-  } catch {
+-    return false;
+-  }
+-};
++export const supabaseConfigError: string | null = sharedClient
++  ? null
++  : supabaseConfigErrorMessage();
+ 
+ export const supabaseConfigurationMessage =
+   'Authentication is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, then restart the app.';
+diff --git a/src/main.tsx b/src/main.tsx
+index fb24119..b605113 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -4,12 +4,15 @@ import App from './App.tsx';
+ import './index.css';
+ import { LanguageProvider } from './contexts/LanguageContext.tsx';
+ import { ErrorBoundary } from './components/ErrorBoundary.tsx';
++import { AuthProvider } from '@nexora/auth';
+ 
+ createRoot(document.getElementById('root')!).render(
+   <StrictMode>
+     <ErrorBoundary>
+       <LanguageProvider>
+-        <App />
++        <AuthProvider>
++          <App />
++        </AuthProvider>
+       </LanguageProvider>
+     </ErrorBoundary>
+   </StrictMode>,
+diff --git a/src/screens/Login.tsx b/src/screens/Login.tsx
+index 7937e94..5474c71 100644
+--- a/src/screens/Login.tsx
++++ b/src/screens/Login.tsx
+@@ -2,11 +2,13 @@ import React, { useState } from 'react';
+ import { motion, AnimatePresence } from 'motion/react';
+ import { Flower2, Mail, Lock, Eye, EyeOff, Check, X, AlertCircle, CheckCircle2 } from 'lucide-react';
+ import { NavigationProps } from '../types';
+-import { isSupabaseConfigured, supabase, supabaseConfigurationMessage } from '../lib/supabase';
++import { isSupabaseConfigured, supabaseConfigurationMessage } from '../lib/supabase';
++import { useAuth, authErrorMessage } from '@nexora/auth';
+ import { useLanguage } from '../contexts/LanguageContext';
+ 
+ export default function Login({ navigate }: NavigationProps) {
+   const { t } = useLanguage();
++  const { signIn, sendPasswordReset } = useAuth();
+   const [showPassword, setShowPassword] = useState(false);
+   const [email, setEmail] = useState('');
+   const [password, setPassword] = useState('');
+@@ -28,18 +30,12 @@ export default function Login({ navigate }: NavigationProps) {
+     setError(null);
+ 
+     try {
+-      const { data, error: authError } = await supabase.auth.signInWithPassword({
+-        email,
+-        password,
+-      });
+-
+-      if (authError) throw authError;
+-
+-      if (data.user) {
+-        navigate('dashboard');
+-      }
+-    } catch (err: any) {
+-      setError(err.message || t('failed_login'));
++      // Shared @nexora/auth signIn resolves the server-side profile; the
++      // Phase 6 owner-workspace gate in App.tsx decides final access.
++      await signIn({ email, password });
++      navigate('dashboard');
++    } catch (err: unknown) {
++      setError(authErrorMessage(err) || t('failed_login'));
+     } finally {
+       setLoading(false);
+     }
+@@ -56,14 +52,11 @@ export default function Login({ navigate }: NavigationProps) {
+     setError(null);
+ 
+     try {
+-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+-        redirectTo: `${window.location.origin}/#/app/owner/reset-password`,
+-      });
+-
+-      if (resetError) throw resetError;
++      // Shared PKCE recovery flow with the validated redirect policy.
++      await sendPasswordReset(forgotEmail);
+       setForgotSuccess(true);
+-    } catch (err: any) {
+-      setError(err.message || t('failed_reset_link'));
++    } catch (err: unknown) {
++      setError(authErrorMessage(err) || t('failed_reset_link'));
+     } finally {
+       setForgotLoading(false);
+     }
+diff --git a/src/screens/RegistrationStepper.tsx b/src/screens/RegistrationStepper.tsx
+index 0fb1805..563f24a 100644
+--- a/src/screens/RegistrationStepper.tsx
++++ b/src/screens/RegistrationStepper.tsx
+@@ -2,9 +2,11 @@ import React, { useState } from 'react';
+ import { motion } from 'motion/react';
+ import { X, ChevronDown, ArrowRight, AlertCircle, Check } from 'lucide-react';
+ import { NavigationProps } from '../types';
+-import { isSupabaseConfigured, supabase, supabaseConfigurationMessage } from '../lib/supabase';
++import { isSupabaseConfigured, supabaseConfigurationMessage } from '../lib/supabase';
++import { useAuth, authErrorMessage } from '@nexora/auth';
+ 
+ export default function RegistrationStepper({ navigate }: NavigationProps) {
++  const { signUp } = useAuth();
+   const [loading, setLoading] = useState(false);
+   const [error, setError] = useState<string | null>(null);
+   const [email, setEmail] = useState('');
+@@ -26,30 +28,25 @@ export default function RegistrationStepper({ navigate }: NavigationProps) {
+     setError(null);
+ 
+     try {
+-      const { data, error: signUpError } = await supabase.auth.signUp({
++      // Shared @nexora/auth signUp requests the business_user role through
++      // package metadata; the server owns final role authorization.
++      const result = await signUp({
+         email,
+         password,
+-        options: {
+-          emailRedirectTo: `${window.location.origin}/#/app/owner/login`,
+-          data: {
+-            business_name: businessName,
+-            business_category: businessCategory,
+-            contact_number: contactNumber,
+-          },
+-        },
++        fullName: businessName,
++        role: 'business_user',
++        phone: contactNumber || null,
+       });
+ 
+-      if (signUpError) throw signUpError;
+-
+-      if (data.session) {
++      if (result.session) {
+         navigate('theme-selection');
+-      } else if (data.user) {
++      } else if (result.user || result.needsEmailConfirmation) {
+         // With Supabase email confirmation enabled, a user exists but has no
+         // session yet. Do not expose authenticated screens until verification.
+         setVerificationRequired(true);
+       }
+-    } catch (err: any) {
+-      setError(err.message || 'Failed to sign up.');
++    } catch (err: unknown) {
++      setError(authErrorMessage(err) || 'Failed to sign up.');
+     } finally {
+       setLoading(false);
+     }
+-- 
+2.39.5
+

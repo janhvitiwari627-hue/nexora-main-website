@@ -1,0 +1,245 @@
+From a00ded7272e233a5f14d79695e9d5e75b1cc2397 Mon Sep 17 00:00:00 2001
+From: Nexora Integration Bot <nexora-integration@arena.ai>
+Date: Mon, 24 Aug 2026 16:12:17 +0000
+Subject: [PATCH 3/4] feat(auth): Phase 6 unified app authorization (shared)
+
+---
+ src/vendor/nexora-auth/AuthProvider.tsx |  8 +-
+ src/vendor/nexora-auth/access.ts        | 98 +++++++++++++++++++++++++
+ src/vendor/nexora-auth/env.ts           |  3 -
+ src/vendor/nexora-auth/import-meta.d.ts | 14 ++++
+ src/vendor/nexora-auth/index.ts         | 10 +++
+ src/vendor/nexora-auth/package.json     |  3 +-
+ src/vendor/nexora-auth/service.ts       |  2 +-
+ 7 files changed, 130 insertions(+), 8 deletions(-)
+ create mode 100644 src/vendor/nexora-auth/access.ts
+ create mode 100644 src/vendor/nexora-auth/import-meta.d.ts
+
+diff --git a/src/vendor/nexora-auth/AuthProvider.tsx b/src/vendor/nexora-auth/AuthProvider.tsx
+index b7e0370..785c7df 100644
+--- a/src/vendor/nexora-auth/AuthProvider.tsx
++++ b/src/vendor/nexora-auth/AuthProvider.tsx
+@@ -145,8 +145,11 @@ export function AuthProvider({
+   const mountedRef = useRef(true);
+   const changeHandlerRef = useRef(onAuthChange);
+   const unauthorizedRef = useRef(onUnauthorizedProfile);
+-  changeHandlerRef.current = onAuthChange;
+-  unauthorizedRef.current = onUnauthorizedProfile;
++
++  useEffect(() => {
++    changeHandlerRef.current = onAuthChange;
++    unauthorizedRef.current = onUnauthorizedProfile;
++  }, [onAuthChange, onUnauthorizedProfile]);
+ 
+   const applySession = useCallback(
+     async (session: Session | null): Promise<NexoraProfile | null> => {
+@@ -205,7 +208,6 @@ export function AuthProvider({
+   useEffect(() => {
+     mountedRef.current = true;
+     if (!client) {
+-      setState({ status: "unconfigured", session: null, profile: null, error: null });
+       return () => {
+         mountedRef.current = false;
+       };
+diff --git a/src/vendor/nexora-auth/access.ts b/src/vendor/nexora-auth/access.ts
+new file mode 100644
+index 0000000..40a6ec4
+--- /dev/null
++++ b/src/vendor/nexora-auth/access.ts
+@@ -0,0 +1,98 @@
++/**
++ * @nexora/auth — app-specific, server-backed access gates.
++ *
++ * A valid Supabase session is identity, not authorization. Every gate starts
++ * with the canonical Auth Service (`getUser()` + active profile) and then
++ * verifies the membership owned by the destination app. URL parameters and
++ * localStorage are never accepted as role, salon, customer or partner proof.
++ */
++
++import type { SupabaseClient } from "@supabase/supabase-js";
++import { NexoraAuthError, toAuthError } from "./errors";
++import { createAuthService, type AuthenticatedAccess } from "./service";
++
++export type OwnerWorkspaceAccess = AuthenticatedAccess & {
++  /** Active salons returned by the auth.uid()-scoped owner_salon_ids() RPC. */
++  salonIds: string[];
++};
++
++export type GrowthPartnerMembership = {
++  id: string;
++  userId: string;
++};
++
++export type PartnerMembershipAccess = AuthenticatedAccess & {
++  partner: GrowthPartnerMembership;
++};
++
++export type CustomerAccountAccess = AuthenticatedAccess;
++
++function forbidden(message: string): NexoraAuthError {
++  return new NexoraAuthError("forbidden", message, { retryable: false });
++}
++
++/**
++ * Require an active Shop Owner profile and at least one active salon reached
++ * through an active organization membership.
++ *
++ * `public.owner_salon_ids()` derives its result exclusively from auth.uid()
++ * and rejects forged client-side salon ids through the database owner gate.
++ */
++export async function requireOwnerWorkspace(client: SupabaseClient): Promise<OwnerWorkspaceAccess> {
++  const access = await createAuthService(client).requireRole("business_user");
++  const { data, error } = await client.rpc("owner_salon_ids");
++  if (error) throw toAuthError(error, "forbidden");
++
++  const salonIds = (Array.isArray(data) ? data : [])
++    .map((value) => {
++      if (typeof value === "string") return value;
++      if (value && typeof value === "object" && "owner_salon_ids" in value) {
++        const id = (value as { owner_salon_ids?: unknown }).owner_salon_ids;
++        return typeof id === "string" ? id : "";
++      }
++      return "";
++    })
++    .filter((value): value is string => Boolean(value));
++
++  if (salonIds.length === 0) {
++    throw forbidden(
++      "Your Shop Owner account has no active salon workspace. Ask a Nexora administrator to restore the business membership.",
++    );
++  }
++
++  return { ...access, salonIds: Array.from(new Set(salonIds)) };
++}
++
++/** Require the Customer role from the active server profile. */
++export async function requireCustomerAccount(client: SupabaseClient): Promise<CustomerAccountAccess> {
++  return createAuthService(client).requireRole("customer");
++}
++
++/**
++ * Require an active Growth Partner profile and a growth_partners row belonging
++ * to the verified auth user. RLS independently constrains this read
++ * to auth.uid(), so a caller cannot claim another partner membership.
++ */
++export async function requirePartnerMembership(client: SupabaseClient): Promise<PartnerMembershipAccess> {
++  const access = await createAuthService(client).requireRole("growth_partner");
++  const { data, error } = await client
++    .from("growth_partners")
++    .select("id,user_id")
++    .eq("user_id", access.user.id)
++    .maybeSingle();
++
++  if (error) throw toAuthError(error, "forbidden");
++  if (!data || data.user_id !== access.user.id) {
++    throw forbidden(
++      "This account is not linked to a Growth Partner membership. Contact Nexora support before opening the Partner App.",
++    );
++  }
++
++  return {
++    ...access,
++    partner: {
++      id: String(data.id),
++      userId: data.user_id,
++    },
++  };
++}
+diff --git a/src/vendor/nexora-auth/env.ts b/src/vendor/nexora-auth/env.ts
+index 8eb1d9c..2c0d166 100644
+--- a/src/vendor/nexora-auth/env.ts
++++ b/src/vendor/nexora-auth/env.ts
+@@ -59,16 +59,13 @@ function viteEnv(): { url: string; anonKey: string } {
+   let url = "";
+   let anonKey = "";
+   try {
+-    // @ts-expect-error — `import.meta.env` only exists in Vite builds.
+     url = clean(import.meta.env?.VITE_SUPABASE_URL);
+   } catch {
+     url = "";
+   }
+   try {
+-    // @ts-expect-error — `import.meta.env` only exists in Vite builds.
+     anonKey = clean(import.meta.env?.VITE_SUPABASE_ANON_KEY);
+     if (!anonKey) {
+-      // @ts-expect-error — `import.meta.env` only exists in Vite builds.
+       anonKey = clean(import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY);
+     }
+   } catch {
+diff --git a/src/vendor/nexora-auth/import-meta.d.ts b/src/vendor/nexora-auth/import-meta.d.ts
+new file mode 100644
+index 0000000..f45e818
+--- /dev/null
++++ b/src/vendor/nexora-auth/import-meta.d.ts
+@@ -0,0 +1,14 @@
++/**
++ * Minimal Vite environment augmentation used by the shared source package.
++ * Keeping this local lets the same TypeScript compile under Vite and Next
++ * without suppressing diagnostics or importing Vite as an auth dependency.
++ */
++interface ImportMetaEnv {
++  readonly VITE_SUPABASE_URL?: string;
++  readonly VITE_SUPABASE_ANON_KEY?: string;
++  readonly VITE_SUPABASE_PUBLISHABLE_KEY?: string;
++}
++
++interface ImportMeta {
++  readonly env: ImportMetaEnv;
++}
+diff --git a/src/vendor/nexora-auth/index.ts b/src/vendor/nexora-auth/index.ts
+index b9584a9..bb0a359 100644
+--- a/src/vendor/nexora-auth/index.ts
++++ b/src/vendor/nexora-auth/index.ts
+@@ -96,6 +96,16 @@ export {
+   type AuthenticatedAccess,
+ } from "./service";
+ 
++export {
++  requireOwnerWorkspace,
++  requirePartnerMembership,
++  requireCustomerAccount,
++  type OwnerWorkspaceAccess,
++  type PartnerMembershipAccess,
++  type GrowthPartnerMembership,
++  type CustomerAccountAccess,
++} from "./access";
++
+ export {
+   AuthProvider,
+   useAuth,
+diff --git a/src/vendor/nexora-auth/package.json b/src/vendor/nexora-auth/package.json
+index 1dce2e6..8464a72 100644
+--- a/src/vendor/nexora-auth/package.json
++++ b/src/vendor/nexora-auth/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "@nexora/auth",
+-  "version": "1.1.0",
++  "version": "1.2.0",
+   "private": true,
+   "description": "Centralized Supabase auth, roles, PKCE redirect policy and canonical Auth Service shared by every Nexora app.",
+   "type": "module",
+@@ -15,6 +15,7 @@
+     "./redirects": "./src/redirects.ts",
+     "./session": "./src/session.ts",
+     "./service": "./src/service.ts",
++    "./access": "./src/access.ts",
+     "./provider": "./src/AuthProvider.tsx"
+   },
+   "peerDependencies": {
+diff --git a/src/vendor/nexora-auth/service.ts b/src/vendor/nexora-auth/service.ts
+index ec00437..a7ef5dc 100644
+--- a/src/vendor/nexora-auth/service.ts
++++ b/src/vendor/nexora-auth/service.ts
+@@ -2,7 +2,7 @@
+  * @nexora/auth — Canonical Auth Service.
+  *
+  * Contract version: 1.0.0
+- * Package version:  1.1.0
++ * Package version:  1.2.0
+  *
+  * Every Nexora surface (Main Website and every PWA) must perform auth,
+  * session and guard work through this inventory. Screens must not call
+-- 
+2.39.5
+
