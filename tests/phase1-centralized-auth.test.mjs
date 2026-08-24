@@ -67,7 +67,7 @@ test("1.1 the shared project ref is the single source of truth", () => {
 });
 
 test("1.2 a foreign Supabase project is rejected, preventing a forked user directory", () => {
-  const foreign = { url: "https://someotherproject.supabase.co", anonKey: "anon-key", source: "explicit" };
+  const foreign = { url: "https://someotherproject.supabase.co", anonKey: "sb_publishable_abc123", source: "explicit" };
   const result = mods.env.validateSupabaseEnv(foreign);
   assert.equal(result.valid, false);
   assert.ok(result.problems.includes("wrong-project"));
