@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getErrorMessage } from '../../utils/errors';
 import { UserRole } from '../../types';
 import { Eye, EyeOff, Sparkles, UserCheck, Building2, Apple } from 'lucide-react';
 
@@ -29,7 +30,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     try {
       await onLoginSuccess(activeRole, email, password);
     } catch (loginError) {
-      setError(loginError instanceof Error ? loginError.message : 'Unable to sign in. Please try again.');
+      console.error('[Nexora Jobs] sign-in failed:', loginError);
+      setError(getErrorMessage(loginError, 'Unable to sign in. Please try again.'));
     } finally {
       setIsLoading(false);
     }
@@ -42,7 +44,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     try {
       await onSocialLogin(provider, activeRole);
     } catch (loginError) {
-      setError(loginError instanceof Error ? loginError.message : 'Unable to start social sign-in.');
+      console.error('[Nexora Jobs] social sign-in failed:', loginError);
+      setError(getErrorMessage(loginError, 'Unable to start social sign-in.'));
       setIsLoading(false);
     }
   };

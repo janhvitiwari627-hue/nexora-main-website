@@ -1,14 +1,15 @@
 import React, { useEffect, useState } from 'react';
+import { getErrorMessage } from '../../utils/errors';
 import { CheckCircle2, RefreshCw, ShieldCheck, XCircle } from 'lucide-react';
 import type { JobPosting } from '../../types';
 import { approvePendingJob, loadPendingApprovalJobs, rejectPendingJob } from '../../services/adminJobs';
 
 export function AdminJobsScreen({ onLogout }: { onLogout:()=>void }) {
   const [jobs,setJobs]=useState<JobPosting[]>([]); const [loading,setLoading]=useState(true); const [error,setError]=useState(''); const [busy,setBusy]=useState('');
-  const load=async()=>{setLoading(true);setError('');try{setJobs(await loadPendingApprovalJobs())}catch(e){setError(e instanceof Error?e.message:'Unable to load approvals.')}finally{setLoading(false)}};
+  const load=async()=>{setLoading(true);setError('');try{setJobs(await loadPendingApprovalJobs())}catch(e){setError(getErrorMessage(e,'Unable to load approvals.'))}finally{setLoading(false)}};
   useEffect(()=>{void load()},[]);
-  const approve=async(id:string)=>{setBusy(id);try{await approvePendingJob(id);setJobs(v=>v.filter(j=>j.id!==id))}catch(e){setError(e instanceof Error?e.message:'Approval failed.')}finally{setBusy('')}};
-  const reject=async(id:string)=>{const reason=window.prompt('Optional rejection reason:')||'';setBusy(id);try{await rejectPendingJob(id,reason);setJobs(v=>v.filter(j=>j.id!==id))}catch(e){setError(e instanceof Error?e.message:'Rejection failed.')}finally{setBusy('')}};
+  const approve=async(id:string)=>{setBusy(id);try{await approvePendingJob(id);setJobs(v=>v.filter(j=>j.id!==id))}catch(e){setError(getErrorMessage(e,'Approval failed.'))}finally{setBusy('')}};
+  const reject=async(id:string)=>{const reason=window.prompt('Optional rejection reason:')||'';setBusy(id);try{await rejectPendingJob(id,reason);setJobs(v=>v.filter(j=>j.id!==id))}catch(e){setError(getErrorMessage(e,'Rejection failed.'))}finally{setBusy('')}};
   return <div className="min-h-screen bg-[#fdf8f8]"><header className="h-16 px-5 flex items-center justify-between bg-white border-b border-[#e0bec6]"><div className="flex items-center gap-2"><ShieldCheck className="text-[#8e004b]"/><h1 className="font-extrabold">Admin · Pending Approvals</h1></div><button onClick={onLogout} className="text-xs font-bold text-rose-700">Sign out</button></header>
     <main className="max-w-5xl mx-auto p-5 md:p-8"><div className="flex justify-between items-center mb-6"><div><h2 className="text-2xl font-extrabold">Pending Job Posts</h2><p className="text-sm text-[#594047]">Review full details before publishing.</p></div><button onClick={()=>void load()} className="p-2 rounded-full bg-white border"><RefreshCw className={loading?'animate-spin':''}/></button></div>
     {error&&<p className="mb-4 bg-rose-50 border border-rose-200 rounded-xl p-3 text-sm text-rose-700">{error}</p>}

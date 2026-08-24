@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getErrorMessage } from '../../utils/errors';
 import { ArrowLeft, ArrowRight, Eye, EyeOff } from 'lucide-react';
 
 interface EmployerSignupScreenProps {
@@ -40,7 +41,8 @@ export const EmployerSignupScreen: React.FC<EmployerSignupScreenProps> = ({
     try {
       await onSubmit({ businessName, contactPerson, email: businessEmail, password });
     } catch (signupError) {
-      setError(signupError instanceof Error ? signupError.message : 'Unable to create employer account.');
+      console.error('[Nexora Jobs] employer signup failed:', signupError);
+      setError(getErrorMessage(signupError, 'Unable to create employer account.'));
     } finally {
       setIsSubmitting(false);
     }

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { getErrorMessage } from '../../utils/errors';
 import { ArrowLeft, CheckCircle2, Mail, RefreshCw } from 'lucide-react';
 
 interface ForgotPasswordScreenProps {
@@ -31,7 +32,8 @@ export const ForgotPasswordScreen: React.FC<ForgotPasswordScreenProps> = ({
       setSubmitted(true);
       setCooldown(60);
     } catch (resetError) {
-      setError(resetError instanceof Error ? resetError.message : 'Unable to send the reset link.');
+      console.error('[Nexora Jobs] password reset failed:', resetError);
+      setError(getErrorMessage(resetError, 'Unable to send the reset link.'));
     } finally {
       setIsSending(false);
     }
