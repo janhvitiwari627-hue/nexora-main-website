@@ -272,9 +272,19 @@ export function AuthProvider({ children, onPasswordRecovery }: AuthProviderProps
 
   const signOut = useCallback(async (): Promise<void> => {
     const client = requireClient();
+    // Clear local identity before the network request so an already-expired
+    // or offline session can never leave authenticated UI/state behind.
+    revisionRef.current += 1;
+    sessionRef.current = null;
+    if (mountedRef.current) {
+      setSession(null);
+      setProfile(null);
+      setLoading(false);
+    }
     const { error } = await client.auth.signOut();
     if (error) throw error;
-    // The SIGNED_OUT event clears context state through the single listener.
+    // The SIGNED_OUT event is still handled by the single listener for
+    // cross-tab consistency; the optimistic clear above is the local guard.
   }, []);
 
   const refreshProfile = useCallback(async (): Promise<void> => {

@@ -56,10 +56,22 @@ import { GlobalAppHeader } from './components/BackToMainWebsiteButton';
 import { AdminLoginScreen } from './components/admin/AdminLoginScreen';
 import { AdminJobsScreen } from './components/admin/AdminJobsScreen';
 
+let appMountLogged = false;
+
 export default function App() {
-  // PHASE 8: the five canonical auth actions come from the AuthProvider.
-  // Components and this shell never call supabase.auth for them directly.
+  // PHASE 8: the five canonical auth actions and the observed session come
+  // from the AuthProvider. Components and this shell never own a second auth
+  // listener or call supabase.auth for those actions directly.
   const { signIn, forgotPassword, updatePassword, signOut } = useAuth();
+  // Reading the same context is intentionally not a second provider or
+  // listener; it lets the shell react to a provider-owned sign-out event.
+  const { session: authSession, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (appMountLogged) return;
+    appMountLogged = true;
+    console.info('App mounted successfully');
+  }, []);
 
   // PHASE 5: one GPS watcher + one auth.uid()-scoped persistence coordinator
   // for the whole Sub-App. Arms after SIGNED_IN; result is intentionally
@@ -190,23 +202,23 @@ export default function App() {
     };
 
     void bootstrap();
-    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setPasswordRecoveryState('valid');
-        setScreen('reset_password');
-      }
-      if (event === 'SIGNED_OUT') {
-        setCurrentUserId(null);
-        setPasswordRecoveryState('idle');
-        setScreen('welcome');
-      }
-    });
 
+    // AuthProvider owns the only onAuthStateChange subscription. This effect
+    // only owns the workspace bootstrap request; keeping those responsibilities
+    // separate prevents a second listener from racing profile hydration.
     return () => {
       active = false;
-      listener.subscription.unsubscribe();
     };
   }, [enterAuthenticatedPortal, signOut]);
+
+  // Reflect a sign-out received from the provider (including another tab)
+  // without creating a second auth listener in this shell.
+  useEffect(() => {
+    if (authLoading || authSession || !currentUserId) return;
+    setCurrentUserId(null);
+    setPasswordRecoveryState('idle');
+    setScreen('welcome');
+  }, [authLoading, authSession, currentUserId]);
 
   useEffect(() => {
     if (isBackendLoading) return;

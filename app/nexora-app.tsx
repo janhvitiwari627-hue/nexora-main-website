@@ -528,6 +528,8 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
   else if (path === "/terms") content = <LegalPage type="terms" />;
   else if (path === "/privacy") content = <LegalPage type="privacy" />;
   else if (path === "/cancellation-refund") content = <LegalPage type="refund" />;
+  else if (path === "/auth/login" || path === "/login") content = <AuthPage mode="login" navigate={navigate} refCode={refCode} />;
+  else if (path === "/auth/signup" || path === "/signup") content = <AuthPage mode="signup" navigate={navigate} refCode={refCode} />;
   else if (path === "/auth/forgot-password" || path === "/forgot-password") content = <ForgotPasswordPage navigate={navigate} />;
   else if (path === "/auth/reset-password" || path === "/reset-password") content = <ResetPasswordPage navigate={navigate} />;
   else if (path === "/auth/callback" || path === "/auth/verify") content = <AuthCallbackPage navigate={navigate} />;
@@ -6592,6 +6594,15 @@ function PortalHandoff({ mountKey, path }: { mountKey: PortalKey; path: string }
   );
 }
 
+/**
+ * Named host for the integrated Template workspace. The workspace is deployed
+ * on its own origin, so this host performs the same guarded handoff as the
+ * other portal mounts instead of rendering a second copy of the builder.
+ */
+function TemplateWorkspaceHost({ path }: { path: string }) {
+  return <PortalHandoff mountKey="template" path={path} />;
+}
+
 function PortalGateway({
   expectedRole,
   navigate,
@@ -6676,6 +6687,7 @@ function PortalGateway({
   // server-side 307 redirect — same mechanism used by Customer, Owner and
   // Partner portals. This fixes the bug where clicking "Template" in the nav
   // rendered an inline status page instead of redirecting to the builder.
+  if (mountKey === "template") return <TemplateWorkspaceHost path={currentPath} />;
   return <PortalHandoff mountKey={mountKey} path={currentPath} />;
 }
 

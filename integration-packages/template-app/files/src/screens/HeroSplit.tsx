@@ -1,12 +1,12 @@
 import { Sparkles, ArrowRight, CheckCircle2, Smartphone, Calendar } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuthModal } from '../components/AuthModalProvider';
-import { useAuth, signOut } from '../lib/useAuth';
+import { useAuth } from '../lib/useAuth';
 import { useBrandConfig } from '../config/brandConfig';
 
 export default function HeroSplit({ onNext }: { onNext: () => void }) {
   const { openAuth } = useAuthModal();
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const { platform } = useBrandConfig();
   const baseDomain = platform.websiteUrl.replace(/^https?:\/\//, '');
   return (

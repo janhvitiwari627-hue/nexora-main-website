@@ -1,4 +1,13 @@
-import { useEffect, useState } from 'react';
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
@@ -14,64 +23,130 @@ export interface AuthState {
   loading: boolean;
 }
 
-export function useAuth(): AuthState {
+export interface AuthContextValue extends AuthState {
+  signOut: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+/**
+ * The Template App has many screens that need the current user. Auth state is
+ * therefore owned by one provider rather than by one listener per useAuth()
+ * call. This is important for the wizard: switching screens must never create
+ * duplicate Supabase listeners or a listener/update loop.
+ */
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const parentContext = useContext(AuthContext);
   const [state, setState] = useState<AuthState>({
     user: null,
     session: null,
     loading: isSupabaseConfigured,
   });
+  const revisionRef = useRef(0);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
+    if (parentContext) {
+      console.warn(
+        '[Nexora auth] Nested <AuthProvider> detected. The Template App must mount exactly one provider at src/main.tsx.',
+      );
+    }
+  }, [parentContext]);
+
+  useEffect(() => {
+    mountedRef.current = true;
     if (!supabase) {
       setState({ user: null, session: null, loading: false });
-      return;
+      return () => {
+        mountedRef.current = false;
+      };
     }
 
-    let active = true;
+    const applySession = async (nextSession: Session | null) => {
+      const revision = ++revisionRef.current;
+      if (!mountedRef.current) return;
+      setState({
+        user: nextSession?.user ?? null,
+        session: nextSession,
+        loading: true,
+      });
 
-    // Safety fallback: ensure loading never hangs if getSession stalls
-    const timeoutId = setTimeout(() => {
-      if (active) {
-        setState((prev) => (prev.loading ? { ...prev, loading: false } : prev));
+      // Supabase delivers the authoritative session to this single owner.
+      // No auth method is called from the listener, so events cannot recurse.
+      if (revision !== revisionRef.current) return;
+      if (mountedRef.current) {
+        setState({
+          user: nextSession?.user ?? null,
+          session: nextSession,
+          loading: false,
+        });
       }
-    }, 4000);
+    };
 
-    supabase.auth
+    // Safety fallback: a blocked auth request must not leave every screen
+    // behind an infinite loading state.
+    const timeoutId = window.setTimeout(() => {
+      if (mountedRef.current) {
+        setState((previous) => (previous.loading ? { ...previous, loading: false } : previous));
+      }
+    }, 4_000);
+
+    void supabase.auth
       .getSession()
       .then(({ data, error }) => {
-        if (!active) return;
-        clearTimeout(timeoutId);
+        window.clearTimeout(timeoutId);
+        if (!mountedRef.current) return;
         if (error) {
           console.error('Supabase getSession error:', error);
           setState({ user: null, session: null, loading: false });
           return;
         }
-        setState({
-          user: data.session?.user ?? null,
-          session: data.session ?? null,
-          loading: false,
-        });
+        void applySession(data.session);
       })
-      .catch((err) => {
-        if (!active) return;
-        clearTimeout(timeoutId);
-        console.error('Supabase getSession exception:', err);
+      .catch((error) => {
+        window.clearTimeout(timeoutId);
+        if (!mountedRef.current) return;
+        console.error('Supabase getSession exception:', error);
         setState({ user: null, session: null, loading: false });
       });
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!active) return;
-      setState({ user: session?.user ?? null, session: session ?? null, loading: false });
+    // Exactly one auth listener for the whole Template App. Screen-level
+    // components consume context and never subscribe themselves.
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      void applySession(nextSession);
     });
 
     return () => {
-      active = false;
-      clearTimeout(timeoutId);
-      sub.subscription.unsubscribe();
+      mountedRef.current = false;
+      revisionRef.current += 1;
+      window.clearTimeout(timeoutId);
+      subscription.unsubscribe();
     };
   }, []);
 
-  return state;
+  const signOutFromProvider = useCallback(async () => {
+    // Clear the context before awaiting the network call. This keeps every
+    // consumer on the guest branch even when the session has already expired.
+    revisionRef.current += 1;
+    if (mountedRef.current) setState({ user: null, session: null, loading: false });
+    await signOut();
+  }, []);
+
+  return createElement(
+    AuthContext.Provider,
+    { value: { ...state, signOut: signOutFromProvider } },
+    children,
+  );
+}
+
+export function useAuth(): AuthContextValue {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an <AuthProvider>.');
+  }
+  return context;
 }
 
 /** Email/password sign-in using the existing Supabase Auth. */

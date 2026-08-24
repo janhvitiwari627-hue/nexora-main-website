@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { AuthProvider } from "./lib/auth";
 import { websiteClientOptions } from "./lib/supabaseClient";
 import { NexoraApp } from "./nexora-app";
@@ -12,7 +13,15 @@ import { NexoraApp } from "./nexora-app";
  * `websiteClientOptions` carries the statically inlined NEXT_PUBLIC_* values
  * so AuthProvider and marketplace fetches share one client.
  */
+let appMountLogged = false;
+
 export function NexoraRoot({ initialPath }: { initialPath: string }) {
+  useEffect(() => {
+    if (appMountLogged) return;
+    appMountLogged = true;
+    console.info("App mounted successfully");
+  }, []);
+
   return (
     <AuthProvider clientOptions={websiteClientOptions}>
       <NexoraApp initialPath={initialPath} />

@@ -34,6 +34,10 @@
     "test:phase14:contracts": "node --test tests/phase14/contracts/*.test.mjs",
     "test:phase14:integration": "node --test tests/phase14/integration/*.test.mjs",
     "test:phase14:e2e": "playwright test tests/phase14/e2e",
+    "test:phase15": "node --test tests/phase15-mounting-verification.test.mjs",
+    "test:phase16": "node --test tests/phase16-auth-flow-matrix.test.mjs",
+    "test:phase17": "node --test tests/phase17-location-flow-matrix.test.mjs",
+    "test:phase18": "node --test tests/phase18-rls-verification.test.mjs",
     "test:phase1": "node --test tests/phase1-centralized-auth.test.mjs && node scripts/verify-phase1-sql.mjs",
     "verify:phase1:sql": "node scripts/verify-phase1-sql.mjs"
   },
