@@ -4,6 +4,7 @@ import { INITIAL_JOBS, INITIAL_APPLICATIONS, INITIAL_APPLICANTS, INITIAL_CONVERS
 import { processNewJobForAlerts } from './utils/jobAlertMatcher';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { getErrorMessage } from './utils/errors';
+import { useLocationSync } from './hooks/useLocationSync';
 import { pathForScreen, resolveJobPortalRoute, type JobPortalRoute } from './routing';
 import {
   authBackend,
@@ -52,6 +53,11 @@ import { AdminLoginScreen } from './components/admin/AdminLoginScreen';
 import { AdminJobsScreen } from './components/admin/AdminJobsScreen';
 
 export default function App() {
+  // PHASE 5: one GPS watcher + one auth.uid()-scoped persistence coordinator
+  // for the whole Sub-App. Arms after SIGNED_IN; result is intentionally
+  // unused here — the hook is kept for its watcher/sync side effects.
+  useLocationSync();
+
   const initialRoute = useRef<JobPortalRoute>(resolveJobPortalRoute()).current;
   const pendingProtectedRoute = useRef<JobPortalRoute | null>(initialRoute.protected ? initialRoute : null);
   const [screen, setScreen] = useState<ScreenState>(initialRoute.protected ? (initialRoute.requiredRole === 'admin' ? 'admin_login' : 'login') : initialRoute.screen);
