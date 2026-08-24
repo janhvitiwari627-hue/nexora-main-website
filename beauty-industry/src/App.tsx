@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navbar, NavTab } from './components/Navbar';
 import { HeroSection } from './components/HeroSection';
 
@@ -40,7 +40,15 @@ import { GalleryItem, GalleryStatus } from './types/gallery';
 import { Product, SupplierPartner, CategoryId, QuoteItem, UserProfile, VideoTestimonial } from './types';
 import { CheckCircle2, Info, ShoppingBag } from 'lucide-react';
 
+let appMountLogged = false;
+
 export function App() {
+  useEffect(() => {
+    if (appMountLogged) return;
+    appMountLogged = true;
+    console.info('App mounted successfully');
+  }, []);
+
   // Navigation
   const [currentTab, setCurrentTab] = useState<NavTab>('home');
   

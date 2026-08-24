@@ -8,7 +8,7 @@ import NotFound from './components/NotFound.tsx';
 import AuthCallbackPage from './components/AuthCallbackPage.tsx';
 import PasswordResetPage from './components/PasswordResetPage.tsx';
 import { AuthModalProvider, useAuthModal } from './components/AuthModalProvider.tsx';
-import { useAuth } from './lib/useAuth.ts';
+import { AuthProvider, useAuth } from './lib/useAuth.ts';
 import { applyBrandConfigToDocument } from './config/brandConfig.ts';
 import { supabase, isSupabaseConfigured } from './lib/supabaseClient.ts';
 import './index.css';
@@ -192,11 +192,30 @@ function RootRouter() {
   }
 }
 
-createRoot(document.getElementById('root')!).render(
+let appMountLogged = false;
+
+function MountVerification() {
+  useEffect(() => {
+    if (appMountLogged) return;
+    appMountLogged = true;
+    console.info('App mounted successfully');
+  }, []);
+  return null;
+}
+
+const reactRoot = document.getElementById('root');
+if (!reactRoot) {
+  throw new Error('React root element #root is missing.');
+}
+
+createRoot(reactRoot).render(
   <StrictMode>
-    <AuthModalProvider>
-      <RootRouter />
-    </AuthModalProvider>
+    <AuthProvider>
+      <AuthModalProvider>
+        <MountVerification />
+        <RootRouter />
+      </AuthModalProvider>
+    </AuthProvider>
   </StrictMode>,
 );
 

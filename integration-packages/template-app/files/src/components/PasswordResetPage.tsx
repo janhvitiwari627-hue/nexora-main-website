@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { KeyRound, Loader2, TriangleAlert } from 'lucide-react';
-import { supabase } from '../lib/supabaseClient';
-import { updatePassword } from '../lib/useAuth';
+import { isSupabaseConfigured } from '../lib/supabaseClient';
+import { updatePassword, useAuth } from '../lib/useAuth';
 
 export default function PasswordResetPage() {
+  const { session, loading: authLoading } = useAuth();
   const [ready, setReady] = useState(false);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -12,23 +13,12 @@ export default function PasswordResetPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!supabase) {
+    if (!isSupabaseConfigured) {
       setError('Authentication is not configured.');
       return;
     }
-    let active = true;
-    void supabase.auth.getSession().then(({ data }) => {
-      if (active) setReady(Boolean(data.session));
-    });
-    const { data } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!active) return;
-      if (event === 'PASSWORD_RECOVERY' || session) setReady(true);
-    });
-    return () => {
-      active = false;
-      data.subscription.unsubscribe();
-    };
-  }, []);
+    if (!authLoading) setReady(Boolean(session));
+  }, [authLoading, session]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
