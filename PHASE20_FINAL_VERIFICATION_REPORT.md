@@ -41,6 +41,7 @@ Commands executed in this checkout:
 - Template App `npm run lint` — passed after the fixes.
 - Template App `npm run build` with non-secret test environment values — passed; only existing bundle-size/dynamic-import warnings.
 - Missing required portal origins were also exercised by the first build attempt and correctly failed closed with `NEXORA_CUSTOMER_PWA_ORIGIN is required.`
+- Main Website PR: https://github.com/janhvitiwari627-hue/nexora-main-website/pull/97 (open; not merged).
 
 The placeholder used above is a verification value only; it is not a production credential and is not committed.
 
