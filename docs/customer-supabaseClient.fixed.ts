@@ -131,5 +131,16 @@ const config = validateSupabaseConfig(
 
 export const supabaseConfigError = config.isValid ? null : config.error;
 export const supabase = config.isValid
-  ? createClient(config.url, config.anonKey)
+  ? createClient(config.url, config.anonKey, {
+      auth: {
+        // PHASE 11 — STORAGE KEY PARITY: every Nexora frontend client uses
+        // the one shared storage key. Omitting this would silently create an
+        // independent default key (sb-<ref>-auth-token) and fork the session.
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: 'pkce',
+        storageKey: 'nexora.auth.qwaehqsmodekbgvnaavz',
+      },
+    })
   : null;

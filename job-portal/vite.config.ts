@@ -92,6 +92,11 @@ export default defineConfig(() => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
+      // The shared packages (../packages/location) also import
+      // @supabase/supabase-js and react. Dedupe them onto this app's copies
+      // so exactly one client class and one React instance end up in the
+      // bundle, matching the tsconfig "paths" type mapping.
+      dedupe: ['@supabase/supabase-js', 'react', 'react-dom'],
     },
     server: {
       host: '0.0.0.0',

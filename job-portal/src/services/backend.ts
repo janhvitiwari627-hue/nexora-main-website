@@ -12,6 +12,7 @@ import type {
   UserRole,
 } from '../types';
 import { requireSupabase } from '../lib/supabase';
+import { asError, isMissingFunctionError } from '../utils/errors';
 
 const arrays = <T>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
 const one = <T>(value: T | T[] | null | undefined): T | null =>
@@ -42,7 +43,7 @@ function mapPortalRoleError(error: unknown, requestedRole: UserRole): Error {
   return match ? new Error(portalMismatchMessage(match[1], requestedRole)) : new Error(message);
 }
 
-function mapAuthError(error: unknown): Error {
+export function mapAuthError(error: unknown): Error {
   const message = errorMessage(error, 'Authentication request failed.');
   const normalized = message.toLowerCase();
   if (normalized.includes('rate limit')) {
@@ -282,6 +283,14 @@ export interface SignUpInput {
 }
 
 export const authBackend = {
+  /**
+   * PHASE 8 EXCEPTION — this is the ONE remaining supabase.auth.signUp call.
+   * The canonical AuthProvider.signUp(email, password, fullName) cannot carry
+   * the portal-specific signup metadata (app_context/job_role/phone/business
+   * name) or produce the duplicate-email product errors below, so the portal
+   * signup stays here by explicit architecture. Plain auth actions (sign-in,
+   * password reset, password update, sign-out) live in the AuthProvider only.
+   */
   async signUp(input: SignUpInput) {
     const client = requireSupabase();
     const email = input.email.trim();
@@ -289,7 +298,18 @@ export const authBackend = {
     const { data: existingRole, error: lookupError } = await client.rpc('job_email_portal_role', {
       p_email: email,
     });
-    if (lookupError) throw lookupError;
+    if (lookupError) {
+      // Keep the full diagnostic (code/details/hint) in the console — the UI
+      // only renders `message`, and support needs the PostgREST code.
+      console.error('[Nexora Jobs] signup pre-check job_email_portal_role failed:', lookupError);
+      if (isMissingFunctionError(lookupError)) {
+        throw new Error(
+          'Sign-up is temporarily unavailable: the Jobs portal database is missing the job_email_portal_role function. ' +
+            'An administrator must apply the job-portal Supabase migrations and reload the PostgREST schema cache.',
+        );
+      }
+      throw asError(lookupError, 'Unable to verify this email with the Jobs portal. Please try again.');
+    }
     if (existingRole === 'job_seeker' || existingRole === 'employer') {
       if (existingRole !== requestedBackendRole) {
         throw new Error(portalMismatchMessage(existingRole, input.role));
@@ -330,38 +350,29 @@ export const authBackend = {
     return data;
   },
 
-  async signIn(email: string, password: string, requestedRole: UserRole) {
-    const client = requireSupabase();
-    const { data, error } = await client.auth.signInWithPassword({ email: email.trim(), password });
-    if (error) throw mapAuthError(error);
-    try {
-      await this.registerRole(requestedRole);
-    } catch (roleError) {
-      await client.auth.signOut();
-      throw mapPortalRoleError(roleError, requestedRole);
-    }
-    return data;
-  },
-
-  async signInAdmin(email: string, password: string) {
-    const client = requireSupabase();
-    const { data, error } = await client.auth.signInWithPassword({ email: email.trim(), password });
-    if (error) throw mapAuthError(error);
-    const { data: roleRow, error: roleError } = await client.from('job_user_roles').select('role').eq('user_id', data.user.id).single();
-    if (roleError || roleRow?.role !== 'admin') {
-      await client.auth.signOut();
-      throw new Error('Admin access is restricted to approved administrator accounts.');
-    }
-    return data;
-  },
+  /**
+   * PHASE 8: password sign-in itself now happens through the canonical
+   * AuthProvider (`await signIn(email, password)`); the service layer keeps
+   * only the server-authoritative follow-ups below (role registration and
+   * the admin gate). No supabase.auth sign-in call exists here anymore.
+   */
 
   async registerRole(role: UserRole) {
+    // PHASE 4 defense in depth: the browser may only ever request the two
+    // public portal roles. Privileged roles (admin, owner, partner, staff)
+    // are granted exclusively by the database/backend — job_register_role
+    // enforces the same rule server-side (ROLE_NOT_ALLOWED) keyed to
+    // auth.uid(), so no metadata, URL or storage value can promote a user.
+    if (role !== 'seeker' && role !== 'employer') {
+      throw new Error('This portal role cannot be self-assigned.');
+    }
     const { data, error } = await requireSupabase().rpc('job_register_role', { requested_role: backendRole(role) });
     if (error) throw mapPortalRoleError(error, role);
     if (data !== backendRole(role)) throw new Error(portalMismatchMessage(String(data), role));
     return data;
   },
 
+  /** PHASE 8 EXCEPTION — OAuth is not part of the canonical provider contract. */
   async signInWithProvider(provider: Provider, _role: UserRole) {
     // OAuth never carries a browser-stored role flag. Existing users are
     // authorized after callback from job_user_roles; new role assignment must
@@ -374,27 +385,34 @@ export const authBackend = {
     return data;
   },
 
-  async sendPasswordReset(email: string) {
-    const { error } = await requireSupabase().auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: appCallbackUrl('?recovery=1'),
-    });
-    if (error) throw mapAuthError(error);
-  },
-
-  async updatePassword(password: string) {
-    const { error } = await requireSupabase().auth.updateUser({ password });
-    if (error) throw mapAuthError(error);
-  },
-
-  async signOut() {
-    const { error } = await requireSupabase().auth.signOut();
-    if (error) throw error;
-  },
 };
+
+/** Verified session identity (a read, not an auth action). */
+export async function getVerifiedUser(): Promise<User> {
+  const { data, error } = await requireSupabase().auth.getUser();
+  if (error) throw mapAuthError(error);
+  if (!data.user) throw new Error('Login succeeded but no user session was returned.');
+  return data.user;
+}
+
+/**
+ * Server-authoritative admin gate for the already-signed-in session.
+ * The caller (App) rolls the session back through the canonical
+ * AuthProvider signOut() when this rejects.
+ */
+export async function assertAdminRole(): Promise<User> {
+  const user = await getVerifiedUser();
+  const { data: roleRow, error: roleError } = await requireSupabase()
+    .from('job_user_roles').select('role').eq('user_id', user.id).single();
+  if (roleError || roleRow?.role !== 'admin') {
+    throw new Error('Admin access is restricted to approved administrator accounts.');
+  }
+  return user;
+}
 
 export async function getUserRole(user: User): Promise<UserRole> {
   const { data, error } = await requireSupabase().from('job_user_roles').select('role').eq('user_id', user.id).maybeSingle();
-  if (error) throw error;
+  if (error) throw asError(error);
   if (!data?.role) throw new Error('No Jobs portal role is assigned to this account. Please sign in through the correct portal.');
   return frontendRole(data.role);
 }
@@ -405,7 +423,7 @@ export async function isPortalOnboardingComplete(userId: string): Promise<boolea
     .select('onboarding_completed')
     .eq('user_id', userId)
     .single();
-  if (error) throw error;
+  if (error) throw asError(error);
   return Boolean(data.onboarding_completed);
 }
 
@@ -424,7 +442,7 @@ export async function completeSeekerOnboarding(profile: UserProfile, selectedRol
     p_preferred_roles: selectedRoles,
     p_employment_types: ['full_time'],
   });
-  if (error) throw error;
+  if (error) throw asError(error);
   return data as string;
 }
 
@@ -452,7 +470,7 @@ export async function completeEmployerOnboarding(input: EmployerOnboardingInput)
     p_website_url: input.website || null,
     p_instagram_url: input.instagram || null,
   });
-  if (error) throw error;
+  if (error) throw asError(error);
   return data as string;
 }
 
@@ -491,7 +509,7 @@ export async function loadWorkspace(user: User, role: UserRole): Promise<Workspa
   const error = [profileResult, candidateResult, membershipResult, jobsResult, bookmarksResult, conversationsResult, messagesResult, filtersResult, alertsResult, applicationsResult, applicantCardsResult]
     .map((result: any) => result.error)
     .find(Boolean);
-  if (error) throw error;
+  if (error) throw asError(error);
 
   const candidate: any = candidateResult.data;
   const [skillsResult, portfolioResult] = candidate
@@ -579,19 +597,19 @@ export async function saveProfile(userId: string, profile: UserProfile) {
     phone: profile.phone || null,
     avatar_path: profile.avatarUrl || null,
   }).eq('id', userId);
-  if (error) throw error;
+  if (error) throw asError(error);
 
   if (profile.role === 'seeker') {
     const { error: candidateError } = await client.from('job_seeker_profiles').update({
       headline: profile.primaryRole || null,
       bio: profile.bio || null,
     }).eq('user_id', userId);
-    if (candidateError) throw candidateError;
+    if (candidateError) throw asError(candidateError);
   } else {
     const { error: employerError } = await client.from('job_employer_profiles').update({
       display_name: profile.contactPerson || profile.name,
     }).eq('user_id', userId);
-    if (employerError) throw employerError;
+    if (employerError) throw asError(employerError);
   }
 }
 
@@ -600,7 +618,7 @@ export async function setBookmark(userId: string, jobId: string, bookmarked: boo
   const result = bookmarked
     ? await client.from('job_saved_jobs').upsert({ user_id: userId, job_id: jobId })
     : await client.from('job_saved_jobs').delete().eq('user_id', userId).eq('job_id', jobId);
-  if (result.error) throw result.error;
+  if (result.error) throw asError(result.error);
 }
 
 function salaryDetails(display: string): {
@@ -640,7 +658,7 @@ export async function createJob(_userId: string, job: JobPosting): Promise<JobPo
     .eq('status', 'active')
     .limit(1)
     .single();
-  if (membershipError) throw membershipError;
+  if (membershipError) throw asError(membershipError);
   const { data: location } = await client
     .from('job_salon_locations')
     .select('id')
@@ -669,13 +687,13 @@ export async function createJob(_userId: string, job: JobPosting): Promise<JobPo
     p_tags: job.tags,
     p_image_path: job.image || null,
   });
-  if (error) throw error;
+  if (error) throw asError(error);
   const { data: saved, error: readError } = await client
     .from('job_posts')
     .select('*, salon:salons!job_posts_salon_id_fkey(*), location:job_salon_locations!job_posts_location_id_fkey(*)')
     .eq('id', id)
     .single();
-  if (readError) throw readError;
+  if (readError) throw asError(readError);
   return mapJob(saved);
 }
 
@@ -705,7 +723,7 @@ export async function createApplication(
     p_expected_salary: numericValue(expectedSalary),
     p_available_from: dateValue(availability),
   });
-  if (error) throw error;
+  if (error) throw asError(error);
   return (data as any).id as string;
 }
 
@@ -713,23 +731,23 @@ export async function updateApplicationStatus(applicationId: string, status: App
   const client = requireSupabase();
   const { data: current, error: readError } = await client
     .from('job_applications').select('status').eq('id', applicationId).single();
-  if (readError) throw readError;
+  if (readError) throw asError(readError);
 
   let currentStatus = current.status;
   if (status === 'Viewed' && currentStatus === 'submitted') {
     const { error } = await client.rpc('mark_application_viewed', { target_application_id: applicationId });
-    if (error) throw error;
+    if (error) throw asError(error);
     return;
   }
   if (status === 'Shortlisted' || status === 'Interview Scheduled') {
     if (currentStatus === 'submitted') {
       const { error } = await client.rpc('mark_application_viewed', { target_application_id: applicationId });
-      if (error) throw error;
+      if (error) throw asError(error);
       currentStatus = 'viewed';
     }
     if (currentStatus === 'viewed') {
       const { error } = await client.rpc('shortlist_application', { target_application_id: applicationId });
-      if (error) throw error;
+      if (error) throw asError(error);
       currentStatus = 'shortlisted';
     }
     if (status === 'Interview Scheduled' && currentStatus === 'shortlisted') {
@@ -742,18 +760,18 @@ export async function updateApplicationStatus(applicationId: string, status: App
         p_meeting_url: null,
         p_employer_message: 'We would like to invite you for an interview.',
       });
-      if (error) throw error;
+      if (error) throw asError(error);
     }
     return;
   }
   if (status === 'Declined') {
     const { error } = await client.rpc('reject_application', { target_application_id: applicationId, p_reason: null });
-    if (error) throw error;
+    if (error) throw asError(error);
     return;
   }
   if (status === 'Hired') {
     const { error } = await client.rpc('mark_candidate_hired', { target_application_id: applicationId });
-    if (error) throw error;
+    if (error) throw asError(error);
     return;
   }
   if (status === 'Offer Extended') {
@@ -770,18 +788,18 @@ export async function createConversationRecord(input: {
 }) {
   const client = requireSupabase();
   const { data: job, error: jobError } = await client.from('job_posts').select('salon_id').eq('id', input.jobId).single();
-  if (jobError) throw jobError;
+  if (jobError) throw asError(jobError);
 
   let candidateUserId = input.role === 'seeker' ? input.userId : '';
   let employerUserId = input.role === 'employer' ? input.userId : '';
   if (!employerUserId) {
     const { data: member, error } = await client.from('job_salon_members').select('user_id').eq('salon_id', job.salon_id).eq('status', 'active').order('created_at').limit(1).single();
-    if (error) throw error;
+    if (error) throw asError(error);
     employerUserId = member.user_id;
   }
   if (!candidateUserId && input.targetSeekerEmail) {
     const { data: cards, error } = await client.rpc('get_job_applicant_cards');
-    if (error) throw error;
+    if (error) throw asError(error);
     candidateUserId = arrays<any>(cards).find((card) => card.email === input.targetSeekerEmail)?.candidate_user_id || '';
   }
   if (!candidateUserId || !employerUserId) throw new Error('Unable to identify conversation participants.');
@@ -794,7 +812,7 @@ export async function createConversationRecord(input: {
     status: 'inquiry',
     last_message: 'Conversation started',
   }, { onConflict: 'job_id,candidate_user_id,employer_user_id' });
-  if (error) throw error;
+  if (error) throw asError(error);
 }
 
 export async function sendMessageRecord(userId: string, message: ChatMessage) {
@@ -805,7 +823,7 @@ export async function sendMessageRecord(userId: string, message: ChatMessage) {
     body: message.text,
     attachment: message.attachment || null,
   });
-  if (error) throw error;
+  if (error) throw asError(error);
 }
 
 export async function updateAlertRead(alertId: string, isRead = true) {
@@ -813,7 +831,7 @@ export async function updateAlertRead(alertId: string, isRead = true) {
     is_read: isRead,
     read_at: isRead ? new Date().toISOString() : null,
   }).eq('id', alertId);
-  if (error) throw error;
+  if (error) throw asError(error);
 }
 
 export async function markAllAlertsRead(userId: string) {
@@ -821,10 +839,10 @@ export async function markAllAlertsRead(userId: string) {
     is_read: true,
     read_at: new Date().toISOString(),
   }).eq('user_id', userId).eq('type', 'job_match');
-  if (error) throw error;
+  if (error) throw asError(error);
 }
 
 export async function deleteAlert(alertId: string) {
   const { error } = await requireSupabase().from('job_notifications').delete().eq('id', alertId);
-  if (error) throw error;
+  if (error) throw asError(error);
 }

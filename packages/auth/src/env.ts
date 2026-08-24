@@ -130,7 +130,9 @@ export type SupabaseEnvProblem =
   | "missing-url"
   | "missing-anon-key"
   | "invalid-url"
+  | "insecure-url"
   | "wrong-project"
+  | "malformed-key"
   | "service-role-key";
 
 export type SupabaseEnvValidation = {
@@ -147,6 +149,8 @@ export type SupabaseEnvValidation = {
  * mistake of pasting a key that self-identifies as privileged.
  */
 function looksLikeServiceRoleKey(key: string): boolean {
+  // New-format secret keys self-identify by prefix and are always privileged.
+  if (key.startsWith("sb_secret_")) return true;
   if (!key.startsWith("eyJ")) return false;
   const payload = key.split(".")[1];
   if (!payload) return false;
@@ -160,6 +164,24 @@ function looksLikeServiceRoleKey(key: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * A publishable Supabase browser key is one of exactly two shapes:
+ *   * a legacy anon JWT — three non-empty base64url segments starting `eyJ`;
+ *   * a new-format publishable key — `sb_publishable_…`.
+ * Anything else (truncated paste, whitespace, a random string, a database
+ * password…) is malformed and must be rejected instead of shipped.
+ */
+function looksLikeMalformedKey(key: string): boolean {
+  if (/\s/.test(key)) return true;
+  if (key.startsWith("sb_secret_")) return false; // reported as service-role-key instead
+  if (key.startsWith("sb_publishable_")) return key.length <= "sb_publishable_".length;
+  if (key.startsWith("eyJ")) {
+    const segments = key.split(".");
+    return segments.length !== 3 || segments.some((segment) => segment.length === 0);
+  }
+  return true;
 }
 
 /**
@@ -180,11 +202,22 @@ export function validateSupabaseEnv(
   if (!env.anonKey) problems.push("missing-anon-key");
 
   let hostname = "";
+  let protocol = "";
   if (env.url) {
     try {
-      hostname = new URL(env.url).hostname;
+      const parsed = new URL(env.url);
+      hostname = parsed.hostname;
+      protocol = parsed.protocol;
     } catch {
       problems.push("invalid-url");
+    }
+  }
+  if (hostname && protocol !== "https:") {
+    // Production must always be HTTPS. Plain HTTP is tolerated only for a
+    // loopback Supabase (supabase start) in explicitly non-strict dev/test.
+    const loopback = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+    if (strictProject || !loopback) {
+      problems.push("insecure-url");
     }
   }
   if (hostname && strictProject && hostname !== EXPECTED_SUPABASE_HOSTNAME) {
@@ -192,6 +225,8 @@ export function validateSupabaseEnv(
   }
   if (env.anonKey && looksLikeServiceRoleKey(env.anonKey)) {
     problems.push("service-role-key");
+  } else if (env.anonKey && looksLikeMalformedKey(env.anonKey)) {
+    problems.push("malformed-key");
   }
 
   return {
@@ -208,9 +243,17 @@ function describeEnvProblems(problems: SupabaseEnvProblem[], hostname: string): 
   if (problems.includes("missing-url")) parts.push("SUPABASE_URL is missing");
   if (problems.includes("missing-anon-key")) parts.push("SUPABASE_ANON_KEY is missing");
   if (problems.includes("invalid-url")) parts.push("SUPABASE_URL is not a valid URL");
+  if (problems.includes("insecure-url")) {
+    parts.push("SUPABASE_URL must use https:// (plain http is never allowed in production)");
+  }
   if (problems.includes("wrong-project")) {
     parts.push(
       `SUPABASE_URL points at ${hostname || "an unknown host"} instead of the shared project ${EXPECTED_SUPABASE_HOSTNAME}`,
+    );
+  }
+  if (problems.includes("malformed-key")) {
+    parts.push(
+      "the configured key is malformed — expected the project's anon JWT (eyJ…) or publishable key (sb_publishable_…)",
     );
   }
   if (problems.includes("service-role-key")) {

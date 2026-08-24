@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getErrorMessage } from '../../utils/errors';
 import { ArrowLeft, CheckCircle2, Lock, Eye, EyeOff, RefreshCw, ShieldCheck, AlertCircle } from 'lucide-react';
 
 interface ResetPasswordScreenProps {
@@ -74,7 +75,8 @@ export const ResetPasswordScreen: React.FC<ResetPasswordScreenProps> = ({
       await onUpdatePassword(newPassword);
       setIsSuccess(true);
     } catch (updateError) {
-      setErrorMsg(updateError instanceof Error ? updateError.message : 'Unable to update the password.');
+      console.error('[Nexora Jobs] password update failed:', updateError);
+      setErrorMsg(getErrorMessage(updateError, 'Unable to update the password.'));
     } finally {
       setIsSubmitting(false);
     }

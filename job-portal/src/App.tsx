@@ -3,9 +3,15 @@ import { ScreenState, UserRole, JobPosting, Application, Applicant, UserProfile,
 import { INITIAL_JOBS, INITIAL_APPLICATIONS, INITIAL_APPLICANTS, INITIAL_CONVERSATIONS, INITIAL_MESSAGES, INITIAL_PORTFOLIO_ITEMS, INITIAL_SAVED_FILTERS, INITIAL_JOB_ALERTS } from './data/mockData';
 import { processNewJobForAlerts } from './utils/jobAlertMatcher';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
+import { getErrorMessage } from './utils/errors';
+import { useLocationSync } from './hooks/useLocationSync';
 import { pathForScreen, resolveJobPortalRoute, type JobPortalRoute } from './routing';
+import { useAuth } from './auth/AuthProvider';
 import {
+  assertAdminRole,
   authBackend,
+  getVerifiedUser,
+  mapAuthError,
   completeEmployerOnboarding,
   completeSeekerOnboarding,
   createApplication,
@@ -51,6 +57,15 @@ import { AdminLoginScreen } from './components/admin/AdminLoginScreen';
 import { AdminJobsScreen } from './components/admin/AdminJobsScreen';
 
 export default function App() {
+  // PHASE 8: the five canonical auth actions come from the AuthProvider.
+  // Components and this shell never call supabase.auth for them directly.
+  const { signIn, forgotPassword, updatePassword, signOut } = useAuth();
+
+  // PHASE 5: one GPS watcher + one auth.uid()-scoped persistence coordinator
+  // for the whole Sub-App. Arms after SIGNED_IN; result is intentionally
+  // unused here — the hook is kept for its watcher/sync side effects.
+  useLocationSync();
+
   const initialRoute = useRef<JobPortalRoute>(resolveJobPortalRoute()).current;
   const pendingProtectedRoute = useRef<JobPortalRoute | null>(initialRoute.protected ? initialRoute : null);
   const [screen, setScreen] = useState<ScreenState>(initialRoute.protected ? (initialRoute.requiredRole === 'admin' ? 'admin_login' : 'login') : initialRoute.screen);
@@ -87,12 +102,11 @@ export default function App() {
 
   const hydrateWorkspace = useCallback(async (userId: string, _expectedRole?: UserRole) => {
     if (!supabase) throw new Error('Supabase is not configured.');
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-    if (userError) throw userError;
-    if (!userData.user || userData.user.id !== userId) throw new Error('Your session is no longer valid.');
+    const verifiedUser = await getVerifiedUser();
+    if (verifiedUser.id !== userId) throw new Error('Your session is no longer valid.');
 
-    const role = await getUserRole(userData.user);
-    const workspace = await loadWorkspace(userData.user, role);
+    const role = await getUserRole(verifiedUser);
+    const workspace = await loadWorkspace(verifiedUser, role);
     setCurrentUserId(userId);
     setUserRole(role);
     setUserProfile(workspace.profile);
@@ -160,13 +174,13 @@ export default function App() {
         }
       } catch (error) {
         // A temporary offline launch must not destroy the persisted auth session.
-        if (navigator.onLine) await supabase.auth.signOut();
+        if (navigator.onLine) await signOut().catch(() => undefined);
         if (active) {
           if (navigator.onLine) setCurrentUserId(null);
           setScreen('welcome');
           setBackendError(
             navigator.onLine
-              ? (error instanceof Error ? error.message : 'Unable to validate your portal access.')
+              ? getErrorMessage(error, 'Unable to validate your portal access.')
               : 'You are offline. The app shell and previously cached public content remain available; reconnect before making changes.',
           );
         }
@@ -192,7 +206,7 @@ export default function App() {
       active = false;
       listener.subscription.unsubscribe();
     };
-  }, [enterAuthenticatedPortal]);
+  }, [enterAuthenticatedPortal, signOut]);
 
   useEffect(() => {
     if (isBackendLoading) return;
@@ -224,7 +238,7 @@ export default function App() {
       window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(() => {
         void hydrateWorkspace(currentUserId, userRole).catch((error) =>
-          setBackendError(error instanceof Error ? error.message : 'Unable to refresh data.'),
+          setBackendError(getErrorMessage(error, 'Unable to refresh data.')),
         );
       }, 250);
     };
@@ -273,7 +287,9 @@ export default function App() {
       await hydrateWorkspace(user.id, 'seeker');
       setScreen('seeker_onboarding_step1');
     } else {
-      throw new Error('Account activation did not complete. Please try signing in or contact support.');
+      throw new Error(user && !session
+        ? 'Your account was created, but a verification email must be confirmed first. Open the link we just sent to your inbox, then log in.'
+        : 'Account activation did not complete. Please try signing in or contact support.');
     }
   };
 
@@ -299,18 +315,42 @@ export default function App() {
       await hydrateWorkspace(user.id, 'employer');
       setScreen('employer_onboarding_step1');
     } else {
-      throw new Error('Account activation did not complete. Please try signing in or contact support.');
+      throw new Error(user && !session
+        ? 'Your account was created, but a verification email must be confirmed first. Open the link we just sent to your inbox, then log in.'
+        : 'Account activation did not complete. Please try signing in or contact support.');
     }
   };
 
   const handleLoginSuccess = async (selectedRole: UserRole, email: string, password: string) => {
-    const { user } = await authBackend.signIn(email, password, selectedRole);
-    if (!user) throw new Error('Login succeeded but no user session was returned.');
+    try {
+      await signIn(email, password);
+    } catch (error) {
+      throw mapAuthError(error);
+    }
+    try {
+      // Server-authoritative portal role; a mismatch rolls the session back.
+      await authBackend.registerRole(selectedRole);
+    } catch (roleError) {
+      await signOut().catch(() => undefined);
+      throw roleError;
+    }
+    const user = await getVerifiedUser();
     await enterAuthenticatedPortal(user.id, selectedRole);
   };
 
   const handleAdminLogin = async (email: string, password: string) => {
-    const { user } = await authBackend.signInAdmin(email, password);
+    try {
+      await signIn(email, password);
+    } catch (error) {
+      throw mapAuthError(error);
+    }
+    let user;
+    try {
+      user = await assertAdminRole();
+    } catch (gateError) {
+      await signOut().catch(() => undefined);
+      throw gateError;
+    }
     pendingProtectedRoute.current = { screen: 'admin_jobs', protected: true, requiredRole: 'admin' };
     await enterAuthenticatedPortal(user.id, 'admin');
   };
@@ -330,7 +370,7 @@ export default function App() {
         setJobs((prevJobs) =>
           prevJobs.map((item) => (item.id === jobId ? { ...item, isBookmarked: !nextValue } : item)),
         );
-        setBackendError(error instanceof Error ? error.message : 'Unable to update bookmark.');
+        setBackendError(getErrorMessage(error, 'Unable to update bookmark.'));
       });
     }
   };
@@ -386,7 +426,7 @@ export default function App() {
       ).catch((error) => {
         setApplications((prev) => prev.filter((application) => application.id !== applicationId));
         setApplicants((prev) => prev.filter((applicant) => applicant.id !== newApplicant.id));
-        setBackendError(error instanceof Error ? error.message : 'Unable to submit application.');
+        setBackendError(getErrorMessage(error, 'Unable to submit application.'));
       });
     }
   };
@@ -398,7 +438,7 @@ export default function App() {
         setJobs((prev) => [savedJob, ...prev]);
         return;
       } catch (error) {
-        setBackendError(error instanceof Error ? error.message : 'Unable to submit job for approval.');
+        setBackendError(getErrorMessage(error, 'Unable to submit job for approval.'));
         throw error;
       }
     }
@@ -418,7 +458,7 @@ export default function App() {
     );
     if (currentUserId) {
       void updateAlertRead(alertId).catch((error) =>
-        setBackendError(error instanceof Error ? error.message : 'Unable to update alert.'),
+        setBackendError(getErrorMessage(error, 'Unable to update alert.')),
       );
     }
   };
@@ -427,7 +467,7 @@ export default function App() {
     setJobAlerts((prev) => prev.map((a) => ({ ...a, isRead: true })));
     if (currentUserId) {
       void markAllAlertsRead(currentUserId).catch((error) =>
-        setBackendError(error instanceof Error ? error.message : 'Unable to update alerts.'),
+        setBackendError(getErrorMessage(error, 'Unable to update alerts.')),
       );
     }
   };
@@ -436,7 +476,7 @@ export default function App() {
     setJobAlerts((prev) => prev.filter((a) => a.id !== alertId));
     if (currentUserId) {
       void deleteAlert(alertId).catch((error) =>
-        setBackendError(error instanceof Error ? error.message : 'Unable to delete alert.'),
+        setBackendError(getErrorMessage(error, 'Unable to delete alert.')),
       );
     }
   };
@@ -449,7 +489,7 @@ export default function App() {
     // Also sync Seeker applications if matching
     if (currentUserId) {
       void updateApplicationStatus(applicantId, status).catch((error) =>
-        setBackendError(error instanceof Error ? error.message : 'Unable to update applicant status.'),
+        setBackendError(getErrorMessage(error, 'Unable to update applicant status.')),
       );
     }
 
@@ -503,7 +543,7 @@ export default function App() {
     if (currentUserId) {
       void sendMessageRecord(currentUserId, newMsg).catch((error) => {
         setMessages((prev) => prev.filter((message) => message.id !== newMsg.id));
-        setBackendError(error instanceof Error ? error.message : 'Unable to send message.');
+        setBackendError(getErrorMessage(error, 'Unable to send message.'));
       });
     }
   };
@@ -552,7 +592,7 @@ export default function App() {
         targetSeekerEmail: newConv.seekerEmail,
       }).catch((error) => {
         setConversations((prev) => prev.filter((conversation) => conversation.id !== newConvId));
-        setBackendError(error instanceof Error ? error.message : 'Unable to start conversation.');
+        setBackendError(getErrorMessage(error, 'Unable to start conversation.'));
       });
     }
     return newConvId;
@@ -562,7 +602,7 @@ export default function App() {
     setUserProfile(updatedProfile);
     if (currentUserId) {
       void saveProfile(currentUserId, updatedProfile).catch((error) =>
-        setBackendError(error instanceof Error ? error.message : 'Unable to save profile.'),
+        setBackendError(getErrorMessage(error, 'Unable to save profile.')),
       );
     }
   };
@@ -572,7 +612,7 @@ export default function App() {
     setUserProfile(updatedProfile);
     if (currentUserId) {
       void saveProfile(currentUserId, updatedProfile).catch((error) =>
-        setBackendError(error instanceof Error ? error.message : 'Unable to save profile photo.'),
+        setBackendError(getErrorMessage(error, 'Unable to save profile photo.')),
       );
     }
   };
@@ -581,13 +621,17 @@ export default function App() {
     if (passwordRecoveryState !== 'valid') {
       throw new Error('This password reset link is invalid or expired. Request a new reset email.');
     }
-    await authBackend.updatePassword(password);
+    try {
+      await updatePassword(password);
+    } catch (error) {
+      throw mapAuthError(error);
+    }
     window.history.replaceState({}, document.title, window.location.pathname);
   };
 
   const exitPasswordRecovery = async (target: 'login' | 'forgot_password') => {
     try {
-      await authBackend.signOut();
+      await signOut();
     } finally {
       setPasswordRecoveryState('idle');
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -597,8 +641,8 @@ export default function App() {
 
   const handleLogout = () => {
     if (currentUserId) {
-      void authBackend.signOut().catch((error) =>
-        setBackendError(error instanceof Error ? error.message : 'Unable to sign out.'),
+      void signOut().catch((error) =>
+        setBackendError(getErrorMessage(error, 'Unable to sign out.')),
       );
     } else {
       setScreen('welcome');
@@ -632,7 +676,7 @@ export default function App() {
       <PwaInstallButton />
 
       {screen === 'admin_login' && <AdminLoginScreen onLogin={handleAdminLogin} onBack={() => setScreen('welcome')} />}
-      {screen === 'admin_jobs' && <AdminJobsScreen onLogout={() => void authBackend.signOut()} />}
+      {screen === 'admin_jobs' && <AdminJobsScreen onLogout={() => void signOut()} />}
 
       {/* SCREEN 1: WELCOME */}
       {screen === 'welcome' && (
@@ -686,7 +730,7 @@ export default function App() {
       {screen === 'forgot_password' && (
         <ForgotPasswordScreen
           onBackToLogin={() => setScreen('login')}
-          onSendResetLink={(email) => authBackend.sendPasswordReset(email)}
+          onSendResetLink={(email) => forgotPassword(email).catch((error) => { throw mapAuthError(error); })}
         />
       )}
 
@@ -742,7 +786,7 @@ export default function App() {
               if (currentUserId) await completeSeekerOnboarding(updatedProfile, selectedRoles);
               setScreen('main_app');
             } catch (error) {
-              setBackendError(error instanceof Error ? error.message : 'Unable to complete onboarding.');
+              setBackendError(getErrorMessage(error, 'Unable to complete onboarding.'));
             }
           }}
         />
@@ -759,7 +803,7 @@ export default function App() {
               handleProfileUpdate({ ...userProfile, businessName: businessData.businessName });
               setScreen('employer_onboarding_step2');
             } catch (error) {
-              setBackendError(error instanceof Error ? error.message : 'Unable to complete business setup.');
+              setBackendError(getErrorMessage(error, 'Unable to complete business setup.'));
             }
           }}
         />

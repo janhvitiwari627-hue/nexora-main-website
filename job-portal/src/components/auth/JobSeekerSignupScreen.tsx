@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getErrorMessage } from '../../utils/errors';
 import { User, Mail, Phone, Lock, Eye, EyeOff, ArrowLeft, Bell, Apple } from 'lucide-react';
 
 interface JobSeekerSignupScreenProps {
@@ -49,7 +50,9 @@ export const JobSeekerSignupScreen: React.FC<JobSeekerSignupScreenProps> = ({
     try {
       await onSubmit({ name: fullName, email, phone, password });
     } catch (signupError) {
-      setError(signupError instanceof Error ? signupError.message : 'Unable to create account.');
+      // Keep the full backend diagnostic in the console for support/debugging.
+      console.error('[Nexora Jobs] seeker signup failed:', signupError);
+      setError(getErrorMessage(signupError, 'Unable to create account.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -62,7 +65,8 @@ export const JobSeekerSignupScreen: React.FC<JobSeekerSignupScreenProps> = ({
     try {
       await onSocialSignup(provider);
     } catch (signupError) {
-      setError(signupError instanceof Error ? signupError.message : 'Unable to start social sign-up.');
+      console.error('[Nexora Jobs] social sign-up failed:', signupError);
+      setError(getErrorMessage(signupError, 'Unable to start social sign-up.'));
       setIsSubmitting(false);
     }
   };

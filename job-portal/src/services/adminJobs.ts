@@ -1,5 +1,6 @@
 import type { JobPosting } from '../types';
 import { requireSupabase } from '../lib/supabase';
+import { asError } from '../utils/errors';
 
 const one = <T>(value: T | T[] | null | undefined): T | null => Array.isArray(value) ? value[0] ?? null : value ?? null;
 const list = (value?: string | null) => value ? value.split(/\n|,|•/).map((v) => v.trim()).filter(Boolean) : [];
@@ -24,18 +25,18 @@ export async function loadPendingApprovalJobs() {
   const { data, error } = await requireSupabase().from('job_posts')
     .select('*, salon:salons!job_posts_salon_id_fkey(*), location:job_salon_locations!job_posts_location_id_fkey(*)')
     .eq('status', 'pending_approval').order('created_at', { ascending: true });
-  if (error) throw error;
+  if (error) throw asError(error);
   return (data || []).map(mapAdminJob);
 }
 
 export async function approvePendingJob(jobId: string) {
   const { data, error } = await requireSupabase().rpc('approve_job', { target_job_id: jobId });
-  if (error) throw error;
+  if (error) throw asError(error);
   return data;
 }
 
 export async function rejectPendingJob(jobId: string, reason?: string) {
   const { data, error } = await requireSupabase().rpc('reject_job', { target_job_id: jobId, p_reason: reason || null });
-  if (error) throw error;
+  if (error) throw asError(error);
   return data;
 }

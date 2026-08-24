@@ -7,6 +7,7 @@ const portalPackage = JSON.parse(await readFile(new URL('../job-portal/package.j
 const nextConfig = await readFile(new URL('../next.config.ts', import.meta.url), 'utf8');
 const portalVite = await readFile(new URL('../job-portal/vite.config.ts', import.meta.url), 'utf8');
 const portalBackend = await readFile(new URL('../job-portal/src/services/backend.ts', import.meta.url), 'utf8');
+const portalProvider = await readFile(new URL('../job-portal/src/auth/AuthProvider.tsx', import.meta.url), 'utf8');
 const portalRouting = await readFile(new URL('../job-portal/src/routing.ts', import.meta.url), 'utf8');
 const mainApp = await readFile(new URL('../app/nexora-app.tsx', import.meta.url), 'utf8');
 const migrations = await readdir(new URL('../job-portal/supabase/migrations/', import.meta.url));
@@ -29,8 +30,10 @@ test('base path, assets, auth redirects and PWA are scoped to /job-portal', () =
   assert.match(portalVite, /scope:\s*appBase/);
   assert.match(portalVite, /navigateFallback:\s*asset\('index\.html'\)/);
   assert.match(portalBackend, /import\.meta\.env\.BASE_URL/);
+  assert.match(portalProvider, /import\.meta\.env\.BASE_URL/);
   assert.doesNotMatch(portalBackend, /resendSignupVerification|\?verified=1/);
-  assert.match(portalBackend, /appCallbackUrl\('\?recovery=1'\)/);
+  // Phase 8: the recovery redirect moved into the canonical AuthProvider.
+  assert.match(portalProvider, /\$\{appBaseUrl\(\)\}\?recovery=1/);
 });
 
 test('direct Job Portal routes map to the SPA without taking root Nexora routes', () => {
