@@ -14,7 +14,7 @@ This runbook provides operational procedures for managing the Nexora v3 producti
 | Component | Technology | Location |
 |-----------|------------|----------|
 | Main Website | Next.js/Vite (Vercel) | `nexora-main-website` |
-| Customer PWA | Vite/Vinext (Vercel) | `custmer-Fresh-app-` |
+| Customer PWA | Vite (Vercel) | `REMIX-Final-salon-app-` |
 | Owner PWA | Vite/Vinext (Vercel) | `PINK-NEXORA-AAP-` |
 | Growth Partner PWA | Vite/Vinext (Vercel) | `pink-growth-partner-aap-` |
 | Database | PostgreSQL (Supabase) | `qwaehqsmodekbgvnaavz` |
@@ -58,7 +58,7 @@ This runbook provides operational procedures for managing the Nexora v3 producti
 ```bash
 # 1. Check all deployments
 curl -s -o /dev/null -w "%{http_code}" https://nexora.example.com/
-curl -s -o /dev/null -w "%{http_code}" https://custmer-fresh-app.vercel.app/
+curl -s -o /dev/null -w "%{http_code}" https://remix-final-salon-app.vercel.app/
 curl -s -o /dev/null -w "%{http_code}" https://pink-nexora-aap.vercel.app/
 curl -s -o /dev/null -w "%{http_code}" https://pink-growth-partner-aap.vercel.app/
 

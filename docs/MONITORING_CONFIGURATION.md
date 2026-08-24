@@ -163,7 +163,7 @@ export async function GET() {
 | Service | Health Check URL | Expected |
 |---------|------------------|----------|
 | Main Website | `https://nexora.example.com/api/health` | 200 OK |
-| Customer PWA | `https://custmer-fresh-app.vercel.app/api/health` | 200 OK |
+| Customer PWA | `https://remix-final-salon-app.vercel.app/` | 200 OK |
 | Owner PWA | `https://pink-nexora-aap.vercel.app/api/health` | 200 OK |
 | Growth Partner PWA | `https://pink-growth-partner-aap.vercel.app/api/health` | 200 OK |
 | Supabase | `https://qwaehqsmodekbgvnaavz.supabase.co/health` | 200 OK |

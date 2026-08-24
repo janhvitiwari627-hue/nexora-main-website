@@ -26,7 +26,7 @@ import test from "node:test";
 import ts from "typescript";
 
 const MAIN = "https://nexora-main-website.vercel.app";
-const CUSTOMER = "https://custmer-fresh-app.vercel.app";
+const CUSTOMER = "https://remix-final-salon-app.vercel.app";
 
 async function loadRedirects() {
   const dir = await mkdtemp(join(tmpdir(), "nexora-phase9-"));

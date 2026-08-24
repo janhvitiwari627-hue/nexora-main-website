@@ -54,7 +54,8 @@ export const AUTH_ROUTES = {
  */
 export const DEFAULT_ALLOWED_AUTH_ORIGINS: readonly string[] = [
   "https://nexora-main-website.vercel.app",
-  "https://custmer-fresh-app.vercel.app",
+  // Current Customer App (replaces retired custmer-fresh-app.vercel.app).
+  "https://remix-final-salon-app.vercel.app",
   "https://shop-onwer-pink-nexora-aap.vercel.app",
   "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app",
   // Template App (website builder) reached through /app/template. The

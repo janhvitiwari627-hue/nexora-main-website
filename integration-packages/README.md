@@ -18,7 +18,7 @@ upstream branches moved.
 
 | Package | Target repo | Task | Status |
 |---|---|---|---|
-| `customer-pwa/` | `freewebsite859-sudo/custmer-Fresh-app-` | Production-only Customer PWA; remove demo/role-dashboard branches; mount at `/app/customer/`; Phase 2 shared `@nexora/auth` wiring | ✅ Ready (`auth-integration.patch`; build verified on `ff93504467b0`) |
+| `customer-pwa/` | `freewebsite859-sudo/REMIX-Final-salon-app-` (replaces retired `custmer-Fresh-app-`) | Current Customer PWA at `https://remix-final-salon-app.vercel.app`; apply `subapp-sync-artifacts/phase22/customer-app/` on `2977c1b`. Historical `auth-integration.patch` still documents the retired `custmer-Fresh-app-` base `ff93504467b0` | ✅ Current target live; Phase 22 series ready |
 | `owner-pwa/` | `promptaivideo4-coder/PINK-NEXORA-AAP-` | Live owner workspace, role gate, env-only auth, proposal review, honest server states; Phase 2 shared `@nexora/auth` wiring | ✅ Ready (`auth-integration.patch`; build verified on `47fb48e7767e`) |
 | `growth-partner-pwa/` | `diamondpeomotion-cyber/pink-growth-partner-aap-` | Live Auth, server referral identity, attribution, proposal submission, commissions, scoped PWA; Phase 2 shared `@nexora/auth` wiring | ✅ Ready (`auth-integration.patch`; tsc + build verified on `e00f0ed1acea`) |
 | `template-app/` | `templateapp67-oss/NEW-TAMPLETE-APP` | Canonical provider/client adapters and server-backed Owner workspace resolution | ✅ Phase 6 stack ready on `cfaedcad`; copy the documented replacement files |

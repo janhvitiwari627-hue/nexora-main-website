@@ -113,15 +113,16 @@ Existing warnings only: large Vite chunks, Next `middleware.ts` deprecation.
 
 ### Customer — BLOCKED (external)
 
-- Target `main` (`freewebsite859-sudo/custmer-Fresh-app-` @ `cdfec89`)
-  mounts `<App />` only — **no** `<AuthProvider>`.
-- Alternate tree `REMIX-Final-salon-app-` @ `2977c1b` is the same: no
-  shared provider. Phase 22 patches were never pushed.
+- Current Customer App is `freewebsite859-sudo/REMIX-Final-salon-app-`
+  @ `2977c1b` (live: https://remix-final-salon-app.vercel.app/). The retired
+  `custmer-Fresh-app-` tree is no longer the platform target.
+- Unpatched `main` still mounts `<App />` only — **no** `<AuthProvider>`
+  until the Phase 22 series is applied.
 - **Env on target:** `.env.example` has a malformed URL
   (`https=qwaehqsmodekbgvnaavz.supabase.co`) and committed credential-shaped
   values. Not the canonical contract.
 - No `nexora-auth-integration` branch. No auth-integration PR.
-- **URL (unpatched live app):** https://custmer-fresh-app.vercel.app/
+- **URL (current live app):** https://remix-final-salon-app.vercel.app/
 
 ### Owner — BLOCKED (external)
 

@@ -16,11 +16,11 @@ repository and will not push to the PWA remotes.
 ## 1. Customer PWA
 
 ```bash
-git clone https://github.com/freewebsite859-sudo/custmer-Fresh-app-.git
-cd custmer-Fresh-app-
+git clone https://github.com/freewebsite859-sudo/REMIX-Final-salon-app-.git
+cd REMIX-Final-salon-app-
 git checkout main
 git pull --ff-only origin main
-git am /path/to/nexora-main-website/integration-packages/customer-pwa/supabase-integration.patch
+git am /path/to/nexora-main-website/subapp-sync-artifacts/phase22/customer-app/*.patch
 
 cat > .env <<'EOF'
 VITE_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co

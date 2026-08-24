@@ -196,7 +196,7 @@ test("3.1 open-redirect attempts are rejected", () => {
 
 test("3.2 allowlisted Nexora origins are accepted for cross-origin handoff", () => {
   const { safeRedirectUrl } = mods.redirects;
-  const target = "https://custmer-fresh-app.vercel.app/bookings";
+  const target = "https://remix-final-salon-app.vercel.app/bookings";
   assert.equal(
     safeRedirectUrl(target, { currentOrigin: "https://nexora-main-website.vercel.app" }),
     target,
