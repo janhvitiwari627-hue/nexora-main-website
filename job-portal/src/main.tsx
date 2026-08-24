@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {registerSW} from 'virtual:pwa-register';
 import './pwa/installPrompt';
 import App from './App.tsx';
+import {AuthProvider} from './auth/AuthProvider.tsx';
 import './index.css';
 
 registerSW({
@@ -14,6 +15,8 @@ registerSW({
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <AuthProvider>
+      <App />
+    </AuthProvider>
   </StrictMode>,
 );
