@@ -105,7 +105,7 @@ test("role registration goes through the server RPC and rejects privileged roles
   assert.match(backend, /role !== 'seeker' && role !== 'employer'/);
   assert.match(backend, /cannot be self-assigned/);
   // Admin access is verified against the server-owned row after sign-in.
-  assert.match(backend, /\.from\('job_user_roles'\)\.select\('role'\)\.eq\('user_id', data\.user\.id\)/);
+  assert.match(backend, /\.from\('job_user_roles'\)\.select\('role'\)\.eq\('user_id', user\.id\)\.single\(\)/);
 });
 
 test("no browser storage, metadata or URL parameter can influence a role", () => {

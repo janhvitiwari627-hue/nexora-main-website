@@ -6,8 +6,12 @@ import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { getErrorMessage } from './utils/errors';
 import { useLocationSync } from './hooks/useLocationSync';
 import { pathForScreen, resolveJobPortalRoute, type JobPortalRoute } from './routing';
+import { useAuth } from './auth/AuthProvider';
 import {
+  assertAdminRole,
   authBackend,
+  getVerifiedUser,
+  mapAuthError,
   completeEmployerOnboarding,
   completeSeekerOnboarding,
   createApplication,
@@ -53,6 +57,10 @@ import { AdminLoginScreen } from './components/admin/AdminLoginScreen';
 import { AdminJobsScreen } from './components/admin/AdminJobsScreen';
 
 export default function App() {
+  // PHASE 8: the five canonical auth actions come from the AuthProvider.
+  // Components and this shell never call supabase.auth for them directly.
+  const { signIn, forgotPassword, updatePassword, signOut } = useAuth();
+
   // PHASE 5: one GPS watcher + one auth.uid()-scoped persistence coordinator
   // for the whole Sub-App. Arms after SIGNED_IN; result is intentionally
   // unused here — the hook is kept for its watcher/sync side effects.
@@ -94,12 +102,11 @@ export default function App() {
 
   const hydrateWorkspace = useCallback(async (userId: string, _expectedRole?: UserRole) => {
     if (!supabase) throw new Error('Supabase is not configured.');
-    const { data: userData, error: userError } = await supabase.auth.getUser();
-    if (userError) throw userError;
-    if (!userData.user || userData.user.id !== userId) throw new Error('Your session is no longer valid.');
+    const verifiedUser = await getVerifiedUser();
+    if (verifiedUser.id !== userId) throw new Error('Your session is no longer valid.');
 
-    const role = await getUserRole(userData.user);
-    const workspace = await loadWorkspace(userData.user, role);
+    const role = await getUserRole(verifiedUser);
+    const workspace = await loadWorkspace(verifiedUser, role);
     setCurrentUserId(userId);
     setUserRole(role);
     setUserProfile(workspace.profile);
@@ -167,7 +174,7 @@ export default function App() {
         }
       } catch (error) {
         // A temporary offline launch must not destroy the persisted auth session.
-        if (navigator.onLine) await supabase.auth.signOut();
+        if (navigator.onLine) await signOut().catch(() => undefined);
         if (active) {
           if (navigator.onLine) setCurrentUserId(null);
           setScreen('welcome');
@@ -199,7 +206,7 @@ export default function App() {
       active = false;
       listener.subscription.unsubscribe();
     };
-  }, [enterAuthenticatedPortal]);
+  }, [enterAuthenticatedPortal, signOut]);
 
   useEffect(() => {
     if (isBackendLoading) return;
@@ -315,13 +322,35 @@ export default function App() {
   };
 
   const handleLoginSuccess = async (selectedRole: UserRole, email: string, password: string) => {
-    const { user } = await authBackend.signIn(email, password, selectedRole);
-    if (!user) throw new Error('Login succeeded but no user session was returned.');
+    try {
+      await signIn(email, password);
+    } catch (error) {
+      throw mapAuthError(error);
+    }
+    try {
+      // Server-authoritative portal role; a mismatch rolls the session back.
+      await authBackend.registerRole(selectedRole);
+    } catch (roleError) {
+      await signOut().catch(() => undefined);
+      throw roleError;
+    }
+    const user = await getVerifiedUser();
     await enterAuthenticatedPortal(user.id, selectedRole);
   };
 
   const handleAdminLogin = async (email: string, password: string) => {
-    const { user } = await authBackend.signInAdmin(email, password);
+    try {
+      await signIn(email, password);
+    } catch (error) {
+      throw mapAuthError(error);
+    }
+    let user;
+    try {
+      user = await assertAdminRole();
+    } catch (gateError) {
+      await signOut().catch(() => undefined);
+      throw gateError;
+    }
     pendingProtectedRoute.current = { screen: 'admin_jobs', protected: true, requiredRole: 'admin' };
     await enterAuthenticatedPortal(user.id, 'admin');
   };
@@ -592,13 +621,17 @@ export default function App() {
     if (passwordRecoveryState !== 'valid') {
       throw new Error('This password reset link is invalid or expired. Request a new reset email.');
     }
-    await authBackend.updatePassword(password);
+    try {
+      await updatePassword(password);
+    } catch (error) {
+      throw mapAuthError(error);
+    }
     window.history.replaceState({}, document.title, window.location.pathname);
   };
 
   const exitPasswordRecovery = async (target: 'login' | 'forgot_password') => {
     try {
-      await authBackend.signOut();
+      await signOut();
     } finally {
       setPasswordRecoveryState('idle');
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -608,7 +641,7 @@ export default function App() {
 
   const handleLogout = () => {
     if (currentUserId) {
-      void authBackend.signOut().catch((error) =>
+      void signOut().catch((error) =>
         setBackendError(getErrorMessage(error, 'Unable to sign out.')),
       );
     } else {
@@ -643,7 +676,7 @@ export default function App() {
       <PwaInstallButton />
 
       {screen === 'admin_login' && <AdminLoginScreen onLogin={handleAdminLogin} onBack={() => setScreen('welcome')} />}
-      {screen === 'admin_jobs' && <AdminJobsScreen onLogout={() => void authBackend.signOut()} />}
+      {screen === 'admin_jobs' && <AdminJobsScreen onLogout={() => void signOut()} />}
 
       {/* SCREEN 1: WELCOME */}
       {screen === 'welcome' && (
@@ -697,7 +730,7 @@ export default function App() {
       {screen === 'forgot_password' && (
         <ForgotPasswordScreen
           onBackToLogin={() => setScreen('login')}
-          onSendResetLink={(email) => authBackend.sendPasswordReset(email)}
+          onSendResetLink={(email) => forgotPassword(email).catch((error) => { throw mapAuthError(error); })}
         />
       )}
 

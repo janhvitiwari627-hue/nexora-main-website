@@ -43,7 +43,7 @@ function mapPortalRoleError(error: unknown, requestedRole: UserRole): Error {
   return match ? new Error(portalMismatchMessage(match[1], requestedRole)) : new Error(message);
 }
 
-function mapAuthError(error: unknown): Error {
+export function mapAuthError(error: unknown): Error {
   const message = errorMessage(error, 'Authentication request failed.');
   const normalized = message.toLowerCase();
   if (normalized.includes('rate limit')) {
@@ -283,6 +283,14 @@ export interface SignUpInput {
 }
 
 export const authBackend = {
+  /**
+   * PHASE 8 EXCEPTION — this is the ONE remaining supabase.auth.signUp call.
+   * The canonical AuthProvider.signUp(email, password, fullName) cannot carry
+   * the portal-specific signup metadata (app_context/job_role/phone/business
+   * name) or produce the duplicate-email product errors below, so the portal
+   * signup stays here by explicit architecture. Plain auth actions (sign-in,
+   * password reset, password update, sign-out) live in the AuthProvider only.
+   */
   async signUp(input: SignUpInput) {
     const client = requireSupabase();
     const email = input.email.trim();
@@ -342,30 +350,12 @@ export const authBackend = {
     return data;
   },
 
-  async signIn(email: string, password: string, requestedRole: UserRole) {
-    const client = requireSupabase();
-    const { data, error } = await client.auth.signInWithPassword({ email: email.trim(), password });
-    if (error) throw mapAuthError(error);
-    try {
-      await this.registerRole(requestedRole);
-    } catch (roleError) {
-      await client.auth.signOut();
-      throw mapPortalRoleError(roleError, requestedRole);
-    }
-    return data;
-  },
-
-  async signInAdmin(email: string, password: string) {
-    const client = requireSupabase();
-    const { data, error } = await client.auth.signInWithPassword({ email: email.trim(), password });
-    if (error) throw mapAuthError(error);
-    const { data: roleRow, error: roleError } = await client.from('job_user_roles').select('role').eq('user_id', data.user.id).single();
-    if (roleError || roleRow?.role !== 'admin') {
-      await client.auth.signOut();
-      throw new Error('Admin access is restricted to approved administrator accounts.');
-    }
-    return data;
-  },
+  /**
+   * PHASE 8: password sign-in itself now happens through the canonical
+   * AuthProvider (`await signIn(email, password)`); the service layer keeps
+   * only the server-authoritative follow-ups below (role registration and
+   * the admin gate). No supabase.auth sign-in call exists here anymore.
+   */
 
   async registerRole(role: UserRole) {
     // PHASE 4 defense in depth: the browser may only ever request the two
@@ -382,6 +372,7 @@ export const authBackend = {
     return data;
   },
 
+  /** PHASE 8 EXCEPTION — OAuth is not part of the canonical provider contract. */
   async signInWithProvider(provider: Provider, _role: UserRole) {
     // OAuth never carries a browser-stored role flag. Existing users are
     // authorized after callback from job_user_roles; new role assignment must
@@ -394,23 +385,30 @@ export const authBackend = {
     return data;
   },
 
-  async sendPasswordReset(email: string) {
-    const { error } = await requireSupabase().auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: appCallbackUrl('?recovery=1'),
-    });
-    if (error) throw mapAuthError(error);
-  },
-
-  async updatePassword(password: string) {
-    const { error } = await requireSupabase().auth.updateUser({ password });
-    if (error) throw mapAuthError(error);
-  },
-
-  async signOut() {
-    const { error } = await requireSupabase().auth.signOut();
-    if (error) throw asError(error);
-  },
 };
+
+/** Verified session identity (a read, not an auth action). */
+export async function getVerifiedUser(): Promise<User> {
+  const { data, error } = await requireSupabase().auth.getUser();
+  if (error) throw mapAuthError(error);
+  if (!data.user) throw new Error('Login succeeded but no user session was returned.');
+  return data.user;
+}
+
+/**
+ * Server-authoritative admin gate for the already-signed-in session.
+ * The caller (App) rolls the session back through the canonical
+ * AuthProvider signOut() when this rejects.
+ */
+export async function assertAdminRole(): Promise<User> {
+  const user = await getVerifiedUser();
+  const { data: roleRow, error: roleError } = await requireSupabase()
+    .from('job_user_roles').select('role').eq('user_id', user.id).single();
+  if (roleError || roleRow?.role !== 'admin') {
+    throw new Error('Admin access is restricted to approved administrator accounts.');
+  }
+  return user;
+}
 
 export async function getUserRole(user: User): Promise<UserRole> {
   const { data, error } = await requireSupabase().from('job_user_roles').select('role').eq('user_id', user.id).maybeSingle();
