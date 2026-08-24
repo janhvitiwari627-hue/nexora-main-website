@@ -1,0 +1,34 @@
+From eb58a701a0888fb815d5c09b996ac3a5bb802aef Mon Sep 17 00:00:00 2001
+From: Nexora Integration <nexora-integration@users.noreply.github.com>
+Date: Mon, 24 Aug 2026 17:11:27 +0000
+Subject: [PATCH] feat: add Back to Main Website control on the customer header
+
+Opens the canonical Main Website origin without touching auth or
+signing the customer out.
+---
+ src/components/Header.tsx | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/src/components/Header.tsx b/src/components/Header.tsx
+index 7b42948..50eb855 100644
+--- a/src/components/Header.tsx
++++ b/src/components/Header.tsx
+@@ -57,6 +57,15 @@ export const Header: React.FC<HeaderProps> = ({
+ 
+         {/* Action Controls */}
+         <div className="flex items-center gap-2">
++          <a
++            href="https://nexora-main-website.vercel.app/"
++            id="back-to-main-website"
++            className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-semibold text-on-surface-variant hover:text-nexora-pink hover:bg-surface-container transition-colors"
++            title="Back to Main Website"
++          >
++            <span className="material-symbols-outlined text-[16px]">home</span>
++            <span>Main Website</span>
++          </a>
+           {/* 1. Show Sign In / Register Button ONLY when Logged Out (isAuthenticated === false) */}
+           {!isAuthenticated && onOpenAuth && (
+             <button
+-- 
+2.39.5
+

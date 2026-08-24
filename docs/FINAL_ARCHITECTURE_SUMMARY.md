@@ -81,10 +81,10 @@ Nexora v3 is a four-deployment salon booking platform with a unified apex domain
 
 | Attribute | Value |
 |-----------|-------|
-| Repository | `freewebsite859-sudo/custmer-Fresh-app-` |
+| Repository | `freewebsite859-sudo/REMIX-Final-salon-app-` |
 | Framework | Vite / Vinext |
 | Deployment | Vercel |
-| Domain | `custmer-fresh-app.vercel.app` |
+| Domain | `remix-final-salon-app.vercel.app` |
 | Base Path | `/app/customer/` |
 | Content | Booking, wallet, rewards, favorites, addresses |
 
@@ -226,7 +226,7 @@ All data tables enforce Row Level Security:
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://qwaehqsmodekbgvnaavz.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
-NEXORA_CUSTOMER_PWA_ORIGIN=https://custmer-fresh-app.vercel.app
+NEXORA_CUSTOMER_PWA_ORIGIN=https://remix-final-salon-app.vercel.app
 NEXORA_OWNER_PWA_ORIGIN=https://pink-nexora-aap.vercel.app
 NEXORA_PARTNER_PWA_ORIGIN=https://pink-growth-partner-aap.vercel.app
 ```
@@ -251,8 +251,8 @@ VITE_CANONICAL_ORIGIN=https://nexora.example.com
   "buildCommand": "npm run build:next",
   "framework": "nextjs",
   "rewrites": [
-    { "source": "/app/customer", "destination": "https://custmer-fresh-app.vercel.app/app/customer" },
-    { "source": "/app/customer/:path*", "destination": "https://custmer-fresh-app.vercel.app/app/customer/:path*" },
+    { "source": "/app/customer", "destination": "https://remix-final-salon-app.vercel.app/" },
+    { "source": "/app/customer/:path*", "destination": "https://remix-final-salon-app.vercel.app/:path*" },
     { "source": "/app/owner", "destination": "https://pink-nexora-aap.vercel.app/app/owner" },
     { "source": "/app/owner/:path*", "destination": "https://pink-nexora-aap.vercel.app/app/owner/:path*" },
     { "source": "/app/partner", "destination": "https://pink-growth-partner-aap.vercel.app/app/partner" },

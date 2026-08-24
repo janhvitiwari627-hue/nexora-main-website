@@ -51,7 +51,7 @@ function safeRedirectUrl(candidate, currentOrigin) {
   if (parsed.protocol !== "https:") return null;
   const allowed = [
     "https://nexora-main-website.vercel.app",
-    "https://custmer-fresh-app.vercel.app",
+    "https://remix-final-salon-app.vercel.app",
     "https://shop-onwer-pink-nexora-aap.vercel.app",
     "https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app",
   ];
@@ -142,11 +142,11 @@ test("14. public marketplace paths remain valid returnTo for every role", () => 
 test("15. allowlisted PWA origins may receive a cross-origin handoff; unknown origins may not", () => {
   const origin = "https://nexora-main-website.vercel.app";
   assert.equal(
-    safeRedirectUrl("https://custmer-fresh-app.vercel.app/app/customer", origin),
-    "https://custmer-fresh-app.vercel.app/app/customer",
+    safeRedirectUrl("https://remix-final-salon-app.vercel.app/app/customer", origin),
+    "https://remix-final-salon-app.vercel.app/app/customer",
   );
   assert.equal(safeRedirectUrl("https://not-nexora.example/app/customer", origin), null);
-  assert.match(redirects, /custmer-fresh-app\.vercel\.app/);
+  assert.match(redirects, /remix-final-salon-app\.vercel\.app/);
 });
 
 test("16. PortalGateway has no role-home redirect; server config owns external redirects", () => {

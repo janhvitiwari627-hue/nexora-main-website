@@ -684,8 +684,8 @@ commit;
 --      Redirect URLs (one per line — must match packages/auth/src/redirects.ts):
 --        https://nexora-main-website.vercel.app/auth/callback
 --        https://nexora-main-website.vercel.app/reset-password
---        https://custmer-fresh-app.vercel.app/auth/callback
---        https://custmer-fresh-app.vercel.app/reset-password
+--        https://remix-final-salon-app.vercel.app/auth/callback
+--        https://remix-final-salon-app.vercel.app/reset-password
 --        https://shop-onwer-pink-nexora-aap.vercel.app/auth/callback
 --        https://shop-onwer-pink-nexora-aap.vercel.app/reset-password
 --        https://pink-growth-partner-diamondpeomotion-cybers-projects.vercel.app/auth/callback

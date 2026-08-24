@@ -10,7 +10,7 @@ session sharing and widens the CORS surface.
 | Surface | Path | Served by |
 |---|---|---|
 | Public website + auth pages | `/`, `/salons`, `/salons/:slug`, `/login`, `/signup`, `/forgot-password`, `/reset-password`, `/auth/callback`, `/auth/expired`, `/terms`, `/privacy`, `/cancellation-refund` | Main Website (Next/vinext on Vercel — this repo) |
-| Customer PWA | `/app/customer/*` | Reverse-proxy rewrite → `https://custmer-fresh-app.vercel.app/app/customer/*` |
+| Customer PWA | `/app/customer/*` | 307 redirect → `https://remix-final-salon-app.vercel.app/` |
 | Owner PWA | `/app/owner/*` | Reverse-proxy rewrite → `https://pink-nexora-aap.vercel.app/app/owner/*` |
 | Growth Partner PWA | `/app/partner/*` | Reverse-proxy rewrite → `https://pink-growth-partner-aap.vercel.app/app/partner/*` |
 | Owner portal gateway | `/owner` → redirects into `/app/owner` after role check | Main Website role gate |
@@ -41,8 +41,8 @@ ANY /admin/**               → AdminUnavailable (no public admin surface)
 ## 3. Reverse-proxy rewrite rules (Vercel, already in `vercel.json`)
 
 ```json
-{ "source": "/app/customer",          "destination": "https://custmer-fresh-app.vercel.app/app/customer" }
-{ "source": "/app/customer/:path*",   "destination": "https://custmer-fresh-app.vercel.app/app/customer/:path*" }
+{ "source": "/app/customer",          "destination": "https://remix-final-salon-app.vercel.app/" }
+{ "source": "/app/customer/:path*",   "destination": "https://remix-final-salon-app.vercel.app/:path*" }
 { "source": "/app/owner",             "destination": "https://pink-nexora-aap.vercel.app/app/owner" }
 { "source": "/app/owner/:path*",      "destination": "https://pink-nexora-aap.vercel.app/app/owner/:path*" }
 { "source": "/app/partner",           "destination": "https://pink-growth-partner-aap.vercel.app/app/partner" }
@@ -52,7 +52,7 @@ ANY /admin/**               → AdminUnavailable (no public admin surface)
 Equivalent for any other edge (nginx):
 
 ```nginx
-location ^~ /app/customer/ { proxy_pass https://custmer-fresh-app.vercel.app; proxy_set_header Host custmer-fresh-app.vercel.app; }
+location ^~ /app/customer/ { return 307 https://remix-final-salon-app.vercel.app$request_uri; }
 location ^~ /app/owner/    { proxy_pass https://pink-nexora-aap.vercel.app;    proxy_set_header Host pink-nexora-aap.vercel.app; }
 location ^~ /app/partner/  { proxy_pass https://pink-growth-partner-aap.vercel.app; proxy_set_header Host pink-growth-partner-aap.vercel.app; }
 ```
@@ -83,7 +83,7 @@ CORS posture is:
 | Main Website (Vercel) | `NEXT_PUBLIC_SUPABASE_URL` | `https://qwaehqsmodekbgvnaavz.supabase.co` | public |
 | Main Website | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon key | public key only — never service_role |
 | Main Website | `NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED` | `true` only after §10.2 verification | default `false` hides button |
-| Main Website | `NEXORA_CUSTOMER_PWA_ORIGIN` | `https://custmer-fresh-app.vercel.app` | server-only, drives `next.config.ts` rewrites + mounted flags |
+| Main Website | `NEXORA_CUSTOMER_PWA_ORIGIN` | `https://remix-final-salon-app.vercel.app` | server-only, drives `next.config.ts` 307 redirects |
 | Main Website | `NEXORA_OWNER_PWA_ORIGIN` | `https://pink-nexora-aap.vercel.app` | server-only |
 | Main Website | `NEXORA_PARTNER_PWA_ORIGIN` | `https://pink-growth-partner-aap.vercel.app` | server-only |
 | Customer PWA | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | same shared project | env injection only |
