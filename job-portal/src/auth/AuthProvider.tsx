@@ -96,6 +96,18 @@ export type AuthProviderProps = {
 };
 
 export function AuthProvider({ children, onPasswordRecovery }: AuthProviderProps) {
+  // PHASE 7: the app is wrapped exactly once (src/main.tsx). A nested
+  // duplicate provider would create a second auth listener and a second
+  // state machine, so it is flagged loudly in development.
+  const parentContext = useContext(AuthContext);
+  useEffect(() => {
+    if (parentContext) {
+      console.warn(
+        '[Nexora auth] Nested <AuthProvider> detected. The application must be wrapped exactly once at its entry point (src/main.tsx); remove the inner provider.',
+      );
+    }
+  }, [parentContext]);
+
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState<boolean>(Boolean(supabase));
