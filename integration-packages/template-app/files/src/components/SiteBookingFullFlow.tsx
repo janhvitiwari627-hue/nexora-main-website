@@ -151,7 +151,7 @@ export default function SiteBookingFullFlow({ themeId, data }: { themeId: SiteHe
         dateKey: existingConfirmed.dateKey,
         startMinutes: existingConfirmed.startMinutes,
         endMinutes: existingConfirmed.endMinutes,
-        customer: existingConfirmed.customer,
+        customer: { ...existingConfirmed.customer, email: existingConfirmed.customer.email ?? '', notes: existingConfirmed.customer.notes ?? '' },
       });
       setPhase('payment');
       // PHASE 16.9 — refresh recovery announced (no new record is made).

@@ -15,7 +15,7 @@ interface Props {
 
 export default function StepFullWebsitePreview({ data, onNext, onPrev }: Props) {
   const { platform, defaultSalon } = useBrandConfig();
-  const [mode, setMode] = useState<'desktop' | 'mobile'>('desktop');
+  const [mode, setMode] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
   const previewRef = useRef<HTMLDivElement>(null);
 
   const previewData: SalonData = {
