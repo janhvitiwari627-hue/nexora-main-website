@@ -79,7 +79,7 @@ export default function ThemeSelector({ data, setData, onSave, onThemeChange, la
       setData(prev => {
         const nextData = {
           ...prev,
-          templateId: id,
+          templateId: id as SalonData["templateId"],
           services: prev.services || [],
           packages: prev.packages || [],
         };
@@ -118,7 +118,7 @@ export default function ThemeSelector({ data, setData, onSave, onThemeChange, la
       setData(prev => {
         const nextData = {
           ...prev,
-          templateId: defaultTheme,
+          templateId: defaultTheme as SalonData["templateId"],
           services: prev.services || [],
           packages: prev.packages || [],
         };

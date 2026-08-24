@@ -100,7 +100,7 @@ export default function OwnerUpcomingAppointments({
 
   /* ---- unauthorized ---- */
   if (!result.ok) {
-    const key = bookingManageDeniedKey(result.reason);
+    const key = bookingManageDeniedKey("reason" in result ? result.reason : undefined);
     const message = key
       ? bookingCopy[key as keyof typeof bookingCopy]
       : bookingCopy['manage.denied.error'];

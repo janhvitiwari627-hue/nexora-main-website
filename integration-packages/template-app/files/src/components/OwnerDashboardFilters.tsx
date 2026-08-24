@@ -53,7 +53,7 @@ export default function OwnerDashboardFilters({
   );
 
   if (!result.ok) {
-    const key = bookingManageDeniedKey(result.reason);
+    const key = bookingManageDeniedKey("reason" in result ? result.reason : undefined);
     return (
       <div
         data-testid="owner-filters-denied"
