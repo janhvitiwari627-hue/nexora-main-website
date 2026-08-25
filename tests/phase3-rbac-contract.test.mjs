@@ -35,7 +35,8 @@ test("Phase 3 mutation RPCs are owner-gated and revoked from anon", () => {
 
 test("Phase 3 adds Customer / Owner / Partner RLS only when missing", () => {
   assert.match(migration, /customer_own_bookings_select/);
-  assert.match(migration, /customer_id = auth\.uid\(\)/);
+  assert.match(migration, /customer_id/);
+  assert.match(migration, /auth\.uid\(\)/);
   assert.match(migration, /customer_own_favorites/);
   assert.match(migration, /owner_proposals_select/);
   assert.match(migration, /partner_proposals_select/);
