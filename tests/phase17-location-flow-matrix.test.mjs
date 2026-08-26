@@ -191,7 +191,7 @@ test("Template App location flows validate coordinates and use authenticated sal
 
 test("Beauty Industry has no private GPS capability or location persistence", () => {
   assert.match(beautyMain, /createRoot/);
-  assert.match(beautyApp, /selectedCity|CitySelectorModal/);
+  assert.match(beautyApp, /selectedLocation/);
   assert.doesNotMatch(beautyMain, /geolocation/i);
   assert.doesNotMatch(beautyApp, /navigator\.geolocation|user_private_locations|business_locations/);
 });

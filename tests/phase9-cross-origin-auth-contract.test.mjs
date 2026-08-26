@@ -166,7 +166,7 @@ test("no surface puts access/refresh tokens into URLs, cookies or foreign storag
   }
 });
 
-test("sub-apps establish their OWN sessions — PKCE everywhere, handoff by returnTo", async () => {
+test("sub-apps establish their OWN PKCE sessions on their own origins", async () => {
   const read = (p) => readFile(new URL(`../${p}`, import.meta.url), "utf8");
   // Job Portal: canonical PKCE client; OAuth redirect stays on its own origin.
   const jpClient = await read("job-portal/src/lib/supabase.ts");
@@ -174,10 +174,15 @@ test("sub-apps establish their OWN sessions — PKCE everywhere, handoff by retu
   assert.match(jpClient, /detectSessionInUrl: true/);
   const jpBackend = await read("job-portal/src/services/backend.ts");
   assert.match(jpBackend, /redirectTo: appBaseUrl\(\)/);
-  // Beauty Industry: same-origin relative returnTo handoff, no client at all.
-  const beauty = await read("beauty-industry/src/auth.ts");
-  assert.match(beauty, /\/login\?returnTo=\$\{encodeURIComponent\(/);
-  assert.doesNotMatch(beauty, /createClient|access_token/);
+  // Beauty Industry: static-mounted marketplace owns its own PKCE session;
+  // OAuth redirects stay on its origin under the mount base.
+  const beauty = await read("beauty-industry/src/lib/supabase.ts");
+  assert.match(beauty, /flowType: 'pkce'/);
+  assert.match(beauty, /detectSessionInUrl: true/);
+  assert.match(beauty, /AUTH_CALLBACK_PATH/);
+  assert.match(beauty, /APP_MOUNT_BASE\s*=\s*['"]\/distributors-beauty-industry['"]/);
+  assert.match(beauty, /AUTH_LOGIN_PATH\s*=\s*[`'"][^`'"]*auth\/login/);
+  assert.doesNotMatch(beauty, /\/login\?returnTo=/);
   // Main Website callback releases only validated destinations.
   const site = await read("app/nexora-app.tsx");
   assert.match(site, /safeRedirectUrl\(rawReturnTo\)/);

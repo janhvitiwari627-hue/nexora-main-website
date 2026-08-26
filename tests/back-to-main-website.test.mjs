@@ -31,7 +31,7 @@ test("the return control is mounted once in each checked-in global app shell/hea
   assert.match(read("app/nexora-app.tsx"), /showMainWebsiteReturn = path !== "\/"/);
   assert.match(read("app/nexora-app.tsx"), /<BackToMainWebsiteButton \/>/);
   assert.match(read("job-portal/src/App.tsx"), /<GlobalAppHeader \/>/);
-  assert.match(read("beauty-industry/src/components/Navbar.tsx"), /<BackToMainWebsiteButton \/>/);
+  assert.match(read("beauty-industry/src/components/TopNavBar.tsx"), /<BackToMainWebsiteButton \/>/);
 
   const customerPatch = read("integration-packages/customer-pwa/back-to-main-website.patch");
   assert.match(customerPatch, /<GlobalAppHeader \/>/);
