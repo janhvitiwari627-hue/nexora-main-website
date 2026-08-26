@@ -7,10 +7,10 @@
 //                          → <AuthProvider><NexoraApp/></AuthProvider>
 //   * Job Portal (Vite)    job-portal/src/main.tsx
 //                          → <AuthProvider><App/></AuthProvider>
-//   * Beauty Industry      beauty-industry/src/main.tsx — intentionally NO
-//                          provider: it is a static catalog that hands off to
-//                          the canonical Nexora auth routes and must never
-//                          mint its own session (see beauty-industry/src/auth.ts).
+//   * Beauty Industry      beauty-industry/src/main.tsx — mounts the app; the
+//                          app owns ONE PKCE Supabase auth boundary scoped to
+//                          its /distributors-beauty-industry/ mount
+//                          (see beauty-industry/src/lib/supabase.ts).
 //   * Template App         vendored, self-contained AuthModalProvider by
 //                          operator-approved design (no @nexora/auth).
 //
@@ -34,7 +34,8 @@ const jpProvider = await read("job-portal/src/auth/AuthProvider.tsx");
 const jpLocationHook = await read("job-portal/src/hooks/useLocationSync.ts");
 
 const beautyMain = await read("beauty-industry/src/main.tsx");
-const beautyAuth = await read("beauty-industry/src/auth.ts");
+const beautyApp = await read("beauty-industry/src/App.tsx");
+const beautyAuth = await read("beauty-industry/src/lib/supabase.ts");
 
 const templateMain = await read("integration-packages/template-app/files/src/main.tsx");
 
@@ -91,12 +92,18 @@ test("Job Portal location sync starts only after authentication", () => {
 // Beauty Industry + Template App (architecture-mandated exceptions)
 // ---------------------------------------------------------------------------
 
-test("Beauty Industry stays a provider-free static catalog with canonical handoff", () => {
+test("Beauty Industry owns a single PKCE auth boundary scoped to its mount", () => {
+  // The mount point itself stays provider-free; the boundary lives in App.tsx.
   assert.doesNotMatch(beautyMain, /AuthProvider/);
   assert.match(beautyMain, /<App \/>/);
-  // All sign-in/sign-up goes to the canonical Nexora routes.
-  assert.match(beautyAuth, /redirectToNexoraLogin/);
-  assert.match(beautyAuth, /\/login\?returnTo=/);
+  assert.equal(beautyApp.split("<SupabaseProvider").length - 1, 1);
+  // PKCE client on the shared project, with auth routes scoped to the static
+  // mount so deep links and OAuth callbacks stay inside the SPA.
+  assert.match(beautyAuth, /flowType: 'pkce'/);
+  assert.match(beautyAuth, /detectSessionInUrl: true/);
+  assert.match(beautyAuth, /APP_MOUNT_BASE\s*=\s*['"]\/distributors-beauty-industry['"]/);
+  assert.match(beautyAuth, /AUTH_LOGIN_PATH\s*=\s*[`'"][^`'"]*auth\/login/);
+  assert.match(beautyAuth, /redirectToLogin/);
 });
 
 test("Template App keeps its single self-contained auth boundary", () => {

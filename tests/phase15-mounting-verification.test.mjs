@@ -31,7 +31,7 @@ const jobRouting = await read("job-portal/src/routing.ts");
 
 const beautyMain = await read("beauty-industry/src/main.tsx");
 const beautyApp = await read("beauty-industry/src/App.tsx");
-const beautyAuth = await read("beauty-industry/src/auth.ts");
+const beautyAuth = await read("beauty-industry/src/lib/supabase.ts");
 
 const templateMain = await read("integration-packages/template-app/files/src/main.tsx");
 const templateAuth = await read("integration-packages/template-app/files/src/lib/useAuth.ts");
@@ -116,10 +116,13 @@ test("Supabase clients are validated and created only from public build-time env
   assert.match(templateSupabase, /VITE_SUPABASE_ANON_KEY/);
   assert.match(templateSupabase, /isSupabaseConfigured/);
 
-  // The catalog intentionally does not initialize Supabase; auth handoff is
-  // canonical and therefore cannot fail because a Vite env is undefined.
-  assert.doesNotMatch(beautyAuth, /createClient\(|supabase\.auth/);
-  assert.match(beautyAuth, /redirectToNexoraLogin/);
+  // The marketplace owns its Supabase client; it degrades to a local demo
+  // store when the Vite env is undefined and scopes auth to its mount.
+  assert.match(beautyAuth, /createClient\(/);
+  assert.match(beautyAuth, /import\.meta\.env\.VITE_SUPABASE_URL/);
+  assert.match(beautyAuth, /isSupabaseConfigured/);
+  assert.match(beautyAuth, /APP_MOUNT_BASE\s*=\s*['"]\/distributors-beauty-industry['"]/);
+  assert.match(beautyAuth, /AUTH_LOGIN_PATH\s*=\s*[`'"][^`'"]*auth\/login/);
 });
 
 // ---------------------------------------------------------------------------
@@ -139,9 +142,9 @@ test("every app initializes its navigation owner", () => {
   assert.match(templateMain, /window\.location\.pathname/);
   assert.match(templateMain, /setRoute\(/);
 
-  // Beauty Industry is a tab-router/catalog surface rather than a URL router.
-  assert.match(beautyApp, /useState<NavTab>\('home'\)/);
-  assert.match(beautyApp, /setCurrentTab/);
+  // Beauty Industry is a screen-router/catalog surface rather than a URL router.
+  assert.match(beautyApp, /useState<[^>]*'explore'/);
+  assert.match(beautyApp, /setCurrentScreen/);
 });
 
 test("GPS tracking is singleton, watch-only, and does not loop on auth/location changes", () => {

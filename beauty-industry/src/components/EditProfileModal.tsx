@@ -1,578 +1,1037 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { X, Camera, Trash2, User, Building2, Mail, MapPin, Check, Sparkles, ShieldCheck, Smartphone, CheckCircle2, AlertCircle, LogOut, Bell } from 'lucide-react';
-import { UserProfile } from '../types';
+import React, { useState, useRef } from 'react';
+import { motion } from 'motion/react';
+import { 
+  X, 
+  User, 
+  Building2, 
+  Mail, 
+  Phone, 
+  MapPin, 
+  ShieldCheck, 
+  FileText, 
+  Check, 
+  Upload, 
+  Camera, 
+  Lock, 
+  Bell, 
+  Sparkles, 
+  CheckCircle2, 
+  Globe, 
+  BadgeCheck, 
+  RefreshCw,
+  AlertCircle,
+  Image as ImageIcon
+} from 'lucide-react';
+
+export interface BuyerProfileData {
+  id?: string;
+  fullName: string;
+  contactName?: string;
+  companyName?: string;
+  businessName: string;
+  businessType: 'Salon / Spa' | 'Retailer / Wholesaler' | 'E-commerce Brand' | 'Cosmetics Distributor' | 'OEM / Private Brand' | 'Other';
+  designation: string;
+  email: string;
+  phone: string;
+  alternatePhone?: string;
+  gstin: string;
+  pancard: string;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
+  annualProcurementBudget: string;
+  primaryCategories: string[];
+  preferredDeliveryTimeline: string;
+  whatsappAlerts: boolean;
+  emailAlerts: boolean;
+  isGstVerified: boolean;
+  isBusinessVerified: boolean;
+  avatarUrl?: string;
+  coverPhotoUrl?: string;
+  bio?: string;
+  joinedDate?: string;
+  followersCount?: string;
+  partnerCardNumber?: string;
+  partnerTier?: string;
+  sourcingDistrict?: string;
+  responseSla?: string;
+  socialLinks?: {
+    facebook?: string;
+    instagram?: string;
+    linkedin?: string;
+    youtube?: string;
+    twitter?: string;
+    website?: string;
+  };
+}
 
 interface EditProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
-  currentUser: UserProfile | null;
-  onSaveProfile: (updatedUser: UserProfile) => void;
-  onOpenOnboarding?: () => void;
-  onOpenRegister?: () => void;
+  initialData?: Partial<BuyerProfileData>;
+  onSave: (data: BuyerProfileData) => void;
 }
+
+const CATEGORY_OPTIONS = [
+  'Skincare & Serums',
+  'Haircare & Treatments',
+  'Salon Equipment',
+  'Cosmetics & Makeup',
+  'Essential Oils & Botanicals',
+  'OEM & Private Label Packaging',
+  'Spa & Wellness Formulations',
+  'Personal Care & Hygiene'
+];
 
 export const EditProfileModal: React.FC<EditProfileModalProps> = ({
   isOpen,
   onClose,
-  currentUser,
-  onSaveProfile,
-  onOpenOnboarding,
-  onOpenRegister
+  initialData,
+  onSave
 }) => {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [companyName, setCompanyName] = useState('');
-  const [role, setRole] = useState<string>('Salon / Beauty Parlour Owner');
-  const [city, setCity] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
+  const [activeTab, setActiveTab] = useState<'general' | 'business' | 'verification' | 'preferences' | 'social'>('general');
+  const [isSaving, setIsSaving] = useState(false);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+
+  const [formData, setFormData] = useState<BuyerProfileData>({
+    fullName: initialData?.fullName || 'Priya Sharma',
+    businessName: initialData?.businessName || 'Radiant Beauty Solutions',
+    businessType: initialData?.businessType || 'Salon / Spa',
+    designation: initialData?.designation || 'Head of Procurement',
+    email: initialData?.email || 'priya.procurement@radiantbeauty.in',
+    phone: initialData?.phone || '+91 98201 54321',
+    alternatePhone: initialData?.alternatePhone || '',
+    gstin: initialData?.gstin || '27AAACR1234F1Z5',
+    pancard: initialData?.pancard || 'AAACR1234F',
+    address: initialData?.address || 'Plot No. 42, Bandra-Kurla Complex',
+    city: initialData?.city || 'Mumbai',
+    state: initialData?.state || 'Maharashtra',
+    pincode: initialData?.pincode || '400051',
+    annualProcurementBudget: initialData?.annualProcurementBudget || '₹25 Lakhs - ₹1 Crore',
+    primaryCategories: initialData?.primaryCategories || ['Skincare & Serums', 'Haircare & Treatments'],
+    preferredDeliveryTimeline: initialData?.preferredDeliveryTimeline || '3 - 7 Days',
+    whatsappAlerts: initialData?.whatsappAlerts ?? true,
+    emailAlerts: initialData?.emailAlerts ?? true,
+    isGstVerified: initialData?.isGstVerified ?? true,
+    isBusinessVerified: initialData?.isBusinessVerified ?? true,
+    avatarUrl: initialData?.avatarUrl,
+    coverPhotoUrl: initialData?.coverPhotoUrl || 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=1200&q=80',
+    bio: initialData?.bio || 'Head of Procurement at Radiant Beauty Solutions. Sourcing premium salon formulations, organic serums, and advanced aesthetic equipment across India.',
+    joinedDate: initialData?.joinedDate || 'January 2024',
+    socialLinks: initialData?.socialLinks || {
+      facebook: 'https://facebook.com/radiantbeauty',
+      instagram: 'https://instagram.com/radiantbeauty_in',
+      linkedin: 'https://linkedin.com/company/radiant-beauty-solutions',
+      youtube: 'https://youtube.com/@radiantbeautytv',
+      twitter: 'https://twitter.com/radiantbeauty',
+      website: 'https://radiantbeauty.in'
+    }
+  });
+
+  const [gstVerifying, setGstVerifying] = useState(false);
+  const [gstVerifySuccess, setGstVerifySuccess] = useState<boolean | null>(true);
+  
+  // Photo upload & auto-resize state
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [errors, setErrors] = useState<{name?: string, email?: string, city?: string}>({});
-  const [logoutMessage, setLogoutMessage] = useState('');
+  const coverFileInputRef = useRef<HTMLInputElement>(null);
+  const [isProcessingPhoto, setIsProcessingPhoto] = useState(false);
+  const [isProcessingCover, setIsProcessingCover] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const [photoSuccessMsg, setPhotoSuccessMsg] = useState<string | null>(null);
 
-  // Notification Settings States
-  const [notifAccount, setNotifAccount] = useState(true);
-  const [notifBusiness, setNotifBusiness] = useState(true);
-  const [notifWhatsapp, setNotifWhatsapp] = useState(true);
-  const [notifPrice, setNotifPrice] = useState(true);
-  const [notifNewProducts, setNotifNewProducts] = useState(true);
-  const [notifOffers, setNotifOffers] = useState(false);
+  if (!isOpen) return null;
 
-  useEffect(() => {
-    if (currentUser) {
-      setName(currentUser.name || '');
-      setEmail(currentUser.email || '');
-      setCompanyName(currentUser.companyName || '');
-      setRole(currentUser.role || 'Salon / Beauty Parlour Owner');
-      setCity(currentUser.city || '');
-      setAvatarUrl(currentUser.avatarUrl);
-      setErrors({});
-    }
-  }, [currentUser, isOpen]);
-
-  if (!isOpen || !currentUser) return null;
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert('Image size should be less than 5MB');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setAvatarUrl(reader.result as string);
+    if (!file) return;
+
+    // 5MB limit check (5 * 1024 * 1024 = 5,242,880 bytes)
+    const MAX_FILE_SIZE = 5 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      setPhotoError(`Selected photo is ${(file.size / (1024 * 1024)).toFixed(1)}MB. Max limit is 5MB.`);
+      setPhotoSuccessMsg(null);
+      return;
+    }
+
+    setPhotoError(null);
+    setIsProcessingPhoto(true);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new window.Image();
+      img.onload = () => {
+        // Auto resize image to max 400x400 while preserving aspect ratio
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 400;
+        const MAX_HEIGHT = 400;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width = Math.round((width * MAX_HEIGHT) / height);
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+          setFormData(prev => ({ ...prev, avatarUrl: compressedDataUrl }));
+          setPhotoSuccessMsg(`Photo uploaded and auto-resized (${width}x${height}px)`);
+          setTimeout(() => setPhotoSuccessMsg(null), 3500);
+        }
+        setIsProcessingPhoto(false);
       };
-      reader.readAsDataURL(file);
-    }
+      img.onerror = () => {
+        setPhotoError('Unable to process selected image file.');
+        setIsProcessingPhoto(false);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = () => {
+      setPhotoError('Failed to read image file.');
+      setIsProcessingPhoto(false);
+    };
+    reader.readAsDataURL(file);
   };
 
-  const handleRemovePhoto = () => {
-    setAvatarUrl(undefined);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+  const handleCoverFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const MAX_FILE_SIZE = 5 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      setPhotoError(`Selected cover banner is ${(file.size / (1024 * 1024)).toFixed(1)}MB. Max limit is 5MB.`);
+      setPhotoSuccessMsg(null);
+      return;
     }
+
+    setPhotoError(null);
+    setIsProcessingCover(true);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new window.Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1200;
+        const MAX_HEIGHT = 400;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > MAX_WIDTH) {
+          height = Math.round((height * MAX_WIDTH) / width);
+          width = MAX_WIDTH;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          setFormData(prev => ({ ...prev, coverPhotoUrl: compressedDataUrl }));
+          setPhotoSuccessMsg(`Cover banner uploaded successfully! (${width}x${height}px)`);
+          setTimeout(() => setPhotoSuccessMsg(null), 3500);
+        }
+        setIsProcessingCover(false);
+      };
+      img.onerror = () => {
+        setPhotoError('Unable to process selected image file.');
+        setIsProcessingCover(false);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = () => {
+      setPhotoError('Failed to read image file.');
+      setIsProcessingCover(false);
+    };
+    reader.readAsDataURL(file);
   };
 
-  const handleLogoutAllDevices = () => {
-    setLogoutMessage('All other sessions have been signed out.');
+  const handleCategoryToggle = (category: string) => {
+    setFormData(prev => {
+      const exists = prev.primaryCategories.includes(category);
+      if (exists) {
+        return { ...prev, primaryCategories: prev.primaryCategories.filter(c => c !== category) };
+      } else {
+        return { ...prev, primaryCategories: [...prev.primaryCategories, category] };
+      }
+    });
+  };
+
+  const handleVerifyGST = () => {
+    if (!formData.gstin || formData.gstin.length < 15) return;
+    setGstVerifying(true);
     setTimeout(() => {
-      setLogoutMessage('');
-    }, 3000);
+      setGstVerifying(false);
+      setGstVerifySuccess(true);
+      setFormData(prev => ({ ...prev, isGstVerified: true, isBusinessVerified: true }));
+    }, 1000);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Client-side validation
-    const newErrors: {name?: string, email?: string, city?: string} = {};
-    if (!name.trim()) {
-      newErrors.name = 'Full name is required';
-    }
-    
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!email.trim() || !emailRegex.test(email)) {
-      newErrors.email = 'Valid email format is required';
-    }
-    
-    if (!city.trim()) {
-      newErrors.city = 'City / Location is required';
-    }
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      return;
-    }
-
-    const updatedUser: UserProfile = {
-      ...currentUser,
-      name,
-      email,
-      companyName,
-      role,
-      city,
-      avatarUrl
-    };
-    onSaveProfile(updatedUser);
-    onClose();
+    setIsSaving(true);
+    setTimeout(() => {
+      setIsSaving(false);
+      onSave(formData);
+      setShowSuccessToast(true);
+      setTimeout(() => {
+        setShowSuccessToast(false);
+        onClose();
+      }, 900);
+    }, 600);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl border border-[#EDEDED] relative flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="p-6 bg-gradient-to-r from-[#FFF5F8] to-white border-b border-[#F0E6EC] relative shrink-0">
-          <button
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 overflow-y-auto bg-black/60 backdrop-blur-xs">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.96, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 12 }}
+        className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-[#e8e8e8] overflow-hidden flex flex-col max-h-[90vh]"
+      >
+        {/* Modal Header */}
+        <div className="bg-[#fcf9f8] px-6 py-4.5 border-b border-[#e8e8e8] flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#fde7f3] text-[#b90064] flex items-center justify-center font-bold">
+              <User className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold text-[#1c1b1b]">Edit Buyer & Business Profile</h2>
+                <span className="px-2 py-0.5 rounded-full bg-[#fde7f3] text-[#b90064] text-[10px] font-bold">
+                  Verified Account
+                </span>
+              </div>
+              <p className="text-xs text-[#594047]">Update personal contact, salon/business credentials, and sourcing settings</p>
+            </div>
+          </div>
+          <button 
+            type="button"
             onClick={onClose}
-            className="absolute top-5 right-5 z-20 w-8 h-8 rounded-full bg-white hover:bg-[#FFF0F5] text-[#555] hover:text-[#B8005A] border border-[#E5E5E5] flex items-center justify-center transition-all cursor-pointer"
+            className="p-2 rounded-xl text-[#594047] hover:bg-[#f0edec] hover:text-[#1c1b1b] transition-colors cursor-pointer"
+            aria-label="Close"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
-          <span className="text-[11px] font-bold text-[#B8005A] uppercase tracking-wider bg-[#FFF0F5] border border-[#FFD1E3] px-2.5 py-0.5 rounded-full inline-flex items-center gap-1">
-            <Sparkles className="w-3 h-3" /> Account Settings
-          </span>
-          <h2 className="text-xl font-bold text-[#1E1E1E] mt-2">Edit B2B Profile</h2>
-          <p className="text-xs text-[#737373] mt-0.5">Update your business profile picture and contact information</p>
         </div>
 
-        {/* Scrollable Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto custom-scrollbar">
-          {/* Profile Picture Upload Section */}
-          <div className="bg-[#FAFAFA] border border-[#EDEDED] rounded-2xl p-4 flex flex-col sm:flex-row items-center gap-4">
-            <div className="relative group shrink-0">
-              <div className="w-20 h-20 rounded-full border-2 border-[#B8005A]/30 overflow-hidden bg-white shadow-md flex items-center justify-center text-[#B8005A] font-bold text-2xl">
-                {avatarUrl ? (
-                  <img
-                    src={avatarUrl}
-                    alt={name}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full bg-gradient-to-br from-[#FFF0F5] to-[#FFD1E3] flex items-center justify-center text-[#B8005A]">
-                    {name ? name.charAt(0).toUpperCase() : <User className="w-8 h-8" />}
+        {/* Tab Navigation */}
+        <div className="flex items-center gap-2 px-6 pt-3 bg-white border-b border-[#e8e8e8] overflow-x-auto no-scrollbar shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveTab('general')}
+            className={`pb-3 px-3 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'general'
+                ? 'border-[#b90064] text-[#b90064]'
+                : 'border-transparent text-[#594047] hover:text-[#1c1b1b]'
+            }`}
+          >
+            <User className="w-3.5 h-3.5" />
+            Personal & Contact
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('business')}
+            className={`pb-3 px-3 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'business'
+                ? 'border-[#b90064] text-[#b90064]'
+                : 'border-transparent text-[#594047] hover:text-[#1c1b1b]'
+            }`}
+          >
+            <Building2 className="w-3.5 h-3.5" />
+            Business & Address
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('verification')}
+            className={`pb-3 px-3 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'verification'
+                ? 'border-[#b90064] text-[#b90064]'
+                : 'border-transparent text-[#594047] hover:text-[#1c1b1b]'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            GST & Trust Badges
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('preferences')}
+            className={`pb-3 px-3 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'preferences'
+                ? 'border-[#b90064] text-[#b90064]'
+                : 'border-transparent text-[#594047] hover:text-[#1c1b1b]'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            Sourcing & Alerts
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('social')}
+            className={`pb-3 px-3 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'social'
+                ? 'border-[#b90064] text-[#b90064]'
+                : 'border-transparent text-[#594047] hover:text-[#1c1b1b]'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            Social & Bio
+          </button>
+        </div>
+
+        {/* Modal Form Content */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
+          
+          {/* TAB 1: General Info */}
+          {activeTab === 'general' && (
+            <div className="space-y-4 animate-in fade-in-50 duration-200">
+              {/* Hidden File Inputs */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={handlePhotoFileSelect}
+              />
+              <input
+                type="file"
+                ref={coverFileInputRef}
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={handleCoverFileSelect}
+              />
+
+              {/* Profile Photo Block */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-4 bg-[#fcf9f8] rounded-xl border border-[#e8e8e8]">
+                <div className="relative shrink-0">
+                  <div className="w-18 h-18 rounded-2xl bg-gradient-to-br from-[#b90064] to-[#e6007e] text-white flex items-center justify-center text-xl font-black shadow-md overflow-hidden border-2 border-white">
+                    {formData.avatarUrl ? (
+                      <img src={formData.avatarUrl} alt={formData.fullName} className="w-full h-full object-cover" />
+                    ) : (
+                      formData.fullName ? formData.fullName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() : 'PS'
+                    )}
                   </div>
-                )}
+                  <button 
+                    type="button" 
+                    title="Upload or Change Photo"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="absolute -bottom-1 -right-1 p-2 bg-white border border-[#e8e8e8] rounded-full text-[#1c1b1b] hover:text-[#b90064] hover:border-[#b90064] shadow-md cursor-pointer transition-all active:scale-95"
+                  >
+                    <Camera className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-sm font-bold text-[#1c1b1b]">{formData.fullName || 'Buyer Name'}</h4>
+                    <span className="px-2 py-0.5 rounded bg-[#fde7f3] text-[#b90064] text-[10px] font-bold">
+                      {formData.businessType}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#594047] truncate mt-0.5">{formData.designation} • {formData.businessName}</p>
+                  
+                  <div className="flex items-center gap-2 mt-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isProcessingPhoto}
+                      className="px-3 py-1.5 bg-white border border-[#e8e8e8] hover:border-[#b90064] text-[#b90064] rounded-lg text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      {isProcessingPhoto ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#b90064]" />
+                          <span>Resizing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload Photo (Max 5MB)</span>
+                        </>
+                      )}
+                    </button>
+
+                    {formData.avatarUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setFormData(prev => ({ ...prev, avatarUrl: undefined }))}
+                        className="px-2.5 py-1.5 bg-gray-100 hover:bg-red-50 text-gray-600 hover:text-red-600 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                      >
+                        Remove Photo
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-[#8c7077] mt-1.5">
+                    Supports JPEG, PNG up to <strong>5MB</strong>. Automatically resizes to optimal 400x400px.
+                  </p>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="absolute bottom-0 right-0 p-1.5 bg-[#B8005A] text-white rounded-full shadow-md hover:bg-[#A0004E] transition-all cursor-pointer"
-                title="Upload Photo"
-              >
-                <Camera className="w-3.5 h-3.5" />
-              </button>
-            </div>
 
-            <div className="flex-1 text-center sm:text-left space-y-2">
-              <h4 className="text-xs font-bold text-[#1E1E1E]">Profile Picture</h4>
-              <p className="text-[11px] text-[#737373] leading-tight">
-                Upload a professional photo to be displayed across the Nexora Luxe platform and in navbar.
-              </p>
-              
-              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  accept="image/*"
-                  className="hidden"
-                />
-                
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-3 py-1.5 bg-white border border-[#E5E5E5] hover:border-[#B8005A] text-[#1E1E1E] hover:text-[#B8005A] rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <Camera className="w-3.5 h-3.5 text-[#B8005A]" />
-                  <span>Select Image</span>
-                </button>
+              {/* Cover Photo Block */}
+              <div className="flex flex-col gap-4 p-4 bg-[#fcf9f8] rounded-xl border border-[#e8e8e8]">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-black text-[#1c1b1b] uppercase tracking-tight">Cover Photo Banner</h4>
+                  <span className="text-[10px] text-[#8c7077] font-bold">Recommended: 1200 x 400px (Max 5MB)</span>
+                </div>
 
-                {avatarUrl && (
+                <div className="relative h-28 w-full rounded-xl border border-[#e8e8e8] bg-white overflow-hidden flex items-center justify-center">
+                  {formData.coverPhotoUrl ? (
+                    <img src={formData.coverPhotoUrl} alt="Cover Preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="text-center p-4">
+                      <ImageIcon className="w-6 h-6 text-[#8c7077] mx-auto mb-1 opacity-55" />
+                      <span className="text-[10px] text-[#8c7077] font-bold block">No cover banner set</span>
+                    </div>
+                  )}
+                  <button 
+                    type="button" 
+                    title="Upload Cover Banner"
+                    onClick={() => coverFileInputRef.current?.click()}
+                    className="absolute bottom-2 right-2 px-3 py-1.5 bg-white/95 hover:bg-white text-[#1c1b1b] hover:text-[#b90064] border border-[#e8e8e8] rounded-xl text-[10px] font-black shadow-md flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                  >
+                    <Camera className="w-3.5 h-3.5 text-[#b90064]" />
+                    <span>Upload Banner</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
-                    onClick={handleRemovePhoto}
-                    className="px-3 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer"
+                    onClick={() => coverFileInputRef.current?.click()}
+                    disabled={isProcessingCover}
+                    className="px-3 py-1.5 bg-white border border-[#e8e8e8] hover:border-[#b90064] text-[#b90064] rounded-lg text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Remove Photo</span>
+                    {isProcessingCover ? (
+                      <>
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#b90064]" />
+                        <span>Resizing Banner...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Select Banner File</span>
+                      </>
+                    )}
                   </button>
-                )}
-              </div>
-            </div>
-          </div>
 
-          {/* Account Section */}
-          <div className="bg-[#FAFAFA] border border-[#EDEDED] rounded-2xl p-4 space-y-3">
-            <div className="flex items-center justify-between border-b border-[#EAEAEA] pb-2">
-              <h4 className="text-xs font-bold text-[#1E1E1E] flex items-center gap-1.5">
-                <Building2 className="w-3.5 h-3.5 text-[#B8005A]" />
-                <span>Account & Business</span>
-              </h4>
-              <span className="text-[10px] font-bold text-[#B8005A] bg-[#FFF0F5] border border-[#FFD1E3] px-2 py-0.5 rounded-full">
-                {currentUser?.role === 'supplier' || currentUser?.companyName ? 'Supplier Account' : 'Registered User'}
-              </span>
-            </div>
-
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-              <div>
-                <span className="text-[11px] font-semibold text-[#525252] block">
-                  Account Type: <strong className="text-[#1E1E1E] font-bold">Registered User</strong>
-                </span>
-                <p className="text-[11px] text-[#737373] mt-0.5">
-                  {currentUser?.companyName ? `Linked Business: ${currentUser.companyName}` : 'Standard buyer account for luxury salons & spas'}
-                </p>
+                  {formData.coverPhotoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, coverPhotoUrl: undefined }))}
+                      className="px-2.5 py-1.5 bg-gray-100 hover:bg-red-50 text-gray-600 hover:text-red-600 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                    >
+                      Remove Banner
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {currentUser?.companyName || currentUser?.role === 'supplier' ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    if (onOpenOnboarding) {
-                      onOpenOnboarding();
-                    } else if (onOpenRegister) {
-                      onOpenRegister();
-                    }
-                  }}
-                  className="px-4 py-2 bg-[#1E1E1E] hover:bg-[#333333] text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-[#FFD700]" />
-                  <span>Manage Business</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    if (onOpenOnboarding) {
-                      onOpenOnboarding();
-                    } else if (onOpenRegister) {
-                      onOpenRegister();
-                    }
-                  }}
-                  className="px-4 py-2 bg-[#B8005A] hover:bg-[#A0004E] text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-[#FFD700]" />
-                  <span>Become a Supplier / Register Business</span>
-                </button>
+              {/* Upload Error Banner */}
+              {photoError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-red-700 text-xs font-semibold animate-in fade-in duration-150">
+                  <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                  <span>{photoError}</span>
+                </div>
               )}
-            </div>
-          </div>
 
-          {/* Form Inputs */}
-          <div className="space-y-4">
-            <div>
-              <label className="text-[11px] font-bold text-[#525252] uppercase block mb-1">
-                Full Name / Contact Person
-              </label>
-              <div className="relative">
-                <User className="w-4 h-4 text-[#8E8E93] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => { setName(e.target.value); if (errors.name) setErrors({...errors, name: undefined}); }}
-                  required
-                  placeholder="e.g. Ananya Sharma"
-                  className={`w-full bg-[#FAFAFA] border ${errors.name ? 'border-red-500' : 'border-[#E5E5E5]'} rounded-xl pl-9 pr-3 py-2.5 text-xs text-[#1E1E1E] focus:outline-none focus:border-[#B8005A]`}
-                />
-              </div>
-              {errors.name && <p className="text-red-500 text-[10px] mt-1">{errors.name}</p>}
-            </div>
+              {/* Upload Success Banner */}
+              {photoSuccessMsg && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-xl flex items-center gap-2 text-green-800 text-xs font-bold animate-in fade-in duration-150">
+                  <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
+                  <span>{photoSuccessMsg}</span>
+                </div>
+              )}
 
-            <div>
-              <label className="text-[11px] font-bold text-[#525252] uppercase block mb-1">
-                Business Email Address
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-[#8E8E93] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); if (errors.email) setErrors({...errors, email: undefined}); }}
-                  required
-                  placeholder="name@company.com"
-                  className={`w-full bg-[#FAFAFA] border ${errors.email ? 'border-red-500' : 'border-[#E5E5E5]'} rounded-xl pl-9 pr-3 py-2.5 text-xs text-[#1E1E1E] focus:outline-none focus:border-[#B8005A]`}
-                />
-              </div>
-              {errors.email && <p className="text-red-500 text-[10px] mt-1">{errors.email}</p>}
-            </div>
-
-            <div>
-              <label className="text-[11px] font-bold text-[#525252] uppercase block mb-1">
-                Company / Business Name
-              </label>
-              <div className="relative">
-                <Building2 className="w-4 h-4 text-[#8E8E93] absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                  required
-                  placeholder="e.g. Jaipur Luxury Beauty Hub"
-                  className="w-full bg-[#FAFAFA] border border-[#E5E5E5] rounded-xl pl-9 pr-3 py-2.5 text-xs text-[#1E1E1E] focus:outline-none focus:border-[#B8005A]"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="text-[11px] font-bold text-[#525252] uppercase block mb-1">
-                  Business Role
-                </label>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value)}
-                  className="w-full bg-[#FAFAFA] border border-[#E5E5E5] rounded-xl px-3 py-2.5 text-xs text-[#1E1E1E] focus:outline-none focus:border-[#B8005A] cursor-pointer"
-                >
-                  <option value="Salon / Beauty Parlour Owner">Salon / Beauty Parlour Owner</option>
-                  <option value="Spa / Wellness Business Owner">Spa / Wellness Business Owner</option>
-                  <option value="Nail Studio Owner">Nail Studio Owner</option>
-                  <option value="Tattoo Studio Owner">Tattoo Studio Owner</option>
-                  <option value="Makeup / Hair / Beauty Professional">Makeup / Hair / Beauty Professional</option>
-                  <option value="Company / Brand Owner">Company / Brand Owner</option>
-                  <option value="Manufacturer / OEM">Manufacturer / OEM</option>
-                  <option value="Wholesaler / Stockist">Wholesaler / Stockist</option>
-                  <option value="Regional Distributor">Regional Distributor</option>
-                  <option value="Distributor / Supplier">Distributor / Supplier</option>
-                  <option value="Beauty Product Retailer">Beauty Product Retailer</option>
-                  <option value="Importer / Exporter">Importer / Exporter</option>
-                  <option value="Other Beauty Business">Other Beauty Business</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-[#525252] uppercase block mb-1">
-                  City / Location
-                </label>
-                <div className="relative">
-                  <MapPin className="w-4 h-4 text-[#8E8E93] absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">
+                    Full Name <span className="text-[#b90064]">*</span>
+                  </label>
                   <input
                     type="text"
-                    value={city}
-                    onChange={(e) => { setCity(e.target.value); if (errors.city) setErrors({...errors, city: undefined}); }}
                     required
-                    placeholder="e.g. Mumbai"
-                    className={`w-full bg-[#FAFAFA] border ${errors.city ? 'border-red-500' : 'border-[#E5E5E5]'} rounded-xl pl-9 pr-3 py-2.5 text-xs text-[#1E1E1E] focus:outline-none focus:border-[#B8005A]`}
+                    value={formData.fullName}
+                    onChange={e => setFormData({ ...formData, fullName: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] focus:ring-1 focus:ring-[#b90064] font-medium"
+                    placeholder="e.g. Priya Sharma"
                   />
                 </div>
-                {errors.city && <p className="text-red-500 text-[10px] mt-1">{errors.city}</p>}
+
+                <div>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">
+                    Designation / Role <span className="text-[#b90064]">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.designation}
+                    onChange={e => setFormData({ ...formData, designation: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] focus:ring-1 focus:ring-[#b90064] font-medium"
+                    placeholder="e.g. Procurement Lead, Salon Owner"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">
+                    Official Email <span className="text-[#b90064]">*</span>
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-[#8c7077] absolute left-3 top-3" />
+                    <input
+                      type="email"
+                      required
+                      value={formData.email}
+                      onChange={e => setFormData({ ...formData, email: e.target.value })}
+                      className="w-full pl-9 pr-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] focus:ring-1 focus:ring-[#b90064] font-medium"
+                      placeholder="name@company.com"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">
+                    Primary Mobile (WhatsApp Enabled) <span className="text-[#b90064]">*</span>
+                  </label>
+                  <div className="relative">
+                    <Phone className="w-4 h-4 text-[#8c7077] absolute left-3 top-3" />
+                    <input
+                      type="tel"
+                      required
+                      value={formData.phone}
+                      onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                      className="w-full pl-9 pr-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] focus:ring-1 focus:ring-[#b90064] font-medium"
+                      placeholder="+91 98200 00000"
+                    />
+                  </div>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">
+                    Alternate Phone / Landline (Optional)
+                  </label>
+                  <input
+                    type="tel"
+                    value={formData.alternatePhone}
+                    onChange={e => setFormData({ ...formData, alternatePhone: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] focus:ring-1 focus:ring-[#b90064] font-medium"
+                    placeholder="+91 22 2650 0000"
+                  />
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Profile Security Section */}
-          <div className="mt-8 border-t border-[#E5E5E5] pt-6">
-            <h3 className="text-[13px] font-bold text-[#1E1E1E] uppercase tracking-wider mb-4 flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-[#B8005A]" />
-              Security Settings
-            </h3>
-            
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-xl">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-[#E5E5E5]/50 flex items-center justify-center shrink-0">
-                    <Smartphone className="w-4 h-4 text-[#525252]" />
+          {/* TAB 2: Business & Address */}
+          {activeTab === 'business' && (
+            <div className="space-y-4 animate-in fade-in-50 duration-200">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">
+                    Registered Business / Enterprise Name <span className="text-[#b90064]">*</span>
+                  </label>
+                  <div className="relative">
+                    <Building2 className="w-4 h-4 text-[#8c7077] absolute left-3 top-3" />
+                    <input
+                      type="text"
+                      required
+                      value={formData.businessName}
+                      onChange={e => setFormData({ ...formData, businessName: e.target.value })}
+                      className="w-full pl-9 pr-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] focus:ring-1 focus:ring-[#b90064] font-medium"
+                      placeholder="e.g. Radiant Beauty Solutions Pvt Ltd"
+                    />
                   </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-bold text-[#1E1E1E]">+91 98765 43210</span>
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#10B981]/10 text-[#10B981] text-[10px] font-bold">
-                        <CheckCircle2 className="w-3 h-3" />
-                        Verified
-                      </span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">
+                    Business Type <span className="text-[#b90064]">*</span>
+                  </label>
+                  <select
+                    value={formData.businessType}
+                    onChange={e => setFormData({ ...formData, businessType: e.target.value as any })}
+                    className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] font-medium cursor-pointer"
+                  >
+                    <option value="Salon / Spa">Salon / Luxury Spa Chain</option>
+                    <option value="Retailer / Wholesaler">Cosmetics Retailer / Wholesaler</option>
+                    <option value="E-commerce Brand">D2C / E-commerce Beauty Brand</option>
+                    <option value="Cosmetics Distributor">Regional / State Distributor</option>
+                    <option value="OEM / Private Brand">OEM Brand Seeking Formulations</option>
+                    <option value="Other">Other Beauty Enterprise</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">
+                    Annual Sourcing Budget
+                  </label>
+                  <select
+                    value={formData.annualProcurementBudget}
+                    onChange={e => setFormData({ ...formData, annualProcurementBudget: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] font-medium cursor-pointer"
+                  >
+                    <option value="₹5 Lakhs - ₹10 Lakhs">₹5 Lakhs - ₹10 Lakhs</option>
+                    <option value="₹10 Lakhs - ₹25 Lakhs">₹10 Lakhs - ₹25 Lakhs</option>
+                    <option value="₹25 Lakhs - ₹1 Crore">₹25 Lakhs - ₹1 Crore</option>
+                    <option value="₹1 Crore - ₹5 Crores">₹1 Crore - ₹5 Crores</option>
+                    <option value="₹5 Crores+">₹5 Crores+</option>
+                  </select>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">
+                    Primary Sourcing / Delivery Address <span className="text-[#b90064]">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.address}
+                    onChange={e => setFormData({ ...formData, address: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] focus:ring-1 focus:ring-[#b90064] font-medium"
+                    placeholder="Warehouse / Salon Unit address"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">
+                    City <span className="text-[#b90064]">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.city}
+                    onChange={e => setFormData({ ...formData, city: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] font-medium"
+                    placeholder="e.g. Mumbai"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">
+                    State <span className="text-[#b90064]">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.state}
+                    onChange={e => setFormData({ ...formData, state: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] font-medium"
+                    placeholder="e.g. Maharashtra"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">
+                    PIN Code <span className="text-[#b90064]">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    maxLength={6}
+                    value={formData.pincode}
+                    onChange={e => setFormData({ ...formData, pincode: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] font-medium"
+                    placeholder="400051"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: GST & Verification */}
+          {activeTab === 'verification' && (
+            <div className="space-y-4 animate-in fade-in-50 duration-200">
+              <div className="bg-[#f0f9ff] border border-[#bae6fd] rounded-xl p-4 flex items-start gap-3">
+                <ShieldCheck className="w-5 h-5 text-[#0050d6] shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-bold text-[#0369a1]">Why verify your Business GST?</h4>
+                  <p className="text-[11px] text-[#0c4a6e] mt-0.5">
+                    Verified buyers receive 3x faster quotes, unlock Tier-1 manufacturer credit terms, and access direct factory sample dispatch.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">
+                    15-Digit GST Identification Number (GSTIN)
+                  </label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        maxLength={15}
+                        value={formData.gstin}
+                        onChange={e => setFormData({ ...formData, gstin: e.target.value.toUpperCase() })}
+                        className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] uppercase font-mono font-bold focus:outline-hidden focus:border-[#b90064]"
+                        placeholder="27AAACR1234F1Z5"
+                      />
                     </div>
-                    <p className="text-[10px] text-[#737373] mt-0.5">Primary Mobile Number</p>
+                    <button
+                      type="button"
+                      onClick={handleVerifyGST}
+                      disabled={gstVerifying || !formData.gstin}
+                      className="px-4 py-2.5 bg-[#0050d6] text-white rounded-xl text-xs font-bold hover:bg-[#0040b0] transition-colors disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shrink-0"
+                    >
+                      {gstVerifying ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Verifying...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Verify GST
+                        </>
+                      )}
+                    </button>
                   </div>
-                </div>
-                <button type="button" className="text-xs font-bold text-[#B8005A] hover:underline cursor-pointer">
-                  Change Number
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between p-3.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-xl">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-[#E5E5E5]/50 flex items-center justify-center shrink-0">
-                    <Mail className="w-4 h-4 text-[#525252]" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-bold text-[#1E1E1E]">{email || 'No email provided'}</span>
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#F59E0B]/10 text-[#F59E0B] text-[10px] font-bold">
-                        <AlertCircle className="w-3 h-3" />
-                        Not Verified
-                      </span>
+                  {gstVerifySuccess && (
+                    <div className="mt-1.5 flex items-center gap-1 text-[11px] font-bold text-green-700">
+                      <Check className="w-3.5 h-3.5" /> GST verified: Active & Registered under Govt Portal
                     </div>
-                    <p className="text-[10px] text-[#737373] mt-0.5">Primary Email Address</p>
-                  </div>
+                  )}
                 </div>
-                <button type="button" className="text-xs font-bold text-[#B8005A] hover:underline cursor-pointer">
-                  Verify Email
-                </button>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">
+                    Business PAN Card
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={10}
+                    value={formData.pancard}
+                    onChange={e => setFormData({ ...formData, pancard: e.target.value.toUpperCase() })}
+                    className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] uppercase font-mono font-bold focus:outline-hidden focus:border-[#b90064]"
+                    placeholder="AAACR1234F"
+                  />
+                </div>
+
+                <div className="border border-dashed border-[#d5c3c8] rounded-xl p-4 bg-[#fcf9f8] text-center">
+                  <Upload className="w-6 h-6 text-[#b90064] mx-auto mb-1.5" />
+                  <p className="text-xs font-bold text-[#1c1b1b]">Upload Business Registration / Trade License (Optional)</p>
+                  <p className="text-[10px] text-[#8c7077] mt-0.5">Supports PDF, JPG, PNG up to 5MB</p>
+                  <button 
+                    type="button" 
+                    className="mt-2.5 px-3 py-1.5 bg-white border border-[#e8e8e8] rounded-lg text-xs font-bold text-[#1c1b1b] hover:border-[#b90064] transition-colors cursor-pointer"
+                  >
+                    Select File
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: Sourcing & Alerts */}
+          {activeTab === 'preferences' && (
+            <div className="space-y-5 animate-in fade-in-50 duration-200">
+              <div>
+                <label className="block text-xs font-bold text-[#1c1b1b] mb-2">
+                  Primary Categories of Interest
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {CATEGORY_OPTIONS.map((cat, idx) => {
+                    const isSelected = formData.primaryCategories.includes(cat);
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleCategoryToggle(cat)}
+                        className={`p-2.5 rounded-xl border text-left text-xs font-semibold transition-all flex items-center justify-between cursor-pointer ${
+                          isSelected 
+                            ? 'bg-[#fde7f3] border-[#b90064] text-[#b90064]' 
+                            : 'bg-[#fcf9f8] border-[#e8e8e8] text-[#594047] hover:bg-white'
+                        }`}
+                      >
+                        <span className="truncate">{cat}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div className="flex items-center justify-between p-3.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-xl">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-[#E5E5E5]/50 flex items-center justify-center shrink-0">
-                    <LogOut className="w-4 h-4 text-[#525252]" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-bold text-[#1E1E1E]">Active Sessions</span>
+              <div className="border-t border-[#e8e8e8] pt-4 space-y-3">
+                <h4 className="text-xs font-bold text-[#1c1b1b]">Notification & Lead Match Channels</h4>
+                
+                <label className="flex items-center justify-between p-3 bg-[#fcf9f8] rounded-xl border border-[#e8e8e8] cursor-pointer">
+                  <div className="flex items-center gap-2.5">
+                    <Phone className="w-4 h-4 text-green-600" />
+                    <div>
+                      <div className="text-xs font-bold text-[#1c1b1b]">WhatsApp Instant Quotes & Updates</div>
+                      <div className="text-[10px] text-[#8c7077]">Receive verified supplier quotations directly on WhatsApp</div>
                     </div>
-                    <p className="text-[10px] text-[#737373] mt-0.5">Log out from all other devices</p>
                   </div>
-                </div>
-                <button 
-                  type="button" 
-                  onClick={handleLogoutAllDevices}
-                  className="px-3 py-1.5 rounded-lg border border-[#E5E5E5] hover:bg-[#F5F5F5] text-[11px] font-bold text-[#1E1E1E] transition-all cursor-pointer"
-                >
-                  Log Out Others
-                </button>
-              </div>
-              
-              {logoutMessage && (
-                <div className="text-[11px] font-bold text-[#10B981] flex items-center gap-1.5 mt-2 ml-1 animate-in fade-in slide-in-from-top-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  {logoutMessage}
-                </div>
-              )}
-            </div>
-            
-            <div className="mt-4 p-3 rounded-xl bg-[#F5F5F5] border border-[#E5E5E5] flex items-center justify-between flex-wrap gap-2">
-              <span className="text-[11px] font-bold text-[#525252]">Account Security Status:</span>
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="text-[10px] font-semibold text-[#525252] flex items-center gap-1">
-                  <Smartphone className="w-3 h-3 text-[#10B981]" /> Verified
-                </span>
-                <span className="text-[10px] font-semibold text-[#525252] flex items-center gap-1">
-                  <Mail className="w-3 h-3 text-[#F59E0B]" /> Not Verified
-                </span>
-                <span className="text-[10px] font-semibold text-[#525252] flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3 text-[#10B981]" /> Secure
-                </span>
+                  <input
+                    type="checkbox"
+                    checked={formData.whatsappAlerts}
+                    onChange={e => setFormData({ ...formData, whatsappAlerts: e.target.checked })}
+                    className="w-4 h-4 text-[#b90064] rounded focus:ring-[#b90064] accent-[#b90064] cursor-pointer"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between p-3 bg-[#fcf9f8] rounded-xl border border-[#e8e8e8] cursor-pointer">
+                  <div className="flex items-center gap-2.5">
+                    <Mail className="w-4 h-4 text-[#0050d6]" />
+                    <div>
+                      <div className="text-xs font-bold text-[#1c1b1b]">Email Summary & RFQ Digest</div>
+                      <div className="text-[10px] text-[#8c7077]">Weekly price movements, new OEM product catalogs</div>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={formData.emailAlerts}
+                    onChange={e => setFormData({ ...formData, emailAlerts: e.target.checked })}
+                    className="w-4 h-4 text-[#b90064] rounded focus:ring-[#b90064] accent-[#b90064] cursor-pointer"
+                  />
+                </label>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Notification Settings Section */}
-          <div className="mt-8 border-t border-[#E5E5E5] pt-6">
-            <h3 className="text-[13px] font-bold text-[#1E1E1E] uppercase tracking-wider mb-4 flex items-center gap-2">
-              <Bell className="w-4 h-4 text-[#B8005A]" />
-              Notification Settings
-            </h3>
-            
-            <div className="space-y-3">
-              {/* Account Notifications */}
-              <div className="flex items-center justify-between p-3.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-xl">
-                <div>
-                  <h4 className="text-xs font-bold text-[#1E1E1E]">Account & Security</h4>
-                  <p className="text-[10px] text-[#737373] mt-0.5">Account updates, login & security alerts</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setNotifAccount(!notifAccount)}
-                  className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-200 ease-in-out cursor-pointer shrink-0 ${notifAccount ? 'bg-[#10B981]' : 'bg-[#E5E5E5]'}`}
-                >
-                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform duration-200 ease-in-out ${notifAccount ? 'translate-x-4' : 'translate-x-0'}`} />
-                </button>
+          {/* TAB 5: Social & Bio */}
+          {activeTab === 'social' && (
+            <div className="space-y-4 animate-in fade-in-50 duration-200">
+              <div>
+                <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">
+                  Professional Bio / About
+                </label>
+                <textarea
+                  rows={3}
+                  value={formData.bio || ''}
+                  onChange={e => setFormData({ ...formData, bio: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] font-medium resize-none"
+                  placeholder="Describe your salon, brand, or procurement focus..."
+                />
               </div>
 
-              {/* Business Enquiries */}
-              <div className="flex items-center justify-between p-3.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-xl">
-                <div>
-                  <h4 className="text-xs font-bold text-[#1E1E1E]">Business Enquiries</h4>
-                  <p className="text-[10px] text-[#737373] mt-0.5">New buyer / business enquiry notifications</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setNotifBusiness(!notifBusiness)}
-                  className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-200 ease-in-out cursor-pointer shrink-0 ${notifBusiness ? 'bg-[#10B981]' : 'bg-[#E5E5E5]'}`}
-                >
-                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform duration-200 ease-in-out ${notifBusiness ? 'translate-x-4' : 'translate-x-0'}`} />
-                </button>
+              <div>
+                <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">
+                  Cover Photo Banner URL
+                </label>
+                <input
+                  type="url"
+                  value={formData.coverPhotoUrl || ''}
+                  onChange={e => setFormData({ ...formData, coverPhotoUrl: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] font-medium"
+                  placeholder="https://images.unsplash.com/..."
+                />
               </div>
 
-              {/* WhatsApp Enquiries */}
-              <div className="flex items-center justify-between p-3.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-xl">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                 <div>
-                  <h4 className="text-xs font-bold text-[#1E1E1E]">WhatsApp Enquiries</h4>
-                  <p className="text-[10px] text-[#737373] mt-0.5">WhatsApp enquiry notifications</p>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">Facebook Profile / Page</label>
+                  <input
+                    type="url"
+                    value={formData.socialLinks?.facebook || ''}
+                    onChange={e => setFormData({ ...formData, socialLinks: { ...formData.socialLinks, facebook: e.target.value } })}
+                    className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] font-medium"
+                    placeholder="https://facebook.com/yourbrand"
+                  />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setNotifWhatsapp(!notifWhatsapp)}
-                  className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-200 ease-in-out cursor-pointer shrink-0 ${notifWhatsapp ? 'bg-[#10B981]' : 'bg-[#E5E5E5]'}`}
-                >
-                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform duration-200 ease-in-out ${notifWhatsapp ? 'translate-x-4' : 'translate-x-0'}`} />
-                </button>
-              </div>
 
-              {/* Price Alerts */}
-              <div className="flex items-center justify-between p-3.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-xl">
                 <div>
-                  <h4 className="text-xs font-bold text-[#1E1E1E]">Price Alerts</h4>
-                  <p className="text-[10px] text-[#737373] mt-0.5">Price change alerts & saved product updates</p>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">Instagram Handle / Link</label>
+                  <input
+                    type="url"
+                    value={formData.socialLinks?.instagram || ''}
+                    onChange={e => setFormData({ ...formData, socialLinks: { ...formData.socialLinks, instagram: e.target.value } })}
+                    className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] font-medium"
+                    placeholder="https://instagram.com/yourbrand"
+                  />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setNotifPrice(!notifPrice)}
-                  className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-200 ease-in-out cursor-pointer shrink-0 ${notifPrice ? 'bg-[#10B981]' : 'bg-[#E5E5E5]'}`}
-                >
-                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform duration-200 ease-in-out ${notifPrice ? 'translate-x-4' : 'translate-x-0'}`} />
-                </button>
-              </div>
 
-              {/* New Products */}
-              <div className="flex items-center justify-between p-3.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-xl">
                 <div>
-                  <h4 className="text-xs font-bold text-[#1E1E1E]">New Products</h4>
-                  <p className="text-[10px] text-[#737373] mt-0.5">New product notifications from followed businesses</p>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">LinkedIn Profile / Company</label>
+                  <input
+                    type="url"
+                    value={formData.socialLinks?.linkedin || ''}
+                    onChange={e => setFormData({ ...formData, socialLinks: { ...formData.socialLinks, linkedin: e.target.value } })}
+                    className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] font-medium"
+                    placeholder="https://linkedin.com/company/yourbrand"
+                  />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setNotifNewProducts(!notifNewProducts)}
-                  className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-200 ease-in-out cursor-pointer shrink-0 ${notifNewProducts ? 'bg-[#10B981]' : 'bg-[#E5E5E5]'}`}
-                >
-                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform duration-200 ease-in-out ${notifNewProducts ? 'translate-x-4' : 'translate-x-0'}`} />
-                </button>
-              </div>
 
-              {/* Offers & Updates */}
-              <div className="flex items-center justify-between p-3.5 bg-[#FAFAFA] border border-[#E5E5E5] rounded-xl">
                 <div>
-                  <h4 className="text-xs font-bold text-[#1E1E1E]">Offers & Updates</h4>
-                  <p className="text-[10px] text-[#737373] mt-0.5">Offers, discounts & Nexora announcements</p>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">YouTube Channel</label>
+                  <input
+                    type="url"
+                    value={formData.socialLinks?.youtube || ''}
+                    onChange={e => setFormData({ ...formData, socialLinks: { ...formData.socialLinks, youtube: e.target.value } })}
+                    className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] font-medium"
+                    placeholder="https://youtube.com/@yourbrand"
+                  />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setNotifOffers(!notifOffers)}
-                  className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-200 ease-in-out cursor-pointer shrink-0 ${notifOffers ? 'bg-[#10B981]' : 'bg-[#E5E5E5]'}`}
-                >
-                  <div className={`w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform duration-200 ease-in-out ${notifOffers ? 'translate-x-4' : 'translate-x-0'}`} />
-                </button>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">Twitter / X Profile</label>
+                  <input
+                    type="url"
+                    value={formData.socialLinks?.twitter || ''}
+                    onChange={e => setFormData({ ...formData, socialLinks: { ...formData.socialLinks, twitter: e.target.value } })}
+                    className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] font-medium"
+                    placeholder="https://twitter.com/yourbrand"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#1c1b1b] mb-1.5">Official Company Website</label>
+                  <input
+                    type="url"
+                    value={formData.socialLinks?.website || ''}
+                    onChange={e => setFormData({ ...formData, socialLinks: { ...formData.socialLinks, website: e.target.value } })}
+                    className="w-full px-3.5 py-2.5 bg-[#fcf9f8] border border-[#e8e8e8] rounded-xl text-xs text-[#1c1b1b] focus:outline-hidden focus:border-[#b90064] font-medium"
+                    placeholder="https://yourbrand.in"
+                  />
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
-          {/* Footer buttons */}
-          <div className="pt-4 mt-6 border-t border-[#EDEDED] flex items-center justify-end gap-3 shrink-0">
+          {/* Success Toast */}
+          {showSuccessToast && (
+            <div className="p-3 bg-green-50 border border-green-200 rounded-xl flex items-center gap-2 text-xs font-bold text-green-800">
+              <CheckCircle2 className="w-4 h-4 text-green-600" /> Profile settings updated successfully!
+            </div>
+          )}
+
+          {/* Footer Controls */}
+          <div className="border-t border-[#e8e8e8] pt-4 flex items-center justify-between gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-[#E5E5E5] text-xs font-semibold text-[#525252] hover:bg-[#F5F5F5] transition-all cursor-pointer"
+              className="px-5 py-2.5 rounded-xl border border-[#e8e8e8] text-xs font-bold text-[#594047] hover:bg-[#f0edec] transition-colors cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-xl bg-[#B8005A] hover:bg-[#A0004E] text-white text-xs font-bold shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center gap-2 cursor-pointer"
+              disabled={isSaving}
+              className="px-6 py-2.5 bg-[#b90064] text-white rounded-xl text-xs font-extrabold shadow-md shadow-[#b90064]/20 hover:bg-[#8e004b] transition-all cursor-pointer flex items-center gap-1.5"
             >
-              <Check className="w-4 h-4" />
-              <span>Save Profile Changes</span>
+              {isSaving ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Saving Changes...
+                </>
+              ) : (
+                <>
+                  <Check className="w-3.5 h-3.5" /> Save Profile Settings
+                </>
+              )}
             </button>
           </div>
+
         </form>
-      </div>
+      </motion.div>
     </div>
   );
 };

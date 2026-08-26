@@ -1,103 +1,129 @@
 import React from 'react';
 
 interface FooterProps {
-  onNavigate: (tab: 'home' | 'products' | 'brands' | 'distributors' | 'business') => void;
+  onOpenRFQModal?: () => void;
+  onOpenAuthModal?: (mode?: 'login' | 'register') => void;
+  onNavigate?: (screen: any) => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
+export const Footer: React.FC<FooterProps> = ({ onNavigate, onOpenRFQModal, onOpenAuthModal }) => {
   return (
-    <footer className="bg-white border-t border-[#F0E6EC] mt-16 transition-colors">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-8 lg:gap-12">
-          {/* Brand Info */}
-          <div className="md:col-span-5 flex flex-col justify-between">
-            <div>
-              <div 
-                onClick={() => onNavigate('home')} 
-                className="text-2xl font-extrabold text-[#B8005A] tracking-tight font-serif cursor-pointer hover:opacity-90 transition-opacity"
-              >
-                Nexora Luxe
-              </div>
-              <p className="mt-3 text-sm text-[#737373] max-w-sm leading-relaxed">
-                The premier platform for beauty business and product discovery.
-              </p>
-            </div>
-            
-            <div className="mt-6 flex items-center gap-3 text-xs text-[#8E8E93]">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#FAFAFA] border border-[#EEEEEE]">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]" />
-                Global B2B Network
-              </span>
-              <span className="inline-flex items-center px-2.5 py-1 rounded-md bg-[#FAFAFA] border border-[#EEEEEE]">
-                Verified Suppliers Only
-              </span>
-            </div>
+    <footer className="w-full py-12 md:py-16 border-t border-[#E8DFE3] bg-[#FFF7FA] hidden md:block">
+      <div className="max-w-[1440px] mx-auto px-4 md:px-8 grid grid-cols-1 md:grid-cols-4 gap-8">
+        <div className="col-span-1 md:col-span-1 mb-6 md:mb-0">
+          <div className="font-serif text-[20px] font-bold text-[#500037] mb-3">
+            Nexora Luxe
           </div>
-
-          {/* Links Column 1 */}
-          <div className="md:col-span-3 sm:col-span-6">
-            <ul className="space-y-3.5 text-sm font-medium text-[#4A4A4A]">
-              <li>
-                <button
-                  onClick={() => onNavigate('products')}
-                  className="hover:text-[#B8005A] transition-colors"
-                >
-                  Product Discovery
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => onNavigate('brands')}
-                  className="hover:text-[#B8005A] transition-colors"
-                >
-                  Brand Directory
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => onNavigate('distributors')}
-                  className="hover:text-[#B8005A] transition-colors"
-                >
-                  Distributor Network
-                </button>
-              </li>
-            </ul>
-          </div>
-
-          {/* Links Column 2 */}
-          <div className="md:col-span-4 sm:col-span-6">
-            <ul className="space-y-3.5 text-sm font-medium text-[#4A4A4A]">
-              <li>
-                <button
-                  onClick={() => onNavigate('business')}
-                  className="hover:text-[#B8005A] transition-colors"
-                >
-                  Business Solutions
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => onNavigate('business')}
-                  className="hover:text-[#B8005A] transition-colors"
-                >
-                  About Nexora
-                </button>
-              </li>
-              <li>
-                <button
-                  onClick={() => onNavigate('business')}
-                  className="hover:text-[#B8005A] transition-colors"
-                >
-                  Privacy Policy
-                </button>
-              </li>
-            </ul>
+          <p className="text-[14px] text-[#534249] mb-4 leading-relaxed max-w-sm">
+            Elevating the B2B beauty supply chain through verified connections and premium sourcing.
+          </p>
+          <div className="text-[13px] text-[#8D8087]">
+            © 2024 Nexora Luxe. All rights reserved.
           </div>
         </div>
 
-        {/* Bottom Copyright */}
-        <div className="mt-12 pt-8 border-t border-[#F5F5F5] text-center text-xs text-[#8E8E93]">
-          <p>© 2024 Nexora Luxe Management. All rights reserved.</p>
+        <div>
+          <h4 className="text-[12px] font-bold text-[#500037] mb-4 uppercase tracking-wider">
+            Marketplace
+          </h4>
+          <ul className="space-y-2 text-[14px]">
+            <li>
+              <button
+                onClick={() => onNavigate?.('plp')}
+                className="text-[#534249] hover:text-[#500037] hover:underline underline-offset-4 transition-colors cursor-pointer"
+              >
+                Skincare
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => onNavigate?.('plp')}
+                className="text-[#534249] hover:text-[#500037] hover:underline underline-offset-4 transition-colors cursor-pointer"
+              >
+                Color Cosmetics
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => onNavigate?.('supplier-directory')}
+                className="text-[#534249] hover:text-[#500037] hover:underline underline-offset-4 transition-colors cursor-pointer"
+              >
+                Verified Suppliers
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => onNavigate?.('oem-hub')}
+                className="text-[#534249] hover:text-[#500037] hover:underline underline-offset-4 transition-colors cursor-pointer"
+              >
+                OEM / Private Label
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <div>
+          <h4 className="text-[12px] font-bold text-[#500037] mb-4 uppercase tracking-wider">
+            Buyers
+          </h4>
+          <ul className="space-y-2 text-[14px]">
+            <li>
+              <button
+                onClick={() => onNavigate?.('rfq-tracking')}
+                className="text-[#534249] hover:text-[#500037] hover:underline underline-offset-4 transition-colors cursor-pointer"
+              >
+                Post RFQ
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => onNavigate?.('buyer-dashboard')}
+                className="text-[#534249] hover:text-[#500037] hover:underline underline-offset-4 transition-colors cursor-pointer"
+              >
+                Buyer Dashboard
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => onNavigate?.('buyer-enquiry-log')}
+                className="text-[#534249] hover:text-[#500037] hover:underline underline-offset-4 transition-colors cursor-pointer"
+              >
+                Enquiry Log
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <div>
+          <h4 className="text-[12px] font-bold text-[#500037] mb-4 uppercase tracking-wider">
+            Suppliers
+          </h4>
+          <ul className="space-y-2 text-[14px]">
+            <li>
+              <button
+                onClick={() => onNavigate?.('onboarding')}
+                className="text-[#534249] hover:text-[#500037] hover:underline underline-offset-4 transition-colors cursor-pointer"
+              >
+                Join as Supplier
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => onNavigate?.('supplier-portal')}
+                className="text-[#534249] hover:text-[#500037] hover:underline underline-offset-4 transition-colors cursor-pointer"
+              >
+                Supplier Business Hub
+              </button>
+            </li>
+            <li>
+              <button
+                onClick={() => onNavigate?.('supplier-verification')}
+                className="text-[#534249] hover:text-[#500037] hover:underline underline-offset-4 transition-colors cursor-pointer"
+              >
+                Verification Center
+              </button>
+            </li>
+          </ul>
         </div>
       </div>
     </footer>
