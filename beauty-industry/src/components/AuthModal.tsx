@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, ArrowRight, Building2, ShoppingBag, Sparkles, Mail, Phone, Lock, Eye, EyeOff, AlertCircle, Info } from 'lucide-react';
+import { X, CheckCircle2, ArrowRight, Building2, ShoppingBag, Mail, Phone, Lock, Eye, EyeOff, AlertCircle, Info } from 'lucide-react';
 import { useSupabase } from '../lib/supabase';
 
 interface AuthModalProps {
@@ -62,21 +62,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    // Demo fallback (no remote Supabase project configured).
-    setTimeout(() => {
-      setIsGoogleLoading(false);
-      const token = `nexora_oauth_token_${Date.now()}`;
-      localStorage.setItem('nexora_user_session', JSON.stringify({
-        token,
-        email: 'priya.procurement@radiantbeauty.in',
-        name: 'Priya Sharma',
-        role,
-        authenticatedAt: new Date().toISOString()
-      }));
-      localStorage.setItem('nexora_is_logged_in', 'true');
-      localStorage.setItem('nexora_user_role', role);
-      setVerified(true);
-    }, 900);
+    setIsGoogleLoading(false);
+    setErrorMessage('Authentication is not configured. Contact Nexora support.');
   };
 
   const handleGuestContinue = () => {
@@ -105,10 +92,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
 
       if (mode === 'register') {
+        if (password.length < 8) {
+          setErrorMessage('Password must be at least 8 characters.');
+          return;
+        }
+        if (!businessName.trim()) {
+          setErrorMessage(role === 'supplier' ? 'Business name is required.' : 'Full name is required.');
+          return;
+        }
         const { error, needsEmailConfirmation } = await signUpWithEmailPassword(
           phoneOrEmail.trim(),
           password,
           role,
+          businessName.trim(),
         );
         if (error) {
           setErrorMessage(error.message || 'Registration failed. Please try again.');
@@ -132,26 +128,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    // Demo fallback (no remote Supabase project configured).
-    if (authMethod === 'otp') {
-      setOtpMode(true);
-    } else {
-      if (password.length >= 4) {
-        const token = `nexora_jwt_${Date.now()}`;
-        localStorage.setItem('nexora_user_session', JSON.stringify({
-          token,
-          email: phoneOrEmail,
-          name: businessName || (role === 'buyer' ? 'Priya Sharma' : 'Aura Beauty Labs'),
-          role,
-          authenticatedAt: new Date().toISOString()
-        }));
-        localStorage.setItem('nexora_is_logged_in', 'true');
-        localStorage.setItem('nexora_user_role', role);
-        setVerified(true);
-      } else {
-        setErrorMessage('Please enter a password with at least 4 characters.');
-      }
-    }
+    setErrorMessage('Authentication is not configured. Contact Nexora support.');
   };
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
@@ -169,23 +146,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    // Demo fallback (no remote Supabase project configured).
-    if (otp === '1234' || otp.length === 4) {
-      const token = `nexora_jwt_${Date.now()}`;
-      localStorage.setItem('nexora_user_session', JSON.stringify({
-        token,
-        email: phoneOrEmail,
-        name: businessName || (role === 'buyer' ? 'Priya Sharma' : 'Aura Beauty Labs'),
-        role,
-        authenticatedAt: new Date().toISOString()
-      }));
-      localStorage.setItem('nexora_is_logged_in', 'true');
-      localStorage.setItem('nexora_user_role', role);
-      setVerified(true);
-    } else {
-      setErrorMessage('Invalid OTP. For Demo, please enter: 1234');
-      setOtp('');
-    }
+    setErrorMessage('Authentication is not configured. Contact Nexora support.');
+    setOtp('');
   };
 
   const handleReset = () => {
@@ -297,15 +259,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
               </div>
 
-              {/* Demo Hint */}
-              {!isConfigured && (
-                <div className="inline-block bg-[#fde7f3] border border-[#b90064]/20 px-4 py-2 rounded-xl animate-pulse mx-auto">
-                  <p className="text-[11px] font-black text-[#b90064] uppercase tracking-wider flex items-center gap-2">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    For Demo, enter OTP: 1234
-                  </p>
-                </div>
-              )}
             </div>
 
             <div className="space-y-3">

@@ -19,8 +19,8 @@ import {
   UserRole
 } from './types';
 
-function mapSupabaseUser(user: { id: string; email?: string | null; phone?: string | null; created_at?: string; updated_at?: string; user_metadata?: { role?: UserRole } }): DBUser {
-  const role = (user.user_metadata?.role as UserRole) || 'buyer';
+function mapSupabaseUser(user: { id: string; email?: string | null; phone?: string | null; created_at?: string; updated_at?: string; user_metadata?: { marketplace_role?: UserRole; role?: UserRole } }): DBUser {
+  const role = (user.user_metadata?.marketplace_role || user.user_metadata?.role || 'buyer') as UserRole;
   return {
     id: user.id,
     email: user.email || '',
@@ -49,10 +49,11 @@ export const authApi = {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) return null;
 
-      const buyerProfile = session.user.user_metadata?.role === 'buyer'
+      const marketplaceRole = session.user.user_metadata?.marketplace_role || session.user.user_metadata?.role;
+      const buyerProfile = marketplaceRole === 'buyer'
         ? db.getBuyerProfileByUserId(session.user.id)
         : undefined;
-      const supplierProfile = session.user.user_metadata?.role === 'supplier'
+      const supplierProfile = marketplaceRole === 'supplier'
         ? db.getSupplierProfileByUserId(session.user.id)
         : undefined;
 
@@ -101,16 +102,25 @@ export const authApi = {
       return { success: false, error: 'Business email is required for registration.' };
     }
 
-    const password = data.password && data.password.length >= 8
-      ? data.password
-      : `Nexora${Date.now()}`;
+    const password = data.password || '';
+
+    if (!data.password || data.password.length < 8) {
+      return { success: false, error: 'Password must be at least 8 characters.' };
+    }
 
     const { data: authData, error } = await supabase.auth.signUp({
-      email: data.emailOrPhone,
+      email: data.emailOrPhone.trim().toLowerCase(),
       password,
       options: {
-        data: { role: data.role, business_name: data.businessName },
-        emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined,
+        data: {
+          full_name: (data.contactName || data.businessName).trim(),
+          signup_role: data.role === 'supplier' ? 'business_user' : 'customer',
+          marketplace_role: data.role,
+          business_name: data.businessName.trim(),
+        },
+        emailRedirectTo: typeof window !== 'undefined'
+          ? `${window.location.origin}/distributors-beauty-industry/auth/callback`
+          : undefined,
       },
     });
 
