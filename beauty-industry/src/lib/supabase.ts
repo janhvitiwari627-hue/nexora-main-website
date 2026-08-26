@@ -1,29 +1,27 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
+import type { User, Session, AuthChangeEvent, SupabaseClient } from '@supabase/supabase-js';
+import {
+  NEXORA_STORAGE_KEY,
+  getSupabaseClient,
+  supabaseConfigErrorMessage,
+} from '../../../packages/auth/src';
 import { DatabaseState } from '../db/database';
 import { useLocationSync, LocationSyncStatus } from '../hooks/useLocationSync';
 
 // ============================================================================
 // NEXORA UNIVERSAL SUPABASE CLIENT
 //
-// ONE shared client, configured for PKCE auth:
-// - storage key: nexora.auth.qwaehqsmodekbgvnaavz
-// - persistSession: true
-// - autoRefreshToken: true
-// - detectSessionInUrl: true
-// - flowType: 'pkce'
-//
-// Security:
-// - Only the public anon key is used (never service_role).
-// - Supabase RLS is the authorization boundary.
+// Client creation (`createClient()`) and validation are centralized in packages/auth. This app
+// only binds its two Vite variables to that factory; it must never create a
+// fallback/mock client because doing so silently forks auth and database data.
+// Canonical auth options applied by that factory:
+// persistSession: true; autoRefreshToken: true; detectSessionInUrl: true;
+// flowType: 'pkce'; storageKey: NEXORA_STORAGE_KEY.
 // ============================================================================
 
-const NEXORA_STORAGE_KEY = 'nexora.auth.qwaehqsmodekbgvnaavz';
 // This app is statically mounted at /distributors-beauty-industry/ on the
 // Nexora Main Website origin. All auth routes are therefore scoped under the
-// mount base so PKCE redirects and deep links stay inside the SPA (the root
-// Next.js app rewrites nested paths back to this app's index.html).
+// mount base so PKCE redirects and deep links stay inside the SPA.
 const APP_MOUNT_BASE = '/distributors-beauty-industry';
 export const AUTH_LOGIN_PATH = `${APP_MOUNT_BASE}/auth/login`;
 export const AUTH_CALLBACK_PATH = `${APP_MOUNT_BASE}/auth/callback`;
@@ -31,45 +29,30 @@ export const AUTH_CALLBACK_PREFIX = `${APP_MOUNT_BASE}/auth/`;
 const AUTH_REDIRECT_THROTTLE_MS = 3000;
 let lastAuthRedirectAt = 0;
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://mock-nexora-project.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1vY2stbmV4b3JhLXByb2plY3QiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTcwMDA0MDAwMCwiZXhwIjoyMDE1NjE2MDAwfQ.mock_key_nexora';
+const clientOptions = {
+  url: import.meta.env.VITE_SUPABASE_URL?.trim() ?? '',
+  anonKey: import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() ?? '',
+} as const;
 
-export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    storageKey: NEXORA_STORAGE_KEY,
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-    flowType: 'pkce',
-  },
-  realtime: {
-    params: {
-      eventsPerSecond: 10,
-    },
-  },
-});
+const canonicalClient = getSupabaseClient(clientOptions);
+
+/** The one canonical client. Production builds reject missing configuration. */
+export const supabase: SupabaseClient = (() => {
+  if (!canonicalClient) throw new Error(supabaseConfigErrorMessage(clientOptions));
+  return canonicalClient;
+})();
 
 export function isSupabaseConfigured(): boolean {
-  const url = import.meta.env.VITE_SUPABASE_URL;
-  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  return Boolean(
-    url &&
-    key &&
-    !url.includes('mock-nexora-project') &&
-    !url.includes('your-project') &&
-    !url.includes('your-project.supabase.co') &&
-    !key.includes('your-anon') &&
-    !key.includes('your-project'),
-  );
+  return canonicalClient !== null;
 }
 
 export function getSupabaseConfigInfo() {
   return {
-    url: import.meta.env.VITE_SUPABASE_URL || '',
+    url: clientOptions.url,
     storageKey: NEXORA_STORAGE_KEY,
     isConfigured: isSupabaseConfigured(),
-    anonKeyTruncated: import.meta.env.VITE_SUPABASE_ANON_KEY
-      ? `${import.meta.env.VITE_SUPABASE_ANON_KEY.slice(0, 10)}...${import.meta.env.VITE_SUPABASE_ANON_KEY.slice(-6)}`
+    anonKeyTruncated: clientOptions.anonKey
+      ? `${clientOptions.anonKey.slice(0, 10)}...${clientOptions.anonKey.slice(-6)}`
       : 'Not set'
   };
 }
@@ -315,7 +298,7 @@ export interface SupabaseContextType {
   testConnection: () => Promise<{ connected: boolean; message: string; details?: any; latencyMs?: number }>;
   syncData: (state: DatabaseState) => Promise<{ success: boolean; syncedCount: number; errors: string[] }>;
   signInWithEmailPassword: (email: string, password: string) => Promise<{ error?: Error | null }>;
-  signUpWithEmailPassword: (email: string, password: string, role: 'buyer' | 'supplier') => Promise<{ error?: Error | null; needsEmailConfirmation?: boolean }>;
+  signUpWithEmailPassword: (email: string, password: string, role: 'buyer' | 'supplier', fullName?: string) => Promise<{ error?: Error | null; needsEmailConfirmation?: boolean }>;
   signInWithOtp: (identifier: string) => Promise<{ error?: Error | null }>;
   verifyOtp: (identifier: string, token: string) => Promise<{ error?: Error | null }>;
   signInWithGoogle: () => Promise<void>;
@@ -468,12 +451,26 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       return { error: error as Error | null };
     },
-    signUpWithEmailPassword: async (email, password, role) => {
+    signUpWithEmailPassword: async (email, password, role, fullName) => {
+      const normalizedEmail = email.trim().toLowerCase();
+      if (!normalizedEmail || password.length < 8 || !fullName?.trim()) {
+        return {
+          error: new Error('A valid email, full name, and password of at least 8 characters are required.'),
+          needsEmailConfirmation: false,
+        };
+      }
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: normalizedEmail,
         password,
         options: {
-          data: { role },
+          // `signup_role` is consumed by the shared database trigger that
+          // creates public.profiles. The marketplace-specific role remains
+          // metadata for its buyer/supplier profile workflow only.
+          data: {
+            full_name: fullName.trim(),
+            signup_role: role === 'supplier' ? 'business_user' : 'customer',
+            marketplace_role: role,
+          },
           emailRedirectTo: typeof window !== 'undefined' ? `${window.location.origin}${AUTH_CALLBACK_PATH}` : undefined,
         },
       });
