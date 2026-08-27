@@ -37,7 +37,7 @@ export default function RootLayout({
        text node as <html>'s first child, which React flags as a hydration
        error ("whitespace text nodes cannot be a child of <html>").
        The `dark` class is toggled by app/components/premium/ThemeToggle. */
-    <html lang="en" className="dark">
+    <html lang="en" className="dark" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />

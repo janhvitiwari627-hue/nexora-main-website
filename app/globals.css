@@ -2093,3 +2093,19 @@ html.dark .premium-home div[style*="#fff5f8"] {
   background-color: #1a1a23 !important;
   border-color: #3f3f4d !important;
 }
+
+/* Hardcoded #594047 descriptions (Section 12 trending / most-booked,
+   Section 13 offers, smart-picks reason chips, data notes) — unreadable on
+   dark surfaces after the classic-surface fix above. */
+html.dark .premium-home .section12 .section-heading p,
+html.dark .premium-home .section12 .salon-body p,
+html.dark .premium-home .section12 .service-card p,
+html.dark .premium-home .section12 .service-card small,
+html.dark .premium-home .section12-data-note,
+html.dark .premium-home .section12-partial-status,
+html.dark .premium-home .section13 .section13-offer-card h3,
+html.dark .premium-home .section13 .section13-offer-card p,
+html.dark .premium-home .section13 .section13-offer-card small,
+html.dark .premium-home .smart-picks-reason {
+  color: var(--premium-muted);
+}
