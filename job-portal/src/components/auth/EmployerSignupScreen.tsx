@@ -18,7 +18,7 @@ export const EmployerSignupScreen: React.FC<EmployerSignupScreenProps> = ({
   const [businessEmail, setBusinessEmail] = useState('hello@nexorabeauty.com');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [agreeTerms, setAgreeTerms] = useState(true);
+  const [agreeTerms, setAgreeTerms] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

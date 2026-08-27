@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { MotionConfig } from "framer-motion";
 import { AuthProvider } from "./lib/auth";
 import { websiteClientOptions } from "./lib/supabaseClient";
 import { NexoraApp } from "./nexora-app";
@@ -24,7 +25,13 @@ export function NexoraRoot({ initialPath }: { initialPath: string }) {
 
   return (
     <AuthProvider clientOptions={websiteClientOptions}>
-      <NexoraApp initialPath={initialPath} />
+      {/* reducedMotion="user" makes every framer-motion animation in the app
+          (hero entrance, AnimatedSection, StatsCounter, …) honour the OS
+          "reduce motion" setting — matching the CSS reduced-motion contract
+          the homepage already tests for. */}
+      <MotionConfig reducedMotion="user">
+        <NexoraApp initialPath={initialPath} />
+      </MotionConfig>
     </AuthProvider>
   );
 }

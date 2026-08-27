@@ -37,6 +37,18 @@ import {
 } from "./lib/portalRoutes";
 // Phase 1 · Section 02 Hero — verified trust claims (data only, no JSX).
 import { HERO_TRUST_CLAIMS } from "./lib/heroTrustClaims";
+import { motion } from "framer-motion";
+import HeroParticles from "./components/premium/HeroParticles";
+import ThemeToggle from "./components/premium/ThemeToggle";
+import StatsSection from "./components/premium/StatsSection";
+import AISmartPicks from "./components/premium/AISmartPicks";
+import FAQSection from "./components/premium/FAQSection";
+import FreeWebsiteCTA from "./components/premium/FreeWebsiteCTA";
+import GrowMoreSection from "./components/premium/GrowMoreSection";
+import TrendingShops from "./components/premium/TrendingShops";
+import SponsoredBrands from "./components/premium/SponsoredBrands";
+import InstallApps from "./components/premium/InstallApps";
+import TrustFlow from "./components/premium/TrustFlow";
 // Phase 1 · Section 03 Smart Search — Jaipur boundary check for the
 // user-triggered GPS flow (answers yes/no only; raw coordinates never leave
 // the device, the URL or the UI).
@@ -352,8 +364,37 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 const EXPECTED_SUPABASE_HOST = EXPECTED_SUPABASE_HOSTNAME;
 
+/**
+ * The operator-facing "Supabase not configured" banner below fails closed in
+ * production deployments, where a missing config is a real deployment bug.
+ * Local dev/preview environments routinely run without secrets, so there the
+ * banner would be pure noise on every page — the warning degrades to a
+ * one-time console.warn instead of painting the page.
+ */
+const isProductionDeployment = process.env.NODE_ENV === "production";
+if (!isProductionDeployment && !getSupabaseClient({ url: supabaseUrl, anonKey: supabaseKey })) {
+  console.warn(
+    "[Nexora] Supabase is not configured — running without live data. " +
+      "Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to connect the shared Supabase project."
+  );
+}
+
 const missingSupabaseConfigMessage =
   `Nexora login service is not configured for this deployment. Set NEXT_PUBLIC_SUPABASE_URL=https://${EXPECTED_SUPABASE_HOST} and NEXT_PUBLIC_SUPABASE_ANON_KEY from the shared Supabase project ${SUPABASE_PROJECT_REF}.`;
+
+/**
+ * Auth config errors carry env-var instructions meant for operators. End
+ * users on a local preview (which has no secrets by design) get public copy
+ * instead of deployment internals; production keeps the actionable operator
+ * message so a misconfigured deployment stays diagnosable.
+ */
+const AUTH_PREVIEW_UNCONFIGURED_COPY =
+  "Live sign-in is not available on this local preview. Connect the shared Supabase project to enable authentication.";
+
+function publicAuthConfigMessage(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return isProductionDeployment ? raw : AUTH_PREVIEW_UNCONFIGURED_COPY;
+}
 
 function isMountedPortalRole(value: unknown): value is "customer" | "business_user" | "growth_partner" {
   return value === "customer" || value === "business_user" || value === "growth_partner";
@@ -556,7 +597,11 @@ export function NexoraApp({ initialPath }: { initialPath: string }) {
         </header>
       )}
       {!online && <div className="offline-banner">Offline — live salon and account data may be unavailable.</div>}
-      {!getClient() && <div className="offline-banner" style={{ background: "#7b244a" }}>Supabase not configured: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY for project {SUPABASE_PROJECT_REF}.</div>}
+      {isProductionDeployment && !getClient() && (
+        <div className="offline-banner" style={{ background: "#7b244a" }}>
+          Supabase not configured: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY for project {SUPABASE_PROJECT_REF}.
+        </div>
+      )}
       {content}
       {!isAuthPage && <Footer navigate={navigate} />}
     </div>
@@ -909,12 +954,14 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
             <div className="premium-icon-actions" aria-label="Quick actions">
               <button type="button" aria-label="Search" onClick={() => document.getElementById("home-search")?.focus()}><PremiumIcon name="search" /></button>
               <button type="button" aria-label="Choose location" onClick={() => document.getElementById("home-location")?.focus()}><PremiumIcon name="location" /></button>
+              <ThemeToggle />
             </div>
             <button type="button" onClick={() => navigate("/login")} className="premium-login">Login</button>
             <button type="button" onClick={() => navigate("/salons")} className="premium-book-button">Book now</button>
           </div>
 
           <div className="premium-mobile-actions">
+            <ThemeToggle />
             <button type="button" aria-label="Search" onClick={() => document.getElementById("home-search")?.focus()}><PremiumIcon name="search" /></button>
             <button type="button" aria-expanded={mobileMenuOpen} aria-controls="premium-mobile-drawer" aria-label="Toggle menu" onClick={() => setMobileMenuOpen((open) => !open)}><PremiumIcon name={mobileMenuOpen ? "close" : "menu"} /></button>
           </div>
@@ -981,11 +1028,40 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
           />
         </div>
         <div className="premium-hero-wash" aria-hidden="true" />
+        <HeroParticles />
         <div className="premium-hero-inner">
           <div className="premium-hero-copy">
-            <p className="premium-kicker hero2-rise"><span aria-hidden="true">✦</span> Jaipur&apos;s premier beauty network</p>
-            <h1 id="hero-heading" className="premium-hero-title hero2-rise hero2-d1">Elevate Your <span>Elegance.</span></h1>
-            <p className="premium-hero-description hero2-rise hero2-d2">Discover top-rated salons, exclusive treatments, and seamless bookings in a unified luxury experience.</p>
+            {/* Premium Hero — Enhanced with Particles + Animations.
+                Entrance motion (framer) replaces the hero2-rise CSS animation
+                on these three lines; actions/trust list keep their CSS
+                stagger. MotionConfig(reducedMotion="user") in NexoraRoot
+                honours prefers-reduced-motion for all of it. */}
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              className="premium-kicker"
+            >
+              <span aria-hidden="true">✨</span> Jaipur&apos;s #1 Beauty Tech Platform
+            </motion.p>
+            <motion.h1
+              id="hero-heading"
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.2 }}
+              className="premium-hero-title"
+            >
+              Premium Beauty.<br/>
+              <span>Tech-Forward.</span>
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.6, delay: 0.4 }}
+              className="premium-hero-description"
+            >
+              Discover Jaipur&apos;s verified salons, shop premium beauty products, and book in seconds. One unified platform.
+            </motion.p>
 
             {/* The approved Phase 1 copy remains available to screen readers and
                 contract consumers while the visible art direction uses the
@@ -1041,6 +1117,29 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
           </div>
         </div>
       </section>
+
+      {/* PHASE 4 — Premium platform statistics (animated counters). Sits
+          between the hero and the service rail; theme-agnostic card tints
+          read correctly on both light and dark. */}
+      <StatsSection />
+
+      {/* PHASE 4 — Sponsored brands marquee (trust strip). Stats → brands
+          → products → shops keeps the trust narrative flowing. */}
+      <SponsoredBrands />
+
+      {/* PHASE 4 — AI Smart Picks (curated beauty products showcase).
+          Complements the salon Smart Picks section (id=smart-picks) with a
+          product-recommendation rail; local generated product images. */}
+      <AISmartPicks />
+
+      {/* PHASE 4 — Top 3 Trending Shops showcase (static design layer with
+          local generated salon images). Book Now hands off to /salons. */}
+      <TrendingShops navigate={navigate} />
+
+      {/* PHASE 4 — Customer trust flow (verification, payments, refunds,
+          support + trust stats). Closes the premium showcase stack:
+          stats → brands → products → shops → trust. */}
+      <TrustFlow />
 
       {/* Premium service shortcuts are a discovery aid, not a fabricated
           salon inventory. Each shortcut hands off to the existing Smart
@@ -1499,6 +1598,14 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         {isCustomer && <p className="section-hint"><button className="text-button" onClick={() => navigate(PORTAL_PATHS.customer)}>View your rewards &amp; loyalty points in the Customer app →</button></p>}
       </section>)}
 
+      {/* PHASE 4 — Business-owner growth pitch. Sits before the FAQ:
+          customer content → Grow More (business) → FAQ → apps → CTA. */}
+      <GrowMoreSection />
+
+      {/* PHASE 4 — FAQ accordion. Sits just before the final apps directory:
+          content sections → FAQ → "Aap Nexora Par Kya Karna Chahte Hain?" */}
+      <FAQSection />
+
       {/*
         ── HOMEPAGE PHASE 1 · SECTION 04 — APP DIRECTORY ──────────────────
         "Aap Nexora Par Kya Karna Chahte Hain?" — the scroll target of the
@@ -1540,6 +1647,16 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
           <RoleCard title="Job Portal" icon="💼" text="Explore beauty-industry jobs and apply directly — across salons and brands." path="/job-portal" navigate={navigate} external />
         </div>
       </section>
+
+      {/* PHASE 4 — Install all 6 Nexora apps (external deployments showcase
+          + download banner). Sits after the internal apps directory:
+          role selection → install pitch → free-website CTA → footer. */}
+      <InstallApps />
+
+      {/* PHASE 4 — Free Website CTA banner. Closing pitch after the apps
+          directory: content → FAQ → apps → this banner → footer. Links to
+          the real Owner PWA deployment. */}
+      <FreeWebsiteCTA />
     </main>
   );
 }
@@ -1893,7 +2010,11 @@ async function fetchCatalogFromMarketplaceRpc(client: SupabaseClient): Promise<C
 // Public catalog contract: verified=true, is_active=true, is_published=true, deleted_at null.
 async function fetchCatalog(): Promise<CatalogItem[]> {
   const client = getClient();
-  if (!client) throw new Error(missingSupabaseConfigMessage);
+  // An unconfigured deployment (e.g. a local preview without secrets) is not
+  // a load failure — retrying cannot help. Return an empty catalog so every
+  // consumer renders its designed empty state instead of an error state; the
+  // production-only operator banner above still reports the missing config.
+  if (!client) return [];
   try {
     return await fetchCatalogFromTables(client);
   } catch (cause) {
@@ -2076,7 +2197,8 @@ function useMarketplaceOffers(online: boolean) {
     setError(false);
     try {
       const client = getClient();
-      if (!client) throw new Error("Marketplace client unavailable");
+      // Unconfigured preview: quiet empty state, not a retriable error.
+      if (!client) return;
       const { data, error: rpcError } = await client.rpc("marketplace_offers", { p_limit: MARKETPLACE_OFFERS_LIMIT });
       if (rpcError) throw rpcError;
       if (version === requestVersion.current) setOffers((data ?? []) as OfferDetail[]);
@@ -5030,7 +5152,8 @@ function usePopularServices(online: boolean) {
     setError(false);
     try {
       const client = getClient();
-      if (!client) throw new Error("Marketplace client unavailable");
+      // Unconfigured preview: quiet empty state, not a retriable error.
+      if (!client) return;
       const { data, error: rpcError } = await client.rpc("marketplace_popular_services", { p_limit: 6 });
       if (rpcError) throw rpcError;
       if (version === requestVersion.current) setServices((data ?? []) as PopularService[]);
@@ -5265,7 +5388,9 @@ function useTrending(online: boolean) {
     setLoading(true);
     setError(false);
     try {
-      const client = getClient(); if (!client) throw new Error("Marketplace client unavailable");
+      const client = getClient();
+      // Unconfigured preview: quiet empty state, not a retriable error.
+      if (!client) return;
       const { data, error: rpcError } = await client.rpc("marketplace_trending", { p_limit: 6 });
       if (rpcError) throw rpcError;
       if (version === requestVersion.current) setRows((data ?? []) as TrendingRow[]);
@@ -6013,7 +6138,9 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
   };
 
   const roleLabel = ROLE_LABELS[role] ?? "Customer";
-  const configDiagnostics = configError || (typeof window !== "undefined" && !getClient() ? getDetailedConfigError() : "");
+  const configDiagnostics = publicAuthConfigMessage(
+    configError || (typeof window !== "undefined" && !getClient() ? getDetailedConfigError() : "")
+  );
 
   const roles: Array<{value: Role, label: string, desc: string, icon: string}> = [
     {value: "customer", label: "Customer", desc: "Book services", icon: "🧑"},
@@ -6367,7 +6494,7 @@ function AuthContinuePage({ navigate }: { navigate: (path: string) => void }) {
   }, [configError, isAuthenticated, loading, navigate, role, status]);
 
   if (configError) {
-    return <main className="center-page"><StateCard title="Authentication unavailable" text={configError} /></main>;
+    return <main className="center-page"><StateCard title="Authentication unavailable" text={publicAuthConfigMessage(configError)} /></main>;
   }
   if (status === "authenticated" && !role) {
     return <main className="center-page"><StateCard title="Account could not be verified" text={error?.message ?? "Nexora could not verify an active profile for this session."} /></main>;
@@ -6460,7 +6587,7 @@ function ResetPasswordPage({ navigate }: { navigate: (path: string) => void }) {
     let active = true;
     const timer = window.setTimeout(async () => {
       if (configError) {
-        if (active) { setReady("failed"); setMessage(configError); }
+        if (active) { setReady("failed"); setMessage(publicAuthConfigMessage(configError)); }
         return;
       }
       if (loading) { if (active) setReady("waiting"); return; }
@@ -6668,7 +6795,14 @@ function PortalGateway({
       const code = cause && typeof cause === "object" && "code" in cause ? String((cause as { code: unknown }).code) : "";
       if (code === "session_expired" || code === "profile_inactive" || code === "not_configured") {
         if (code === "not_configured") {
-          setState({ loading: false, error: missingSupabaseConfigMessage });
+          // Raw env-var names are operator-facing; local previews without
+          // secrets get public copy instead of deployment internals.
+          setState({
+            loading: false,
+            error: isProductionDeployment
+              ? missingSupabaseConfigMessage
+              : "Nexora ka portal is preview par available nahi hai — Supabase config ke bina live portal mount nahi hota.",
+          });
           return;
         }
         navigate(`/auth/login?role=${roleQueryForPortalRole(loginRole)}&returnTo=${encodeURIComponent(returnTo)}`);
@@ -6703,7 +6837,7 @@ function UnavailableAuthenticatedPortal({ path, navigate }: { path: string; navi
   }, [isAdmin, isAuthenticated, loading, navigate, path]);
 
   if (loading) return <main className="center-page"><div className="loader" aria-label="Checking portal access" /></main>;
-  if (configError) return <main className="center-page"><StateCard title="Portal unavailable" text={configError} /></main>;
+  if (configError) return <main className="center-page"><StateCard title="Portal unavailable" text={publicAuthConfigMessage(configError)} /></main>;
   if (!isAuthenticated) return null;
   if (role !== expectedRole) {
     return <main className="center-page"><StateCard title="Portal access denied" text="Your Nexora account is authenticated, but it does not have access to this portal." action="Open my portal" onAction={() => navigate(

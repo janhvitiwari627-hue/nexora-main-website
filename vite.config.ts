@@ -44,16 +44,71 @@ export default defineConfig(async () => {
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
+/**
+ * Dev-only cache hygiene for the preview:
+ *
+ * 1) HTML documents get `Cache-Control: no-store`. Vite/vinext send no
+ *    caching directive on the document, which lets browsers heuristically
+ *    cache it — a stale document keeps referencing old module URLs and mixes
+ *    dependency-optimizer sessions ("Cannot read properties of null (reading
+ *    'useContext')" from duplicated React). Never storing the document means
+ *    every reload fetches current HTML with current module URLs.
+ * 2) Optimized deps (`node_modules/.vite/deps/*.js?v=…`) arrive with
+ *    `max-age=31536000, immutable`. Those URLs keep their path across
+ *    re-optimizations while their transformed content changes, so an
+ *    immutable cached copy also mixes sessions. Downgraded to `no-cache`
+ *    (revalidate + ETag): 304s keep loads fast, content is always current.
+ *
+ * Production builds are unaffected — `apply: "serve"` keeps this plugin out
+ * of `vite build`.
+ */
+function devRevalidationOnlyCache(): Plugin {
+  return {
+    name: "dev-revalidation-only-cache",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use((_req, res, next) => {
+        const originalSetHeader = res.setHeader.bind(res);
+        res.setHeader = ((name: string, value: unknown) => {
+          if (typeof name === "string") {
+            const lower = name.toLowerCase();
+            if (
+              lower === "content-type" &&
+              typeof value === "string" &&
+              value.includes("text/html")
+            ) {
+              originalSetHeader("Cache-Control", "no-store");
+            }
+            if (
+              lower === "cache-control" &&
+              typeof value === "string" &&
+              value.includes("immutable")
+            ) {
+              return originalSetHeader("Cache-Control", "no-cache");
+            }
+          }
+          return originalSetHeader(name as never, value as never);
+        }) as typeof res.setHeader;
+        next();
+      });
+    },
+  };
+}
+
   return {
     server: {
       host: "0.0.0.0",
       // Arena previews are proxied under a generated host, not terminal.local.
       allowedHosts: true as const,
+      // NOTE: immutable dep caching is downgraded to no-cache by the
+      // devRevalidationOnlyCache() plugin above (server.headers cannot
+      // override Vite's internal middleware headers).
       ...(isCodexSeatbeltSandbox
         ? { watch: { useFsEvents: false, usePolling: true } }
         : {}),
     },
     plugins: [
+      devRevalidationOnlyCache(),
       vinext(),
       sites(),
       cloudflare({
