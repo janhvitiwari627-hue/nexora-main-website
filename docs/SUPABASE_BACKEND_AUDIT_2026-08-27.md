@@ -15,7 +15,7 @@
 | F-2 | Live DB has drifted from version control (offers table alone: app expects 15+ columns, versioned schema has 8) | 🔴 P0 | Documented; needs a live schema export (see §5) |
 | F-3 | **Three separate migration sets** fragment the schema source of truth | 🟠 P1 | Documented with consolidation path |
 | F-4 | Job Portal signup ships demo defaults + pre-ticked ToS | 🔴 P0 | ✅ **FIXED in this PR** |
-| F-5 | No CI — 112+ contract tests only run locally | 🟠 P1 | ✅ **FIXED in this PR** (`.github/workflows/ci.yml`) |
+| F-5 | No CI — 112+ contract tests only run locally | 🟠 P1 | Workflow authored (see Appendix A) — **add manually** (the sandbox CI token cannot push workflow files) |
 | F-6 | Env example docs predate the publishable-key validation | 🟡 P2 | ✅ **FIXED in this PR** (`.env.example` refreshed) |
 | F-7 | Migrations M28–M35 + job-portal set + Phase 6 set unapplied on live **[LIVE?]** | 🔴 P0 | Manual step — `supabase/APPLY_LIVE_DB_GUIDE.md` |
 | F-8 | pg_cron jobs (owner payouts 22:00 IST, GP hold release hourly) unscheduled **[LIVE?]** | 🟠 P1 | Manual step — scheduling SQL is in the migrations |
@@ -85,7 +85,7 @@ Customer (`remix-final-salon-app`), Owner (`shop-onwer-pink-nexora-aap` / `pink-
 | Fix | Files | Detail |
 |---|---|---|
 | ✅ F-4 demo defaults | `job-portal/src/components/auth/JobSeekerSignupScreen.tsx`, `EmployerSignupScreen.tsx` | Empty `fullName`/`email`/`phone`; ToS unticked (`useState(false)`). Kills the `jane@example.com` duplicate-registration failure and the pre-consent compliance problem. |
-| ✅ F-5 CI pipeline | `.github/workflows/ci.yml` | Two jobs: contracts+security tests (with typecheck) and lint (main + job-portal), Node 22, on every push/PR to `main`. |
+| 🔧 F-5 CI pipeline | Appendix A below | Workflow authored (two jobs: contracts+security + lint, Node 22). Copy to `.github/workflows/ci.yml` — the sandbox push token lacks workflow-file permission. |
 | ✅ F-6 env docs | `.env.example` | Publishable-key format (`sb_publishable_…`) documented; canonical URL/key-source note; guidance matching `packages/auth` validation. |
 | ✅ F-1 reference migration | `supabase/migrations/20260827_supplementary_marketplace_rpcs.sql` | Reference implementations of the 6 catalog RPCs buildable on versioned tables (categories, salon_stats, top_rated, trending, offers, popular_services). **Header instructs diffing against live definitions before applying** — live DB already has unversioned variants. |
 
@@ -128,3 +128,58 @@ A-6  Consolidate the Job Portal's legacy auth listener into useAuth() (F-9)
 - Whether M28–M35 + the job-portal migrations were ever applied (the prior gaps doc says no; re-verify — **[LIVE?]**)
 
 Each is a dashboard check; none blocks this PR.
+
+
+---
+
+## Appendix A — CI workflow (add manually as `.github/workflows/ci.yml`)
+
+The Arena sandbox token cannot push GitHub workflow files (`workflows` permission
+not granted), so paste this file manually via the GitHub UI:
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  contracts:
+    name: Contract & security tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      - name: Typecheck (main website)
+        run: npx tsc --noEmit -p tsconfig.json
+      - name: Contract tests
+        run: npm run test:contracts
+      - name: Security tests
+        run: npm run test:security
+
+  subapps:
+    name: Sub-app checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      - name: Lint (main website + job-portal)
+        run: npm run lint
+```
