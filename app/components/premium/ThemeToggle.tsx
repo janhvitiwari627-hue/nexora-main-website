@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
  *
  * The entire dark theme in globals.css is scoped under `html.dark`; this
  * toggle flips that class. Preference persists in localStorage under
- * "nexora-theme" ("dark" | "light") — the no-FOUC head script in
+ * "nexora-theme-v2" ("dark" | "light") — the no-FOUC head script in
  * app/layout.tsx applies it before first paint, so this component only
  * needs to sync its icon after mount.
  *
@@ -28,7 +28,7 @@ export default function ThemeToggle() {
     setDark(next);
     document.documentElement.classList.toggle('dark', next);
     try {
-      localStorage.setItem('nexora-theme', next ? 'dark' : 'light');
+      localStorage.setItem('nexora-theme-v2', next ? 'dark' : 'light');
     } catch {
       /* Storage unavailable (private mode) — theme still applies for this visit. */
     }

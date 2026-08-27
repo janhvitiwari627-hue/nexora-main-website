@@ -18,11 +18,13 @@ export const metadata: Metadata = {
 
 /**
  * No-FOUC theme bootstrap — MUST run before first paint.
- * Default is dark (per product decision); a saved "nexora-theme" value in
- * localStorage wins. Runs before the stylesheet link so the very first
+ * Default is dark (per product decision); a saved "nexora-theme-v2" value in
+ * localStorage wins. (The key was bumped from "nexora-theme" once so every
+ * browser that had accidentally stored "light" during the preview resets to
+ * the dark default.) Runs before the stylesheet link so the very first
  * paint already uses the right theme.
  */
-const themeBootstrapScript = `(function(){try{var s=localStorage.getItem("nexora-theme");var d=s?s==="dark":true;var c=document.documentElement.classList;d?c.add("dark"):c.remove("dark");var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",d?"#0a0a0f":"#fffdfc");}catch(e){}})();`;
+const themeBootstrapScript = `(function(){try{var s=localStorage.getItem("nexora-theme-v2");var d=s?s==="dark":true;var c=document.documentElement.classList;d?c.add("dark"):c.remove("dark");var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",d?"#0a0a0f":"#fffdfc");}catch(e){}})();`;
 
 export default function RootLayout({
   children,
