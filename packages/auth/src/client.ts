@@ -45,6 +45,7 @@ export type NexoraClientOptions = SupabaseEnvOverrides & {
 
 let cachedClient: SupabaseClient | null = null;
 let cachedKey = "";
+let warnedInvalidConfig = false;
 
 function buildClient(env: SupabaseEnv, options: NexoraClientOptions): SupabaseClient {
   const extra = options.clientOptions ?? {};
@@ -83,8 +84,10 @@ export function getSupabaseClient(options: NexoraClientOptions = {}): SupabaseCl
   const env = resolveSupabaseEnv(options);
   const validation = validateSupabaseEnv(env, { strictProject: !options.allowForeignProject });
   if (!validation.valid) {
-    if (typeof console !== "undefined" && env.url) {
-      // One-line operator signal; contains no secrets.
+    // One operator signal per load — this factory is called by every data
+    // hook, so an unconditional warn would repeat dozens of times per page.
+    if (typeof console !== "undefined" && env.url && !warnedInvalidConfig) {
+      warnedInvalidConfig = true;
       console.warn(`[Nexora auth] ${validation.message}`);
     }
     return null;
