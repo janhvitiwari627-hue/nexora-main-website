@@ -2009,3 +2009,87 @@ html.dark .premium-home ::-webkit-scrollbar-thumb:hover {
     display: none;
   }
 }
+
+/* ============================================================
+   DARK MODE — classic-surface coverage (Phase 4 fix)
+   ------------------------------------------------------------
+   The dark block above covered the premium chrome but left the
+   classic surfaces LIGHT: section backgrounds that use
+   var(--cream) (including INLINE style attributes), state
+   cards, role/membership cards, classic salon cards, the search
+   submit button and secondary buttons. Light premium text on
+   those light surfaces was invisible. Everything below is
+   scoped to the dark homepage only.
+   ============================================================ */
+
+/* Legacy light-theme variables, re-scoped for dark surfaces. This also fixes
+   every INLINE style="background: var(--cream)" section because custom
+   properties resolve at the element inside .premium-home. */
+html.dark .premium-home {
+  --cream: #13131a;
+  --muted: #a0a0b0;
+  --line: #2a2a36;
+}
+
+/* Empty / error state cards (categories, nearby, offers, open-now,
+   reviews, membership empty states…). */
+html.dark .premium-home .state-card {
+  background: #1a1a23;
+  border-color: #3f3f4d;
+}
+html.dark .premium-home .state-card p { color: var(--premium-muted); }
+html.dark .premium-home .state-card .secondary {
+  background: #1a1a23;
+  color: #ffb0c8;
+  border-color: #3f3f4d;
+}
+
+/* Apps-directory cards + membership plan cards (both use .role-card). */
+html.dark .premium-home .role-card {
+  background: #13131a;
+  border-color: var(--premium-line);
+}
+html.dark .premium-home .app-card-badge {
+  background: rgba(26, 26, 35, 0.95);
+  border-color: var(--premium-line);
+  color: #ffb0c8;
+}
+
+/* Classic salon cards (catalog / trending fallbacks). */
+html.dark .premium-home .salon-card {
+  background: #13131a;
+  border-color: var(--premium-line);
+  box-shadow: 0 15px 38px rgba(0, 0, 0, 0.35);
+}
+html.dark .premium-home .salon-card h3 { color: var(--premium-ink); }
+
+/* Secondary buttons inside dark surfaces. */
+html.dark .premium-home .secondary {
+  background: #1a1a23;
+  color: #ffb0c8;
+  border-color: #3f3f4d;
+}
+
+/* Text links / hints on dark surfaces. */
+html.dark .premium-home .text-button,
+html.dark .premium-home .role-card button {
+  color: #ffb0c8;
+}
+
+/* Search submit — light theme is an ink button with white text; on dark it
+   inverts to a light button with dark text. */
+html.dark .premium-home .premium-search-button {
+  color: #13131a;
+  border-color: var(--premium-ink);
+}
+html.dark .premium-home .premium-search-button:hover {
+  background: #ffffff;
+  color: #13131a;
+}
+
+/* Inline-styled light boxes that class selectors cannot reach (e.g. the
+   membership status strip). */
+html.dark .premium-home div[style*="#fff5f8"] {
+  background-color: #1a1a23 !important;
+  border-color: #3f3f4d !important;
+}
