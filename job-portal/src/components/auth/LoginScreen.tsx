@@ -1,13 +1,15 @@
-import React, { useState } from 'react';
-import { getErrorMessage } from '../../utils/errors';
+import React, { useEffect, useState } from 'react';
+import { getErrorMessage, isEmailNotConfirmedError } from '../../utils/errors';
 import { UserRole } from '../../types';
-import { Eye, EyeOff, Sparkles, UserCheck, Building2, Apple } from 'lucide-react';
+import { Eye, EyeOff, UserCheck, Building2, Apple, Send } from 'lucide-react';
 
 interface LoginScreenProps {
   onLoginSuccess: (role: UserRole, email: string, password: string) => Promise<void> | void;
   onSocialLogin?: (provider: 'google' | 'apple', role: UserRole) => Promise<void> | void;
   onSignUp: () => void;
   onForgotPassword: () => void;
+  /** Resend the sign-up verification link when sign-in reports an unverified email. */
+  onResendVerification?: (email: string) => Promise<void> | void;
   /** Prefill from a sign-up that failed on an already-registered email. */
   initialEmail?: string;
   /** Preselect the portal the existing email is permanently linked to. */
@@ -21,6 +23,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   onSocialLogin,
   onSignUp,
   onForgotPassword,
+  onResendVerification,
   initialEmail,
   initialRole,
   notice,
@@ -32,16 +35,55 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [noticeDismissed, setNoticeDismissed] = useState(false);
+  // When sign-in fails because the account never verified its email, this is
+  // the address the resend button targets — the escape hatch for the lockout.
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+  const [isResending, setIsResending] = useState(false);
+  const [verificationSent, setVerificationSent] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = window.setInterval(() => setCooldown((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearInterval(timer);
+  }, [cooldown]);
+
+  const handleResendVerification = async () => {
+    if (!onResendVerification || !unverifiedEmail) return;
+    setIsResending(true);
+    try {
+      await onResendVerification(unverifiedEmail);
+      setVerificationSent(true);
+      setCooldown(60);
+      setError(null);
+    } catch (resendError) {
+      console.error('[Nexora Jobs] resend verification failed:', resendError);
+      setError(getErrorMessage(resendError, 'Unable to resend the verification email.'));
+    } finally {
+      setIsResending(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setUnverifiedEmail(null);
     setIsLoading(true);
     try {
       await onLoginSuccess(activeRole, email, password);
     } catch (loginError) {
       console.error('[Nexora Jobs] sign-in failed:', loginError);
       setError(getErrorMessage(loginError, 'Unable to sign in. Please try again.'));
+      const typedUnverified = isEmailNotConfirmedError(loginError);
+      setUnverifiedEmail(
+        onResendVerification
+          ? typedUnverified
+            ? loginError.email || email.trim()
+            : /not verified|not confirmed/i.test(getErrorMessage(loginError, ''))
+              ? email.trim()
+              : null
+          : null,
+      );
     } finally {
       setIsLoading(false);
     }
@@ -177,9 +219,28 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </div>
 
             {error && (
-              <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 border border-rose-200">
-                {error}
-              </p>
+              <div className="rounded-lg bg-rose-50 px-3 py-2 border border-rose-200 flex flex-col gap-2">
+                <p role="alert" className="text-xs font-medium text-rose-700">
+                  {error}
+                </p>
+                {unverifiedEmail && (
+                  <button
+                    type="button"
+                    disabled={isResending || verificationSent || cooldown > 0}
+                    onClick={() => void handleResendVerification()}
+                    className="inline-flex items-center gap-1.5 self-start rounded-full bg-[#e2007c] px-3.5 py-2 text-[11px] font-bold text-white shadow-sm transition-colors hover:bg-[#b90064] active:scale-95 disabled:cursor-wait disabled:opacity-60 cursor-pointer"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>
+                      {isResending
+                        ? 'Sending…'
+                        : verificationSent
+                          ? `Verification link sent — check ${unverifiedEmail}${cooldown > 0 ? ` (resend in ${cooldown}s)` : ''}`
+                          : 'Send verification email'}
+                    </span>
+                  </button>
+                )}
+              </div>
             )}
 
             {/* Primary CTA */}

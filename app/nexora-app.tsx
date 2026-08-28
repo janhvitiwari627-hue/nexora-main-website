@@ -6027,6 +6027,11 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
   const [messageType, setMessageType] = useState<"error" | "success" | "info">("error");
   const [showPassword, setShowPassword] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
+  // Login failed because the account never confirmed its email → offer resend
+  // on the login screen itself (no need to jump to signup).
+  const [loginUnverified, setLoginUnverified] = useState(false);
+  // Signup failed because the email already has an account → one tap to login.
+  const [signupTaken, setSignupTaken] = useState(false);
   const googleOauthConfigured = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED === "true";
   const [googleOauthFailed, setGoogleOauthFailed] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
@@ -6077,6 +6082,8 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
     setBusy(true);
     setMessage("");
     setMessageType("error");
+    setLoginUnverified(false);
+    setSignupTaken(false);
     try {
       if (mode === "signup") {
         const signupRole = normalizeSignupRole(role);
@@ -6105,6 +6112,14 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
       const parsed = authErrorMessage(cause);
       setMessage(parsed);
       setMessageType(parsed.startsWith("Account created") || parsed.includes("check your email") ? "success" : "error");
+      // Machine-readable recovery actions (see packages/auth error codes).
+      const code = (cause as { code?: unknown })?.code;
+      if (mode === "login" && (code === "email_not_confirmed" || /not confirmed|confirm your email/i.test(parsed))) {
+        setLoginUnverified(true);
+      }
+      if (mode === "signup" && (code === "email_taken" || /already exists/i.test(parsed))) {
+        setSignupTaken(true);
+      }
     } finally {
       setBusy(false);
     }
@@ -6345,6 +6360,18 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
               {needsVerification && mode==="signup" && (
                 <button type="button" disabled={busy} onClick={() => void resend()} className="w-full h-[44px] bg-[#fff0f2] border border-[#ffd9e2] rounded-[12px] text-[12px] font-semibold text-[#8e004b] hover:bg-[#ffe8ed] transition-colors">
                   {busy ? "Sending…" : "Resend confirmation email"}
+                </button>
+              )}
+              {/* Login for an account that never verified its email: resend here. */}
+              {loginUnverified && mode==="login" && (
+                <button type="button" disabled={busy} onClick={() => void resend()} className="w-full h-[44px] bg-[#fff0f2] border border-[#ffd9e2] rounded-[12px] text-[12px] font-semibold text-[#8e004b] hover:bg-[#ffe8ed] transition-colors">
+                  {busy ? "Sending…" : "Resend confirmation email"}
+                </button>
+              )}
+              {/* Signup refused because the email already has an account: go log in. */}
+              {signupTaken && mode==="signup" && (
+                <button type="button" onClick={() => navigate(`/login?role=${role === "business_user" ? "owner" : role === "growth_partner" ? "growth-partner" : role === "delivery_partner" ? "delivery" : "customer"}`)} className="w-full h-[44px] bg-[#26181c] text-white rounded-[12px] text-[12px] font-semibold tracking-[0.05em] uppercase">
+                  Go to login →
                 </button>
               )}
               {messageType==="success" && mode==="signup" && (

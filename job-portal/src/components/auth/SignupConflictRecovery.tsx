@@ -38,8 +38,18 @@ export const SignupConflictRecovery: React.FC<SignupConflictRecoveryProps> = ({
 }) => {
   const [isResending, setIsResending] = useState(false);
   const [verificationSent, setVerificationSent] = useState(false);
+  const [resendExhausted, setResendExhausted] = useState(false);
   const email = conflict.email;
-  const canResendVerification = conflict.emailConfirmed === false && Boolean(onResendVerification);
+  // Offer the resend when the account is known-unverified. ALSO offer it when
+  // the deployment cannot report confirmation state (emailConfirmed === null,
+  // i.e. the new RPC migration is not applied yet): the resend self-corrects,
+  // because Supabase refuses a resend for an already-verified address and we
+  // then steer the user to "Sign in instead". This is what makes the
+  // unverified-account lockout recoverable even before the migration lands.
+  const knownUnverified = conflict.emailConfirmed === false;
+  const stateUnknown = conflict.emailConfirmed === null;
+  const canResendVerification =
+    !resendExhausted && (knownUnverified || stateUnknown) && Boolean(onResendVerification);
 
   const handleResendVerification = async () => {
     if (!onResendVerification || !email) return;
@@ -49,7 +59,13 @@ export const SignupConflictRecovery: React.FC<SignupConflictRecoveryProps> = ({
       setVerificationSent(true);
     } catch (resendError) {
       console.error('[Nexora Jobs] resend verification failed:', resendError);
-      onError?.(getErrorMessage(resendError, 'Unable to resend the verification email.'));
+      const message = getErrorMessage(resendError, 'Unable to resend the verification email.');
+      // Already verified (or no verification needed): the resend route is a
+      // dead end for this address — stop offering it and steer the user to sign in.
+      if (/already (verified|confirmed)|sign in with your password/i.test(message)) {
+        setResendExhausted(true);
+      }
+      onError?.(message);
     } finally {
       setIsResending(false);
     }
