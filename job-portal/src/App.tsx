@@ -65,7 +65,10 @@ export default function App() {
   const { signIn, forgotPassword, updatePassword, signOut } = useAuth();
   // Reading the same context is intentionally not a second provider or
   // listener; it lets the shell react to a provider-owned sign-out event.
-  const { session: authSession, loading: authLoading } = useAuth();
+  // `resendVerification` is the provider-owned recovery action for an account
+  // whose verification email was never opened (see signup duplicate-email
+  // recovery below) — no component calls supabase.auth for it.
+  const { session: authSession, loading: authLoading, resendVerification } = useAuth();
 
   useEffect(() => {
     if (appMountLogged) return;
@@ -90,6 +93,14 @@ export default function App() {
   const [isBackendLoading, setIsBackendLoading] = useState(isSupabaseConfigured);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [passwordRecoveryState, setPasswordRecoveryState] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle');
+  // Carried over when a sign-up is refused because the email already has an
+  // account: the sign-in screen opens with the email and the correct portal
+  // already selected, so the user never has to retype or guess.
+  const [loginPrefill, setLoginPrefill] = useState<{
+    email: string;
+    role: UserRole;
+    notice: string;
+  } | null>(null);
 
   // Application Data States
   const [jobs, setJobs] = useState<JobPosting[]>(INITIAL_JOBS);
@@ -269,6 +280,37 @@ export default function App() {
   }, [currentUserId, hydrateWorkspace, userRole]);
 
   // Handlers
+  /**
+   * Single entry point to the sign-in screen. Passing a prefill routes a user
+   * who was refused sign-up (email already registered) straight to the portal
+   * their email is permanently linked to; passing nothing clears a stale one.
+   */
+  const goToLogin = (prefill?: { email: string; role: UserRole; notice: string }) => {
+    setLoginPrefill(prefill ?? null);
+    setScreen('login');
+  };
+
+  /**
+   * Duplicate-email recovery: the message the user sees already says "sign in
+   * instead", so this makes that literal — same email, correct portal, one tap.
+   */
+  const handleSignInInstead = (role: UserRole, email: string) => {
+    goToLogin({
+      email,
+      role,
+      notice: `An account for ${email} already exists on the ${role === 'employer' ? 'Employer' : 'Job Seeker'} portal. Sign in to continue, or use "Forgot Password?" if you do not remember your password.`,
+    });
+  };
+
+  /** Recovery for an account created but never verified — the provider owns the auth action. */
+  const handleResendVerification = async (email: string) => {
+    try {
+      await resendVerification(email);
+    } catch (error) {
+      throw mapAuthError(error);
+    }
+  };
+
   const handleSelectRole = (role: UserRole) => {
     setUserRole(role);
     if (role === 'seeker') {
@@ -647,6 +689,9 @@ export default function App() {
     } finally {
       setPasswordRecoveryState('idle');
       window.history.replaceState({}, document.title, window.location.pathname);
+      // Any sign-up prefill is stale by now — the user came back through the
+      // recovery flow, not from a refused sign-up.
+      if (target === 'login') setLoginPrefill(null);
       setScreen(target);
     }
   };
@@ -694,7 +739,7 @@ export default function App() {
       {screen === 'welcome' && (
         <WelcomeScreen
           onGetStarted={() => setScreen('role_select')}
-          onLogin={() => setScreen('login')}
+          onLogin={() => goToLogin()}
         />
       )}
 
@@ -712,7 +757,9 @@ export default function App() {
           onSubmit={handleSeekerSignup}
           onSocialSignup={(provider) => handleSocialLogin(provider, 'seeker')}
           onBack={() => setScreen('role_select')}
-          onLogin={() => setScreen('login')}
+          onLogin={() => goToLogin()}
+          onSignInInstead={(email) => handleSignInInstead('seeker', email)}
+          onResendVerification={handleResendVerification}
         />
       )}
 
@@ -721,7 +768,9 @@ export default function App() {
         <EmployerSignupScreen
           onSubmit={handleEmployerSignup}
           onBack={() => setScreen('role_select')}
-          onLogin={() => setScreen('login')}
+          onLogin={() => goToLogin()}
+          onSignInInstead={(email) => handleSignInInstead('employer', email)}
+          onResendVerification={handleResendVerification}
         />
       )}
 
@@ -730,6 +779,9 @@ export default function App() {
         <LoginScreen
           onLoginSuccess={handleLoginSuccess}
           onSocialLogin={handleSocialLogin}
+          initialEmail={loginPrefill?.email}
+          initialRole={loginPrefill?.role}
+          notice={loginPrefill?.notice}
           onSignUp={() => setScreen('role_select')}
           onForgotPassword={() => {
             setPasswordRecoveryState('idle');
@@ -741,7 +793,7 @@ export default function App() {
       {/* SCREEN 08: FORGOT PASSWORD */}
       {screen === 'forgot_password' && (
         <ForgotPasswordScreen
-          onBackToLogin={() => setScreen('login')}
+          onBackToLogin={() => goToLogin()}
           onSendResetLink={(email) => forgotPassword(email).catch((error) => { throw mapAuthError(error); })}
         />
       )}

@@ -1,17 +1,28 @@
 import React, { useState } from 'react';
-import { getErrorMessage } from '../../utils/errors';
+import {
+  getErrorMessage,
+  isPortalEmailConflictError,
+  type PortalEmailConflictError,
+} from '../../utils/errors';
+import { SignupConflictRecovery } from './SignupConflictRecovery';
 import { ArrowLeft, ArrowRight, Eye, EyeOff } from 'lucide-react';
 
 interface EmployerSignupScreenProps {
   onSubmit: (formData: { businessName: string; contactPerson: string; email: string; password: string }) => Promise<void> | void;
   onBack: () => void;
   onLogin: () => void;
+  /** Duplicate-email recovery: jump to sign-in with this email prefilled. */
+  onSignInInstead?: (email: string) => void;
+  /** Duplicate-email recovery for an account that never verified its email. */
+  onResendVerification?: (email: string) => Promise<void> | void;
 }
 
 export const EmployerSignupScreen: React.FC<EmployerSignupScreenProps> = ({
   onSubmit,
   onBack,
   onLogin,
+  onSignInInstead,
+  onResendVerification,
 }) => {
   const [businessName, setBusinessName] = useState('Nexora Beauty Group');
   const [contactPerson, setContactPerson] = useState('Sarah Jenkins');
@@ -21,10 +32,12 @@ export const EmployerSignupScreen: React.FC<EmployerSignupScreenProps> = ({
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<PortalEmailConflictError | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setConflict(null);
     if (!agreeTerms) {
       setError('Please accept the Terms & Conditions and Privacy Policy.');
       return;
@@ -43,6 +56,9 @@ export const EmployerSignupScreen: React.FC<EmployerSignupScreenProps> = ({
     } catch (signupError) {
       console.error('[Nexora Jobs] employer signup failed:', signupError);
       setError(getErrorMessage(signupError, 'Unable to create employer account.'));
+      // Duplicate email: keep the typed conflict so the user gets a way out
+      // (sign in / resend verification) instead of a dead-end message.
+      setConflict(isPortalEmailConflictError(signupError) ? signupError : null);
     } finally {
       setIsSubmitting(false);
     }
@@ -177,9 +193,17 @@ export const EmployerSignupScreen: React.FC<EmployerSignupScreenProps> = ({
             </div>
 
             {error && (
-              <p role="alert" className="rounded-xl bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 border border-rose-200">
-                {error}
-              </p>
+              <div className="rounded-xl bg-rose-50 px-3 py-2 border border-rose-200 flex flex-col gap-2">
+                <p role="alert" className="text-xs font-medium text-rose-700">{error}</p>
+                {conflict && (
+                  <SignupConflictRecovery
+                    conflict={conflict}
+                    onSignInInstead={onSignInInstead}
+                    onResendVerification={onResendVerification}
+                    onError={setError}
+                  />
+                )}
+              </div>
             )}
 
             {/* CTA */}
