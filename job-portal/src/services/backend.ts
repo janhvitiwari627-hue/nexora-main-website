@@ -13,6 +13,7 @@ import type {
 } from '../types';
 import { requireSupabase } from '../lib/supabase';
 import {
+  EmailNotConfirmedError,
   PortalEmailConflictError,
   asError,
   isMissingFunctionError,
@@ -121,7 +122,7 @@ function mapPortalRoleError(error: unknown, requestedRole: UserRole): Error {
   return match ? new Error(portalMismatchMessage(match[1], requestedRole)) : new Error(message);
 }
 
-export function mapAuthError(error: unknown): Error {
+export function mapAuthError(error: unknown, email?: string): Error {
   const message = errorMessage(error, 'Authentication request failed.');
   const normalized = message.toLowerCase();
   if (normalized.includes('rate limit')) {
@@ -131,7 +132,23 @@ export function mapAuthError(error: unknown): Error {
     return new Error('Invalid email or password. Check your credentials and selected portal.');
   }
   if (normalized.includes('email not confirmed')) {
-    return new Error('Your email is not verified. Open the verification email or request a fresh link.');
+    // Typed + carries the email: the login screen renders a one-tap "resend
+    // verification email" button — without it an unverified account was
+    // permanently locked out (cannot sign up: duplicate; cannot sign in: this).
+    return new EmailNotConfirmedError((email || '').trim());
+  }
+  // A resend request for an account that is already verified fails like this
+  // (Supabase sends a generic "email_exists"/"email not found"-style message).
+  // Point the user at signing in rather than resending over and over.
+  if (
+    normalized.includes('email already confirmed') ||
+    normalized.includes('already been verified') ||
+    normalized.includes('email_exists') ||
+    (normalized.includes('already') && normalized.includes('registered') && normalized.includes('verification'))
+  ) {
+    return new Error(
+      'This email is already verified. Sign in with your password instead — use "Forgot password?" if you do not remember it.',
+    );
   }
   return new Error(message);
 }
@@ -389,6 +406,10 @@ export const authBackend = {
       email,
       password: input.password,
       options: {
+        // Verification links must return the user to THIS portal (mounted at
+        // e.g. /job-portal/). Without it Supabase redirects to the project's
+        // default Site URL (the main website), leaving the portal signup flow.
+        emailRedirectTo: appBaseUrl(),
         data: {
           app_context: 'jobs',
           job_role: requestedBackendRole,

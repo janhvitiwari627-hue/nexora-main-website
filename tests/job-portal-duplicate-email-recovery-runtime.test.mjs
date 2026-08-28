@@ -27,7 +27,14 @@ async function loadBackend() {
   const dir = await mkdtemp(join(tmpdir(), "nexora-jobs-backend-"));
   const backend = transpile(await read("src/services/backend.ts"))
     .replace(/from '\.\.\/utils\/errors'/, "from './errors.mjs'")
-    .replace(/from '\.\.\/lib\/supabase'/, "from './stub-supabase.mjs'");
+    .replace(/from '\.\.\/lib\/supabase'/, "from './stub-supabase.mjs'")
+    // Vite provides import.meta.env; under node --test it is undefined. Provide
+    // a fixed appBaseUrl (the browser version derives it from import.meta.env +
+    // window.location.origin, neither of which exists here).
+    .replace(
+      /const appBaseUrl = \(\) => [^\n]*\n/,
+      "const appBaseUrl = () => \"https://nexora.example/job-portal/\";\n",
+    );
   await writeFile(join(dir, "errors.mjs"), transpile(await read("src/utils/errors.ts")));
   await writeFile(
     join(dir, "stub-supabase.mjs"),

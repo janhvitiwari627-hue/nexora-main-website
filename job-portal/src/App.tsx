@@ -40,6 +40,7 @@ import { EmployerSignupScreen } from './components/auth/EmployerSignupScreen';
 import { LoginScreen } from './components/auth/LoginScreen';
 import { ForgotPasswordScreen } from './components/auth/ForgotPasswordScreen';
 import { ResetPasswordScreen } from './components/auth/ResetPasswordScreen';
+import { VerifyEmailScreen } from './components/auth/VerifyEmailScreen';
 import { SeekerOnboardingStep1Screen } from './components/seeker/SeekerOnboardingStep1Screen';
 import { SeekerOnboardingStep2Screen } from './components/seeker/SeekerOnboardingStep2Screen';
 import { JobSeekerWorkspace } from './components/seeker/JobSeekerWorkspace';
@@ -100,6 +101,12 @@ export default function App() {
     email: string;
     role: UserRole;
     notice: string;
+  } | null>(null);
+  // After a sign-up that succeeded but requires email confirmation, the app
+  // shows the verify-email screen instead of a red error.
+  const [pendingVerification, setPendingVerification] = useState<{
+    email: string;
+    role: UserRole;
   } | null>(null);
 
   // Application Data States
@@ -239,6 +246,15 @@ export default function App() {
     }
   }, [isBackendLoading, screen, seekerInitialTab, userRole]);
 
+  // A deep-link (or stale history) to the verify-email screen with no pending
+  // sign-up has nothing to confirm — send the user to sign-in rather than a
+  // blank page.
+  useEffect(() => {
+    if (screen === 'verify_email' && !pendingVerification) {
+      setScreen('login');
+    }
+  }, [screen, pendingVerification]);
+
   useEffect(() => {
     const handlePopState = () => {
       const route = resolveJobPortalRoute();
@@ -340,10 +356,13 @@ export default function App() {
       setCurrentUserId(user.id);
       await hydrateWorkspace(user.id, 'seeker');
       setScreen('seeker_onboarding_step1');
+    } else if (user) {
+      // Account created; email confirmation required before a session exists.
+      // Show the verify-email screen (with resend + back-to-login) — NOT a red error.
+      setPendingVerification({ email: formData.email.trim(), role: 'seeker' });
+      setScreen('verify_email');
     } else {
-      throw new Error(user && !session
-        ? 'Your account was created, but a verification email must be confirmed first. Open the link we just sent to your inbox, then log in.'
-        : 'Account activation did not complete. Please try signing in or contact support.');
+      throw new Error('Account activation did not complete. Please try signing in or contact support.');
     }
   };
 
@@ -368,10 +387,12 @@ export default function App() {
       setCurrentUserId(user.id);
       await hydrateWorkspace(user.id, 'employer');
       setScreen('employer_onboarding_step1');
+    } else if (user) {
+      // Account created; email confirmation required before a session exists.
+      setPendingVerification({ email: formData.email.trim(), role: 'employer' });
+      setScreen('verify_email');
     } else {
-      throw new Error(user && !session
-        ? 'Your account was created, but a verification email must be confirmed first. Open the link we just sent to your inbox, then log in.'
-        : 'Account activation did not complete. Please try signing in or contact support.');
+      throw new Error('Account activation did not complete. Please try signing in or contact support.');
     }
   };
 
@@ -379,7 +400,7 @@ export default function App() {
     try {
       await signIn(email, password);
     } catch (error) {
-      throw mapAuthError(error);
+      throw mapAuthError(error, email);
     }
     try {
       // Server-authoritative portal role; a mismatch rolls the session back.
@@ -779,6 +800,7 @@ export default function App() {
         <LoginScreen
           onLoginSuccess={handleLoginSuccess}
           onSocialLogin={handleSocialLogin}
+          onResendVerification={handleResendVerification}
           initialEmail={loginPrefill?.email}
           initialRole={loginPrefill?.role}
           notice={loginPrefill?.notice}
@@ -786,6 +808,24 @@ export default function App() {
           onForgotPassword={() => {
             setPasswordRecoveryState('idle');
             setScreen('forgot_password');
+          }}
+        />
+      )}
+
+      {/* SIGNUP: EMAIL CONFIRMATION REQUIRED */}
+      {screen === 'verify_email' && pendingVerification && (
+        <VerifyEmailScreen
+          email={pendingVerification.email}
+          role={pendingVerification.role === 'employer' ? 'employer' : 'seeker'}
+          onResendVerification={handleResendVerification}
+          onBackToLogin={() => {
+            setPendingVerification(null);
+            goToLogin();
+          }}
+          onBackToSignup={() => {
+            const role = pendingVerification.role;
+            setPendingVerification(null);
+            setScreen(role === 'employer' ? 'employer_signup' : 'seeker_signup');
           }}
         />
       )}

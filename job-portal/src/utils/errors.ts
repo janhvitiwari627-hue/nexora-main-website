@@ -181,3 +181,33 @@ export function isPortalEmailConflictError(error: unknown): error is PortalEmail
       (error as { kind?: unknown }).kind === 'portal_email_conflict',
   );
 }
+
+/**
+ * Thrown by the sign-in flow when Supabase answers "Email not confirmed" —
+ * the second half of the duplicate-email dead end: an account whose
+ * verification email was never opened cannot sign in either. The error
+ * carries the email so the login screen can offer the one-tap resend that
+ * actually unlocks the account (resendVerification lives in the AuthProvider).
+ */
+export class EmailNotConfirmedError extends Error {
+  readonly kind = 'email_not_confirmed' as const;
+  readonly email: string;
+
+  constructor(email: string) {
+    super(
+      'This account has not verified its email yet. Open the verification link sent to your inbox, ' +
+        'or send a fresh verification email using the button below.',
+    );
+    this.name = 'EmailNotConfirmedError';
+    this.email = email;
+  }
+}
+
+export function isEmailNotConfirmedError(error: unknown): error is EmailNotConfirmedError {
+  if (error instanceof EmailNotConfirmedError) return true;
+  return Boolean(
+    error &&
+      typeof error === 'object' &&
+      (error as { kind?: unknown }).kind === 'email_not_confirmed',
+  );
+}

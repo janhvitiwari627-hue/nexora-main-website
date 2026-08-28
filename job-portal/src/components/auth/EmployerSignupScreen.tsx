@@ -24,9 +24,9 @@ export const EmployerSignupScreen: React.FC<EmployerSignupScreenProps> = ({
   onSignInInstead,
   onResendVerification,
 }) => {
-  const [businessName, setBusinessName] = useState('Nexora Beauty Group');
-  const [contactPerson, setContactPerson] = useState('Sarah Jenkins');
-  const [businessEmail, setBusinessEmail] = useState('hello@nexorabeauty.com');
+  const [businessName, setBusinessName] = useState('');
+  const [contactPerson, setContactPerson] = useState('');
+  const [businessEmail, setBusinessEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false);

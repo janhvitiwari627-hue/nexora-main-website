@@ -23,6 +23,7 @@ export function resolveJobPortalRoute(pathname = window.location.pathname): JobP
   if (relative.startsWith('/signup/employer')) return { screen: 'employer_signup', protected: false };
   if (relative === '/forgot-password') return { screen: 'forgot_password', protected: false };
   if (relative === '/reset-password') return { screen: 'reset_password', protected: false };
+  if (relative === '/verify-email') return { screen: 'verify_email', protected: false };
   if (relative.startsWith('/dashboard/seeker')) return { screen: 'main_app', protected: true, requiredRole: 'seeker', seekerTab: 'feed' };
   if (relative.startsWith('/dashboard/employer')) return { screen: 'main_app', protected: true, requiredRole: 'employer' };
   if (relative.startsWith('/employer')) return { screen: 'main_app', protected: true, requiredRole: 'employer' };
@@ -50,6 +51,7 @@ export function pathForScreen(screen: ScreenState, role: UserRole, seekerTab?: S
   if (screen === 'login') return jobPortalPath('login');
   if (screen === 'forgot_password') return jobPortalPath('forgot-password');
   if (screen === 'reset_password') return jobPortalPath('reset-password');
+  if (screen === 'verify_email') return jobPortalPath('verify-email');
   if (screen === 'apply_job') return jobPortalPath('jobs/apply');
   if (screen === 'interview_invitation') return jobPortalPath('interviews');
   if (screen === 'job_offer') return jobPortalPath('offers');

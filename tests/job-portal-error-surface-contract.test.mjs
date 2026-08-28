@@ -112,6 +112,7 @@ test("no auth or admin screen masks errors behind instanceof Error", async () =>
     "src/components/auth/LoginScreen.tsx",
     "src/components/auth/ForgotPasswordScreen.tsx",
     "src/components/auth/ResetPasswordScreen.tsx",
+    "src/components/auth/VerifyEmailScreen.tsx",
     "src/components/admin/AdminLoginScreen.tsx",
     "src/components/admin/AdminJobsScreen.tsx",
   ];
@@ -126,7 +127,10 @@ test("App.tsx surfaces backend errors through getErrorMessage", async () => {
   const app = await read("src/App.tsx");
   assert.doesNotMatch(app, /instanceof Error \? error\.message/);
   assert.match(app, /import \{ getErrorMessage \} from '\.\/utils\/errors'/);
-  // The no-session signup outcome tells the user about email verification
-  // instead of a false "activation failed".
-  assert.match(app, /verification email must be confirmed/);
+  // The no-session signup outcome (email confirmation required) now routes to
+  // a dedicated verify-email screen with resend + back-to-login, instead of a
+  // false red "activation failed" error.
+  assert.match(app, /setScreen\('verify_email'\)/);
+  assert.match(app, /<VerifyEmailScreen/);
+  assert.doesNotMatch(app, /verification email must be confirmed/);
 });

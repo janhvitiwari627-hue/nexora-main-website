@@ -13,7 +13,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { SignupConflictRecovery } from "../job-portal/src/components/auth/SignupConflictRecovery";
 import { LoginScreen } from "../job-portal/src/components/auth/LoginScreen";
-import { PortalEmailConflictError } from "../job-portal/src/utils/errors";
+import { VerifyEmailScreen } from "../job-portal/src/components/auth/VerifyEmailScreen";
+import { PortalEmailConflictError, EmailNotConfirmedError } from "../job-portal/src/utils/errors";
 
 const noop = () => undefined;
 
@@ -65,7 +66,7 @@ test("an unverified account is offered a verification link first", () => {
   assert.ok(resendIndex < signInIndex, "the verification link is the primary action");
 });
 
-test("confirmation state unknown (migration not applied) still offers sign-in", () => {
+test("confirmation state unknown (migration not applied) offers BOTH escapes", () => {
   const conflict = new PortalEmailConflictError({
     email: "ops@salon.com",
     existingRole: "employer",
@@ -77,8 +78,11 @@ test("confirmation state unknown (migration not applied) still offers sign-in", 
     <SignupConflictRecovery conflict={conflict} onSignInInstead={noop} onResendVerification={noop} />,
   );
 
+  // Sign-in stays available for verified accounts; the resend is ALSO offered
+  // (it self-corrects: Supabase refuses it for an already-verified address),
+  // so a deployment missing the new RPC never locks out an unverified account.
   assert.match(html, /Sign in instead/);
-  assert.doesNotMatch(html, /Send verification email/);
+  assert.match(html, /Send verification email/);
 });
 
 test("with no recovery callbacks wired the component renders nothing", () => {
@@ -119,4 +123,55 @@ test("without a prefill the sign-in screen is untouched", () => {
   );
   assert.match(html, /value=""/);
   assert.doesNotMatch(html, /already exists on the/);
+  // No resend control until an unverified-email sign-in failure happens.
+  assert.doesNotMatch(html, /Send verification email/);
+});
+
+test("the sign-in screen wires a resend-verification prop for the unverified lockout", () => {
+  // Prop present means a failed sign-in on an unverified account can offer the
+  // one-tap resend (the button itself renders after the failure).
+  const html = renderToStaticMarkup(
+    <LoginScreen
+      onLoginSuccess={noop}
+      onSignUp={noop}
+      onForgotPassword={noop}
+      onResendVerification={noop}
+      initialEmail="jane@example.com"
+    />,
+  );
+  assert.match(html, /value="jane@example\.com"/);
+});
+
+test("EmailNotConfirmedError carries the email for the resend action", () => {
+  const err = new EmailNotConfirmedError("jane@example.com");
+  assert.equal(err.email, "jane@example.com");
+  assert.equal(err.kind, "email_not_confirmed");
+  assert.match(err.message, /verification link/);
+});
+
+test("the post-signup verify-email screen offers resend and a path back to login", () => {
+  const html = renderToStaticMarkup(
+    <VerifyEmailScreen
+      email="jane@example.com"
+      role="seeker"
+      onResendVerification={noop}
+      onBackToLogin={noop}
+    />,
+  );
+  assert.match(html, /Verify your email/);
+  assert.match(html, /jane@example\.com/);
+  assert.match(html, /Resend verification email/);
+  assert.match(html, /go to Login|Login/i);
+});
+
+test("the verify-email screen copy names the employer portal when relevant", () => {
+  const html = renderToStaticMarkup(
+    <VerifyEmailScreen
+      email="hire@salon.com"
+      role="employer"
+      onResendVerification={noop}
+      onBackToLogin={noop}
+    />,
+  );
+  assert.match(html, /Employer account/);
 });

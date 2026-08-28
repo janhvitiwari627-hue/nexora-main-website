@@ -146,6 +146,43 @@ test("the typed conflict is a real Error the screens can type-guard", () => {
   assert.equal(errors.isPortalEmailConflictError(null), false);
 });
 
+test("the sign-in 'email not confirmed' lockout throws a typed, email-carrying error", () => {
+  const err = new errors.EmailNotConfirmedError("jane@example.com");
+  assert.ok(err instanceof Error);
+  assert.equal(err.kind, "email_not_confirmed");
+  assert.equal(err.email, "jane@example.com");
+  assert.match(err.message, /verification link/i);
+  assert.equal(errors.isEmailNotConfirmedError(err), true);
+  assert.equal(errors.isEmailNotConfirmedError({ kind: "email_not_confirmed" }), true);
+  assert.equal(errors.isEmailNotConfirmedError(new Error("Email not confirmed")), false);
+  assert.equal(errors.isEmailNotConfirmedError(null), false);
+});
+
+test("mapAuthError turns 'email not confirmed' into the typed error with the email", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "nexora-jobs-mapauth-"));
+  const transpiled = ts
+    .transpileModule(await read("src/services/backend.ts"), {
+      compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    })
+    .outputText.replace(/from '\.\.\/utils\/errors'/, "from './errors.mjs'");
+  await writeFile(join(dir, "errors.mjs"), ts.transpileModule(await read("src/utils/errors.ts"), {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText);
+  await writeFile(
+    join(dir, "stub-supabase.mjs"),
+    "export function requireSupabase() { return globalThis.__fakeSupabase; }",
+  );
+  await writeFile(
+    join(dir, "backend.mjs"),
+    transpiled.replace(/from '\.\.\/lib\/supabase'/, "from './stub-supabase.mjs'"),
+  );
+  const mod = await import(pathToFileURL(join(dir, "backend.mjs")).href);
+
+  const mapped = mod.mapAuthError(new Error("Email not confirmed"), "jane@example.com");
+  assert.equal(errors.isEmailNotConfirmedError(mapped), true);
+  assert.equal(mapped.email, "jane@example.com");
+});
+
 // ---------------------------------------------------------------------------
 // 2. Service layer — both duplicate-email paths throw the typed conflict
 // ---------------------------------------------------------------------------
@@ -209,6 +246,36 @@ test("the shell routes a refused sign-up to a prefilled sign-in screen", () => {
   assert.match(login, /useState\(initialEmail \?\? ''\)/);
   assert.match(login, /useState<UserRole>\(initialRole \?\? 'seeker'\)/);
   assert.match(login, /role="status"/);
+});
+
+test("an unverified sign-in gets an in-form resend escape hatch", () => {
+  // The login screen accepts the provider-owned resend and renders its button.
+  assert.match(login, /onResendVerification/);
+  assert.match(login, /isEmailNotConfirmedError/);
+  assert.match(login, /Send verification email/);
+  // The shell wires the same provider-owned resend into the login screen and
+  // passes the submitted email into mapAuthError so the typed error carries it.
+  assert.match(app, /onResendVerification=\{handleResendVerification\}/);
+  assert.match(app, /throw mapAuthError\(error, email\)/);
+  // The service maps the raw GoTrue failure to the typed, email-carrying error.
+  assert.match(backend, /new EmailNotConfirmedError/);
+});
+
+test("a sign-up that needs email confirmation shows a verify screen, not a red error", async () => {
+  // VerifyEmailScreen exists and offers resend + a path back to login.
+  const verifySource = await read("src/components/auth/VerifyEmailScreen.tsx");
+  assert.match(verifySource, /onResendVerification/);
+  assert.match(verifySource, /Verify your email/);
+  assert.match(verifySource, /Resend verification email/);
+  // The shell renders it and routes both signup flows to it instead of throwing.
+  assert.match(app, /<VerifyEmailScreen/);
+  assert.match(app, /setScreen\('verify_email'\)/);
+  assert.doesNotMatch(app, /verification email must be confirmed first/);
+  // It has a real route.
+  const routing = await read("src/routing.ts");
+  assert.match(routing, /\/verify-email/);
+  // Sign-up emails redirect back to THIS portal, not the Supabase default site.
+  assert.match(backend, /emailRedirectTo: appBaseUrl\(\)/);
 });
 
 test("the migration adds the state lookup without touching the existing one", () => {
