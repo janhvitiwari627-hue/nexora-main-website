@@ -69,6 +69,14 @@ export type AuthContextValue = {
 
   forgotPassword: (email: string) => Promise<void>;
 
+  /**
+   * Resend the sign-up verification email. Needed by the duplicate-email
+   * recovery path: an account whose verification email was never opened can
+   * neither sign up again (email already registered) nor sign in
+   * ("Email not confirmed"), so this is the only way out of that state.
+   */
+  resendVerification: (email: string) => Promise<void>;
+
   updatePassword: (password: string) => Promise<void>;
 
   signOut: () => Promise<void>;
@@ -264,6 +272,18 @@ export function AuthProvider({ children, onPasswordRecovery }: AuthProviderProps
     if (error) throw error;
   }, []);
 
+  const resendVerification = useCallback(async (email: string): Promise<void> => {
+    const client = requireClient();
+    const trimmed = email.trim();
+    if (!trimmed) throw new Error('Enter the email address you registered with.');
+    const { error } = await client.auth.resend({
+      type: 'signup',
+      email: trimmed,
+      options: { emailRedirectTo: appBaseUrl() },
+    });
+    if (error) throw error;
+  }, []);
+
   const updatePassword = useCallback(async (password: string): Promise<void> => {
     const client = requireClient();
     const { error } = await client.auth.updateUser({ password });
@@ -307,6 +327,7 @@ export function AuthProvider({ children, onPasswordRecovery }: AuthProviderProps
     signIn,
     signUp,
     forgotPassword,
+    resendVerification,
     updatePassword,
     signOut,
     refreshProfile,

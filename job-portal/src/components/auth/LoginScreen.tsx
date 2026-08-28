@@ -8,6 +8,12 @@ interface LoginScreenProps {
   onSocialLogin?: (provider: 'google' | 'apple', role: UserRole) => Promise<void> | void;
   onSignUp: () => void;
   onForgotPassword: () => void;
+  /** Prefill from a sign-up that failed on an already-registered email. */
+  initialEmail?: string;
+  /** Preselect the portal the existing email is permanently linked to. */
+  initialRole?: UserRole;
+  /** Explains why the user was routed here; dismissed with the notice. */
+  notice?: string;
 }
 
 export const LoginScreen: React.FC<LoginScreenProps> = ({
@@ -15,13 +21,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   onSocialLogin,
   onSignUp,
   onForgotPassword,
+  initialEmail,
+  initialRole,
+  notice,
 }) => {
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(initialEmail ?? '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [activeRole, setActiveRole] = useState<UserRole>('seeker');
+  const [activeRole, setActiveRole] = useState<UserRole>(initialRole ?? 'seeker');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [noticeDismissed, setNoticeDismissed] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,6 +72,24 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           <h1 className="text-2xl font-bold text-[#1c1b1b] mb-1">Welcome Back</h1>
           <p className="text-sm text-[#594047]">Sign in to continue your journey.</p>
         </header>
+
+        {/* Arrived here from a sign-up that hit an already-registered email. */}
+        {notice && !noticeDismissed && (
+          <div
+            role="status"
+            className="flex items-start gap-2 rounded-xl border border-[#e0bec6] bg-white px-3 py-2.5 shadow-sm"
+          >
+            <p className="flex-1 text-xs font-medium leading-relaxed text-[#594047]">{notice}</p>
+            <button
+              type="button"
+              onClick={() => setNoticeDismissed(true)}
+              aria-label="Dismiss message"
+              className="text-xs font-bold text-[#8e004b] hover:underline cursor-pointer"
+            >
+              OK
+            </button>
+          </div>
+        )}
 
         {/* Portal selector — the backend validates this against the email's permanent account type. */}
         <div className="bg-[#f1edec] p-1 rounded-full flex gap-1 border border-[#e0bec6]/30">

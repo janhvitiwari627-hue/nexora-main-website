@@ -12,7 +12,13 @@ import type {
   UserRole,
 } from '../types';
 import { requireSupabase } from '../lib/supabase';
-import { asError, isMissingFunctionError } from '../utils/errors';
+import {
+  PortalEmailConflictError,
+  asError,
+  isMissingFunctionError,
+  requestedPortalRole,
+  type PortalEmailRole,
+} from '../utils/errors';
 
 const arrays = <T>(value: unknown): T[] => (Array.isArray(value) ? (value as T[]) : []);
 const one = <T>(value: T | T[] | null | undefined): T | null =>
@@ -24,9 +30,81 @@ const backendRole = (role: UserRole) => role === 'seeker' ? 'job_seeker' : role;
 const frontendRole = (role?: string | null): UserRole => role === 'admin' ? 'admin' : role === 'employer' ? 'employer' : 'seeker';
 const portalLabel = (role: UserRole) => role === 'seeker' ? 'Job Seeker' : role === 'admin' ? 'Admin' : 'Employer';
 
+/** Result of the sign-up pre-check for one email address. */
+type PortalEmailState = {
+  /** `null` = no Nexora account exists for this email. */
+  portalRole: PortalEmailRole | null;
+  /** `null` = the deployment cannot report confirmation state. */
+  emailConfirmed: boolean | null;
+};
+
+/**
+ * Server-authoritative portal state of an email address.
+ *
+ * `job_email_portal_state` (20260828120000) additionally reports whether the
+ * account ever confirmed its email — the missing datum behind the old
+ * dead-end, because an unverified account can neither sign up again
+ * (duplicate email) nor sign in ("Email not confirmed").
+ *
+ * Deployments that have not applied that migration yet still work: the
+ * role-only `job_email_portal_role` lookup is used as a fallback and the
+ * confirmation state is reported as `null` (unknown).
+ */
+async function readPortalEmailState(email: string): Promise<PortalEmailState> {
+  const client = requireSupabase();
+
+  const { data: state, error: stateError } = await client.rpc('job_email_portal_state', {
+    p_email: email,
+  });
+  if (!stateError) return normalizePortalEmailState(state);
+
+  // Keep the full diagnostic (code/details/hint) in the console — the UI only
+  // renders `message`, and support needs the PostgREST code.
+  console.error('[Nexora Jobs] signup pre-check job_email_portal_state failed:', stateError);
+  if (!isMissingFunctionError(stateError)) {
+    throw asError(stateError, 'Unable to verify this email with the Jobs portal. Please try again.');
+  }
+
+  // Migration not applied yet — degrade to the role-only lookup.
+  const { data: existingRole, error: lookupError } = await client.rpc('job_email_portal_role', {
+    p_email: email,
+  });
+  if (lookupError) {
+    // Keep the full diagnostic (code/details/hint) in the console — the UI
+    // only renders `message`, and support needs the PostgREST code.
+    console.error('[Nexora Jobs] signup pre-check job_email_portal_role failed:', lookupError);
+    if (isMissingFunctionError(lookupError)) {
+      throw new Error(
+        'Sign-up is temporarily unavailable: the Jobs portal database is missing the job_email_portal_role function. ' +
+          'An administrator must apply the job-portal Supabase migrations and reload the PostgREST schema cache.',
+      );
+    }
+    throw asError(lookupError, 'Unable to verify this email with the Jobs portal. Please try again.');
+  }
+  const portalRole = normalizePortalEmailRole(existingRole);
+  return { portalRole, emailConfirmed: null };
+}
+
+function normalizePortalEmailRole(value: unknown): PortalEmailRole | null {
+  return value === 'job_seeker' || value === 'employer' || value === 'unassigned' ? value : null;
+}
+
+function normalizePortalEmailState(value: unknown): PortalEmailState {
+  if (!value || typeof value !== 'object') return { portalRole: null, emailConfirmed: null };
+  const shape = value as { portal_role?: unknown; email_confirmed?: unknown };
+  return {
+    portalRole: normalizePortalEmailRole(shape.portal_role),
+    emailConfirmed: typeof shape.email_confirmed === 'boolean' ? shape.email_confirmed : null,
+  };
+}
+
 function portalMismatchMessage(actualBackendRole: string, requestedRole: UserRole) {
   const actualRole = frontendRole(actualBackendRole);
-  return `An account with this email already exists as a ${portalLabel(actualRole)}. Please use a different email or log in.`;
+  return (
+    `This email is linked to a ${portalLabel(actualRole)} account, so it cannot sign in through the ` +
+    `${portalLabel(requestedRole)} portal. Switch the portal selector to ${portalLabel(actualRole)} and sign in again, ` +
+    'or register with a different email.'
+  );
 }
 
 function errorMessage(error: unknown, fallback: string) {
@@ -295,30 +373,16 @@ export const authBackend = {
     const client = requireSupabase();
     const email = input.email.trim();
     const requestedBackendRole = backendRole(input.role);
-    const { data: existingRole, error: lookupError } = await client.rpc('job_email_portal_role', {
-      p_email: email,
-    });
-    if (lookupError) {
-      // Keep the full diagnostic (code/details/hint) in the console — the UI
-      // only renders `message`, and support needs the PostgREST code.
-      console.error('[Nexora Jobs] signup pre-check job_email_portal_role failed:', lookupError);
-      if (isMissingFunctionError(lookupError)) {
-        throw new Error(
-          'Sign-up is temporarily unavailable: the Jobs portal database is missing the job_email_portal_role function. ' +
-            'An administrator must apply the job-portal Supabase migrations and reload the PostgREST schema cache.',
-        );
-      }
-      throw asError(lookupError, 'Unable to verify this email with the Jobs portal. Please try again.');
-    }
-    if (existingRole === 'job_seeker' || existingRole === 'employer') {
-      if (existingRole !== requestedBackendRole) {
-        throw new Error(portalMismatchMessage(existingRole, input.role));
-      }
-
-      throw new Error(`This email is already registered as a ${portalLabel(input.role)}. Please sign in through the ${portalLabel(input.role)} portal.`);
-    }
-    if (existingRole === 'unassigned') {
-      throw new Error('This email already belongs to a Nexora account. Sign in through your chosen Jobs portal to permanently assign its account type.');
+    const { portalRole: existingRole, emailConfirmed } = await readPortalEmailState(email);
+    if (existingRole) {
+      // Duplicate email — the message is the next action, and the error
+      // carries the state the screens need to render the matching button.
+      throw new PortalEmailConflictError({
+        email,
+        existingRole,
+        requestedRole: requestedPortalRole(input.role),
+        emailConfirmed,
+      });
     }
 
     const { data, error } = await client.auth.signUp({
@@ -340,10 +404,14 @@ export const authBackend = {
     // Supabase intentionally returns an obfuscated user for some duplicate-email
     // signups. Convert that response into the portal-specific product error.
     if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-      const { data: racedRole } = await client.rpc('job_email_portal_role', { p_email: email });
-      if (racedRole === 'job_seeker' || racedRole === 'employer') {
-        if (racedRole !== requestedBackendRole) throw new Error(portalMismatchMessage(racedRole, input.role));
-        throw new Error(`This email is already registered as a ${portalLabel(input.role)}. Please sign in through the ${portalLabel(input.role)} portal.`);
+      const raced = await readPortalEmailState(email);
+      if (raced.portalRole) {
+        throw new PortalEmailConflictError({
+          email,
+          existingRole: raced.portalRole,
+          requestedRole: requestedPortalRole(input.role),
+          emailConfirmed: raced.emailConfirmed,
+        });
       }
       throw new Error('An account already exists for this email. Please sign in instead.');
     }
