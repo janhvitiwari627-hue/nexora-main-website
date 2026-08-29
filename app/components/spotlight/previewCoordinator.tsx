@@ -100,6 +100,12 @@ export interface HoverPreviewControls {
   state: HoverPreviewState;
   /** True while this card's silent clip is actually on screen. */
   previewActive: boolean;
+  /**
+   * True once this card has ever been granted the preview slot (and has a
+   * clip): the paused `<video>` element then stays mounted so a re-hover
+   * resumes instantly without refetching.
+   */
+  previewMounted: boolean;
   /** Attach to the thumbnail wrapper. */
   onPointerEnter: (event: ReactPointerEvent<HTMLElement>) => void;
   onPointerLeave: (event: ReactPointerEvent<HTMLElement>) => void;
@@ -119,6 +125,10 @@ export interface HoverPreviewControls {
 export function useHoverPreview(id: string, previewUrl: string): HoverPreviewControls {
   const coordinator = usePreviewCoordinator();
   const [state, setState] = useState<HoverPreviewState>("idle");
+  // Sticky "has ever previewed": once true the clip element stays mounted
+  // (paused + rewound between hovers) for an instant re-hover. Set inside the
+  // dwell timer callback, never inside an effect body.
+  const [hasPreviewed, setHasPreviewed] = useState(false);
   // Mirror of `state` for the timer callbacks: reading it inside a setState
   // updater would make the updater impure (React StrictMode calls updaters
   // twice, which would arm two timers for one hover).
@@ -157,6 +167,7 @@ export function useHoverPreview(id: string, previewUrl: string): HoverPreviewCon
     timer.current = setTimeout(() => {
       timer.current = null;
       coordinator.request(id);
+      setHasPreviewed(true);
       applyState("previewing");
     }, HOVER_PREVIEW_DELAY_MS);
     // `coordinator` is re-created whenever activeId changes, so it already
@@ -216,6 +227,7 @@ export function useHoverPreview(id: string, previewUrl: string): HoverPreviewCon
   return {
     state,
     previewActive: state === "previewing" && coordinator.activeId === id,
+    previewMounted: hasPreviewed && hasPreview,
     onPointerEnter,
     onPointerLeave,
     onFocus: begin,

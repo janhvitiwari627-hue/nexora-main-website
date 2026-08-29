@@ -73,10 +73,10 @@ export interface BeautySpotlightVideo {
  * Slots 01–02 are the live Nexora showcase entries (self-hosted media in
  * `public/spotlight/`, watch link = the app the teaser showcases). Slots 03–10
  * are the professional-brand editorial lineup: real brands, placeholder demo
- * copy, each with a self-generated thematic editorial poster (no brand
- * footage/logos) — and no fabricated claims. Their preview/watch URLs stay
- * empty until an approved one is supplied for the row: a rich poster never
- * implies a working destination.
+ * copy, each with a self-generated thematic editorial poster AND a short
+ * self-hosted muted preview clip (no brand footage/logos) — and no fabricated
+ * claims. Their watch URLs alone stay empty until an approved one is supplied
+ * for the row: a playing preview never implies a working destination.
  */
 export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
   {
@@ -113,7 +113,7 @@ export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
     title: "Fade Fundamentals: Precision Clipper Techniques for Barbers",
     category: "BARBERING",
     thumbnailUrl: "/spotlight/vid-barbering.jpg",
-    previewUrl: "",
+    previewUrl: "/spotlight/vid-barbering.mp4",
     youtubeUrl: "",
     duration: "08:47",
     badge: "DIAMOND",
@@ -127,7 +127,7 @@ export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
     title: "Color Diagnostics: Mastering Dimensional Blondes",
     category: "HAIR COLOR",
     thumbnailUrl: "/spotlight/vid-blondes.jpg",
-    previewUrl: "",
+    previewUrl: "/spotlight/vid-blondes.mp4",
     youtubeUrl: "",
     duration: "12:05",
     badge: "PLATINUM",
@@ -141,7 +141,7 @@ export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
     title: "Bond Architecture: Repairing Lightened Hair",
     category: "HAIR CARE",
     thumbnailUrl: "/spotlight/vid-bondcare.jpg",
-    previewUrl: "",
+    previewUrl: "/spotlight/vid-bondcare.mp4",
     youtubeUrl: "",
     duration: "09:58",
     badge: "GOLD",
@@ -155,7 +155,7 @@ export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
     title: "Heat-Control Styling: The Science of Controlled Airflow",
     category: "PROFESSIONAL TOOLS",
     thumbnailUrl: "/spotlight/vid-heattools.jpg",
-    previewUrl: "",
+    previewUrl: "/spotlight/vid-heattools.mp4",
     youtubeUrl: "",
     duration: "14:32",
     badge: "DIAMOND",
@@ -169,7 +169,7 @@ export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
     title: "Balayage Placement: A Dimensional Colour Study",
     category: "TREND COLLECTIONS",
     thumbnailUrl: "/spotlight/vid-balayage.jpg",
-    previewUrl: "",
+    previewUrl: "/spotlight/vid-balayage.mp4",
     youtubeUrl: "",
     duration: "11:19",
     badge: "PLATINUM",
@@ -183,7 +183,7 @@ export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
     title: "Bond Building Science: The Salon Treatment Protocol",
     category: "SALON EDUCATION",
     thumbnailUrl: "/spotlight/vid-treatment.jpg",
-    previewUrl: "",
+    previewUrl: "/spotlight/vid-treatment.mp4",
     youtubeUrl: "",
     duration: "10:44",
     badge: "GOLD",
@@ -197,7 +197,7 @@ export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
     title: "The Argan Ritual: Editorial Shine & Finish",
     category: "HAIR CARE",
     thumbnailUrl: "/spotlight/vid-argan.jpg",
-    previewUrl: "",
+    previewUrl: "/spotlight/vid-argan.mp4",
     youtubeUrl: "",
     duration: "07:21",
     badge: "GOLD",
@@ -211,7 +211,7 @@ export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
     title: "The Bridal Glow: Editorial Indian Bridal Beauty",
     category: "SALON TRENDS",
     thumbnailUrl: "/spotlight/vid-bridal.jpg",
-    previewUrl: "",
+    previewUrl: "/spotlight/vid-bridal.mp4",
     youtubeUrl: "",
     duration: "09:12",
     badge: "DIAMOND",

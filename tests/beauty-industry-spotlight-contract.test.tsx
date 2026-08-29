@@ -210,14 +210,24 @@ test("an unconfigured video never invents a destination", () => {
   );
 });
 
-test("the two live showcase slots ship real local media", () => {
-  const live = BEAUTY_SPOTLIGHT_VIDEOS.filter((v) => v.previewUrl !== "");
+test("every slot ships a dedicated local preview clip; destinations stay honest", () => {
+  // Hover previews never depend on the watch URL: every card carries its own
+  // short self-hosted muted clip.
+  for (const video of BEAUTY_SPOTLIGHT_VIDEOS) {
+    assert.match(
+      video.previewUrl,
+      /^\/spotlight\/[\w-]+\.mp4$/,
+      `${video.brandName} must carry a local preview clip`,
+    );
+  }
+  // Only the two Nexora showcase slots carry live destinations.
+  const live = BEAUTY_SPOTLIGHT_VIDEOS.filter((v) => v.youtubeUrl !== "");
   assert.equal(live.length, 2);
   for (const video of live) {
     assert.match(video.thumbnailUrl, /^\/spotlight\/.+\.jpg$/);
-    assert.match(video.previewUrl, /^\/spotlight\/.+\.mp4$/);
+    assert.equal(safeExternalUrl(video.youtubeUrl), video.youtubeUrl);
   }
-  // The rendered markup actually references both posters and clips.
+  // The rendered markup actually references both showcase posters.
   assert.match(sectionHtml, /src="\/spotlight\/nexora-luxe-sourcing\.jpg"/);
   assert.match(sectionHtml, /src="\/spotlight\/nexora-salon-glow\.jpg"/);
 });

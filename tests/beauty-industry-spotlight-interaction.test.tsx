@@ -184,8 +184,24 @@ test("a passing cursor does not start a preview; dwelling does", async () => {
 });
 
 test("leaving stops the preview and restores the poster", async () => {
-  pointer("out", shellFor(0));
-  assert.equal(videoIn(0), null, "the clip must be gone the moment the cursor leaves");
+  const shell = shellFor(0);
+  pointer("over", shell);
+  await act(async () => {
+    await wait(HOVER_PREVIEW_DELAY_MS + 120);
+  });
+  const before = videoIn(0);
+  assert.ok(before, "a muted preview clip mounts after the dwell delay");
+  assert.equal(before.getAttribute("data-ready"), "true", "the clip is revealed");
+
+  pointer("out", shell);
+  const after = videoIn(0);
+  assert.ok(after, "the paused element stays warm for an instant re-hover");
+  assert.equal(
+    after.getAttribute("data-ready"),
+    "false",
+    "the clip hides the moment the cursor leaves — the poster is restored",
+  );
+  assert.equal(after.currentTime, 0, "the clip is rewound to its poster frame");
 });
 
 test("a card with no preview clip keeps its poster, however long you hover", async () => {
@@ -207,7 +223,13 @@ test("touch input never arms a preview", async () => {
   await act(async () => {
     await wait(HOVER_PREVIEW_DELAY_MS + 120);
   });
-  assert.equal(videoIn(0), null, "a tap must not queue a preview behind the next action");
+  // The element may stay warm from an earlier mouse preview; what matters is
+  // that a touch never arms one: no clip may be revealed.
+  const video = videoIn(0);
+  assert.ok(
+    !video || video.getAttribute("data-ready") === "false",
+    "a tap must not queue a preview behind the next action",
+  );
 });
 
 test("only one card previews at a time", async () => {
@@ -224,7 +246,11 @@ test("only one card previews at a time", async () => {
   await act(async () => {
     await wait(HOVER_PREVIEW_DELAY_MS + 120);
   });
-  assert.equal(videoIn(0), null, "the previously hovered card stops previewing");
+  assert.equal(
+    videoIn(0)?.getAttribute("data-ready") ?? "false",
+    "false",
+    "the previously hovered card stops previewing",
+  );
   assert.equal(
     videoIn(2)?.getAttribute("src"),
     "/clips/preview-fixture-2.mp4",
@@ -233,9 +259,10 @@ test("only one card previews at a time", async () => {
 
   pointer("out", shellFor(0));
   pointer("out", shellFor(2));
-  assert.equal(videoIn(0), null);
-  assert.equal(videoIn(1), null);
-  assert.equal(videoIn(2), null);
+  const hidden = (index: number) => videoIn(index)?.getAttribute("data-ready") ?? "false";
+  assert.equal(hidden(0), "false");
+  assert.equal(hidden(1), "false");
+  assert.equal(hidden(2), "false");
 });
 
 /* ── Interaction row stays independent of the watch link ─────────────────── */
