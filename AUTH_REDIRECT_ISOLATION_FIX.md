@@ -125,3 +125,57 @@ are legacy explicit aliases for direct Job Portal access and are kept.)
 - `tests/returnto-security.test.mjs` → 16/16 pass (the security contract for
   this exact logic).
 - `eslint` on the touched files → 0 errors (only pre-existing warnings).
+
+---
+
+## 6. Response to the "Missing Items & Gaps" analysis
+
+### Gap 1 — Post-login redirection to sub-apps  ✅ FIXED (PR #107)
+- Verified claim: `homePathForRole` returns `/app/customer|owner|partner` and
+  `next.config.ts` 307-redirects those to external sub-app origins.
+- Corrected claim: `destinationForVerifiedRole` **no longer** falls back to
+  `homePathForRole`. It now falls back to `MAIN_SITE_HOME = "/"` (the Main
+  Website dashboard). So a plain login/signup/verification/password-reset stays
+  on the main site.
+- Also verified: **no platform role default is `/dashboard/seeker` or
+  `/dashboard/employer`.** `ROLE_HOME_PATHS` only ever returns `/app/*`. The
+  `/dashboard/seeker|employer` routes in `next.config.ts` are legacy **direct
+  aliases** to `/job-portal/dashboard/*` (an explicit user click), not any
+  default post-login target. `PlatformRole` has no `job_seeker` value.
+- No further code change required.
+
+### Gap 2 — Shared session / auth-scope spillover  ✅ VERIFIED CORRECT-BY-DESIGN
+- **No cookies are used.** Supabase auth here uses `localStorage`
+  (per-origin), keyed by `NEXORA_STORAGE_KEY = nexora.auth.qwaehqsmodekbgvnaavz`.
+  There are zero `document.cookie` / cookie reads in the auth path.
+- The **one shared storage key is an intentional, tested contract**
+  (Phase 11 — `tests/phase11-storage-key-parity-contract.test.mjs`): every
+  Nexora surface mounted on the **same origin** shares exactly one session
+  (correct SSO). The bundled `job-portal/` and the Main Website share an origin,
+  so they intentionally share a session — this is not leakage.
+- External PWAs (Customer / Owner / Partner / Template) live on **different
+  origins**, so their `localStorage` is fully isolated by the browser — there is
+  **no cross-domain session synchronization**. Cross-origin access is only via
+  the allowlisted PKCE handoff (single-use code, no tokens in the URL).
+- ❗ **Do not** scope/storage-key the sub-apps to different keys: it would
+  break the Phase-11 parity contract and 10+ contract tests, and it would make
+  the bundled Job Portal unable to see the shared session on the same origin.
+
+### Gap 3 — Missing main-site auth guard  ✅ FIXED (PR #107)
+- `/auth/callback` and `/auth/continue` already call
+  `destinationForVerifiedRole(...)`; that now resolves to the Main Website home
+  (`/`) when no explicit `returnTo` is given, instead of a role gateway.
+- `PortalGateway` is **not** a login redirector: it only executes when the user
+  explicitly navigates to a `/app/*` mount (direct access). It is the correct
+  "explicit sub-app access" path required by the isolation requirement.
+- Sub-app redirection therefore happens **only** when the user directly opens
+  that sub-app (via `/app/*`, `/job-portal`, or a legacy `/dashboard/{role}`
+  alias) — exactly the desired rule.
+
+### Action-plan step-by-step disposition
+
+| # | Requested action | Disposition |
+|---|---|---|
+| 1 | Isolate post-login landing to the main-site dashboard | **Done** — `destinationForVerifiedRole` → `/`; sub-app redirect only on explicit direct access. |
+| 2 | Fix redirect mapping in `next.config.ts` & middleware | **Verified no change needed** — the `/app/*` 307s are explicit direct-access handoffs, never fired during login; `middleware.ts` only handles `/growth-partner`. |
+| 3 | Scope cookie/storage to the main domain to stop cross-pollination | **No code change — documented.** No auth cookies exist (localStorage per origin); shared key is an intentional Phase-11 SSO contract; external PWAs are already origin-isolated. |
