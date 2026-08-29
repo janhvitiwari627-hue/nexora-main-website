@@ -2109,3 +2109,713 @@ html.dark .premium-home .section13 .section13-offer-card small,
 html.dark .premium-home .smart-picks-reason {
   color: var(--premium-muted);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   BEAUTY INDUSTRY SPOTLIGHT — premium YouTube-style video rail
+   (app/components/spotlight/*)
+   ───────────────────────────────────────────────────────────────────────────
+   Reference treatment: a calm light-gray stage, white cards, generous rounded
+   thumbnail containers, minimal shadows, editorial serif headline. On top of
+   that sits the interaction grammar people already know from a video
+   platform: poster → dwell → silent preview → play → title → channel →
+   like / comments / share / save.
+
+   Layout is pure CSS (flex-basis + scroll-snap), so the per-breakpoint card
+   count never depends on JS measurement and cannot desync on resize:
+     mobile   1 card + peek        (≥720px)  2 cards + peek
+     (≥1120px) 3 cards + peek
+   Every token below is re-declared under html.dark so the section reads
+   correctly in the site's default dark theme as well as the light one.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ---- Section stage ------------------------------------------------------- */
+.bis-section {
+  --bis-stage: #f7f5f6;
+  --bis-card-bg: #ffffff;
+  --bis-card-line: #ebe4e8;
+  --bis-ink: #24191d;
+  --bis-muted: #6d5960;
+  --bis-accent: var(--premium-primary, #8e004b);
+  --bis-gap: 20px;
+  --bis-per-view: 1;
+  --bis-peek: 26px;
+  --bis-radius: 20px;
+  position: relative;
+  padding: clamp(56px, 7vw, 92px) clamp(20px, 7vw, 110px) clamp(46px, 6vw, 78px);
+  background: var(--bis-stage);
+  color: var(--bis-ink);
+  font-family: Inter, Arial, Helvetica, sans-serif;
+}
+
+/* ---- Header + arrow controls -------------------------------------------- */
+.bis-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 26px;
+  flex-wrap: wrap;
+  margin-bottom: 26px;
+}
+.bis-header-copy { min-width: 0; }
+.bis-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--bis-accent);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: .15em;
+  text-transform: uppercase;
+}
+.bis-eyebrow-count {
+  padding: 3px 10px;
+  border: 1px solid #e6d7de;
+  border-radius: 999px;
+  background: #fff;
+  color: #7d666f;
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: .05em;
+}
+.bis-header h2 {
+  margin: 9px 0 10px;
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: clamp(28px, 3.4vw, 42px);
+  line-height: 1.08;
+  letter-spacing: -.03em;
+  color: var(--bis-ink);
+}
+.bis-subtitle {
+  margin: 0;
+  max-width: 58ch;
+  color: var(--bis-muted);
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+.bis-controls { display: flex; flex: none; gap: 10px; }
+.bis-arrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 0 17px;
+  border: 1px solid #e3d6dd;
+  border-radius: 999px;
+  background: #fff;
+  color: #3a2b32;
+  font-size: 13px;
+  font-weight: 750;
+  box-shadow: 0 2px 8px rgba(60, 32, 44, .05);
+  transition: transform .2s ease, background-color .2s ease, border-color .2s ease, color .2s ease;
+}
+.bis-arrow-icon { width: 17px; height: 17px; }
+.bis-arrow:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: #d9b3c6;
+  background: #fffafc;
+  color: var(--bis-accent);
+}
+.bis-arrow:active:not(:disabled) { transform: translateY(0); }
+.bis-arrow:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.bis-arrow:focus-visible,
+.bis-action:focus-visible,
+.bis-title-link:focus-visible,
+.bis-thumb-link:focus-visible,
+.bis-share-item:focus-visible,
+.bis-panel-close:focus-visible {
+  outline: 2px solid var(--bis-accent);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+.bis-arrow:focus-visible { border-radius: 999px; }
+
+/* ---- Viewport, track, scroll fades -------------------------------------- */
+.bis-viewport { position: relative; }
+.bis-track {
+  --_card: calc((100% - (var(--bis-per-view) - 1) * var(--bis-gap)) / var(--bis-per-view));
+  display: flex;
+  gap: var(--bis-gap);
+  margin: 0;
+  /* Right padding is what lets the next card peek on desktop/tablet; it is
+     inside the content box, so percentage card widths still resolve right. */
+  padding: 6px var(--bis-peek) 6px 2px;
+  list-style: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scroll-padding-left: 2px;
+  scroll-behavior: smooth;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.bis-track::-webkit-scrollbar { display: none; }
+.bis-track:focus-visible {
+  outline: 2px solid var(--bis-accent);
+  outline-offset: 6px;
+  border-radius: 18px;
+}
+.bis-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 46px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .3s ease;
+}
+.bis-fade--left { left: 0; background: linear-gradient(90deg, var(--bis-stage), transparent); }
+.bis-fade--right { right: 0; background: linear-gradient(270deg, var(--bis-stage), transparent); }
+.bis-viewport[data-at-start="false"] .bis-fade--left { opacity: 1; }
+.bis-viewport[data-at-end="false"] .bis-fade--right { opacity: 1; }
+
+/* ---- Card ---------------------------------------------------------------- */
+.bis-card {
+  display: flex;
+  flex: 0 0 var(--_card);
+  flex-direction: column;
+  padding: 13px 13px 11px;
+  border: 1px solid var(--bis-card-line);
+  border-radius: var(--bis-radius);
+  background: var(--bis-card-bg);
+  box-shadow: 0 8px 24px rgba(60, 32, 44, .05);
+  scroll-snap-align: start;
+  transition: transform .28s ease, box-shadow .28s ease, border-color .28s ease;
+}
+.bis-card:hover {
+  transform: translateY(-4px);
+  border-color: #e2d3da;
+  box-shadow: 0 16px 34px rgba(60, 32, 44, .09);
+}
+.bis-thumb-shell { position: relative; }
+
+/* ---- Badge row: tier pill + sponsorship disclosure ---------------------- */
+.bis-badges {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 24px;
+  margin-bottom: 10px;
+}
+.bis-tier {
+  padding: 4px 11px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .1em;
+  white-space: nowrap;
+}
+.bis-tier--diamond {
+  border-color: #cddcf3;
+  background: linear-gradient(135deg, #f4f8ff, #dde9fb);
+  color: #2f4d76;
+}
+.bis-tier--platinum {
+  border-color: #d9d6de;
+  background: linear-gradient(135deg, #f7f6f8, #e6e4ea);
+  color: #4a4753;
+}
+.bis-tier--gold {
+  border-color: #e9d3a4;
+  background: linear-gradient(135deg, #fff6e3, #f6e3bd);
+  color: #7a5a17;
+}
+.bis-sponsored {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid #3b2630;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #2b1a22, #191015);
+  color: #ffd9ea;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  white-space: nowrap;
+}
+.bis-sponsored > span { color: #ff7ab8; }
+
+/* ---- Thumbnail ----------------------------------------------------------- */
+.bis-thumb-link { display: block; }
+/* The same box as a disabled button when no destination is configured. */
+button.bis-thumb-link {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+}
+.bis-thumb-link--unavailable { cursor: not-allowed; }
+.bis-thumb-link--unavailable .bis-thumb { opacity: .94; }
+.bis-thumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #ece7ea;
+  isolation: isolate;
+}
+.bis-thumb-img,
+.bis-poster,
+.bis-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.bis-thumb-img {
+  opacity: 0;
+  transition: opacity .45s ease, transform .45s ease;
+}
+.bis-thumb-img[data-loaded="true"] { opacity: 1; }
+.bis-card:hover .bis-thumb-img,
+.bis-card:hover .bis-poster { transform: scale(1.045); }
+.bis-poster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  transition: transform .45s ease;
+}
+.bis-poster--diamond { background: radial-gradient(120% 100% at 20% 8%, #f4f8ff 0%, #e2ebf8 45%, #ccd9ec 100%); }
+.bis-poster--platinum { background: radial-gradient(120% 100% at 20% 8%, #f8f7f9 0%, #e8e6ec 45%, #d3d0da 100%); }
+.bis-poster--gold { background: radial-gradient(120% 100% at 20% 8%, #fff8ec 0%, #f7e7c8 45%, #e9d2a4 100%); }
+.bis-poster-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(58% 58% at 78% 16%, rgba(255, 255, 255, .72), transparent 70%);
+}
+.bis-poster-mono {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border: 1px solid rgba(255, 255, 255, .92);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .7);
+  box-shadow: 0 8px 20px rgba(60, 32, 44, .12);
+  color: #3a2b32;
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 20px;
+  font-weight: 700;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.bis-poster-brand {
+  position: relative;
+  padding: 0 14px;
+  color: #5b4750;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .09em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.bis-thumb-skeleton {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, #ece7ea 30%, #f6f1f4 50%, #ece7ea 70%);
+  background-size: 220% 100%;
+  animation: bisShimmer 1.5s ease-in-out infinite;
+}
+@keyframes bisShimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+
+/* Silent hover preview: one opacity ramp, no flashing. */
+.bis-preview {
+  opacity: 0;
+  transition: opacity .3s ease;
+}
+.bis-preview[data-ready="true"] { opacity: 1; }
+
+/* Play button: white disc, dark glyph, grows on hover, steps back on preview. */
+.bis-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .96);
+  box-shadow: 0 10px 26px rgba(30, 12, 22, .28);
+  color: #191018;
+  transition: width .25s ease, height .25s ease, transform .25s ease, opacity .25s ease;
+}
+.bis-play svg { width: 26px; height: 26px; margin-left: 3px; }
+.bis-thumb-shell:hover .bis-play { transform: scale(1.08); }
+.bis-play[data-previewing="true"] { width: 44px; height: 44px; opacity: .9; }
+.bis-play[data-previewing="true"] svg { width: 18px; height: 18px; margin-left: 2px; }
+
+/* Duration pill (bottom-right, platform-style). */
+.bis-duration {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 3px 7px;
+  border-radius: 7px;
+  background: rgba(11, 7, 10, .82);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 750;
+  letter-spacing: .02em;
+  font-variant-numeric: tabular-nums;
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+/* ---- Metadata ------------------------------------------------------------ */
+.bis-meta { padding: 13px 2px 0; }
+.bis-brand {
+  margin: 0;
+  color: #4b3a42;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: .01em;
+}
+.bis-title {
+  margin: 3px 0 5px;
+  color: var(--bis-ink);
+  font-size: 15.5px;
+  font-weight: 750;
+  line-height: 1.35;
+  letter-spacing: -.01em;
+}
+.bis-title-link {
+  /* Two-line clamp keeps every card the same height: no row reflow. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  color: inherit;
+  text-decoration: none;
+  transition: color .2s ease;
+}
+a.bis-title-link:hover { color: var(--bis-accent); }
+/* Unconfigured watch link: same box, honest disabled state. */
+button.bis-title-link {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: #8a7a82;
+  cursor: not-allowed;
+}
+.bis-category {
+  margin: 0;
+  color: #9a8790;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+/* ---- Interaction row ----------------------------------------------------- */
+.bis-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+  padding: 11px 0 1px;
+  border-top: 1px solid #f1eaee;
+}
+.bis-meta + .bis-actions { margin-top: 12px; }
+.bis-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: none;
+  color: var(--bis-muted);
+  font-size: 12px;
+  font-weight: 750;
+  transition: background-color .2s ease, color .2s ease, border-color .2s ease;
+}
+.bis-action-icon { width: 15px; height: 15px; flex: none; }
+.bis-action:hover {
+  border-color: #f0e2e9;
+  background: #faf4f7;
+  color: var(--bis-accent);
+}
+.bis-action[aria-pressed="true"] {
+  border-color: #f3d5e2;
+  background: #fff2f7;
+  color: var(--bis-accent);
+}
+.bis-action-icon[data-filled="true"] { fill: currentColor; }
+.bis-action--save { margin-left: auto; }
+.bis-action-count { font-variant-numeric: tabular-nums; }
+
+/* ---- Popover panels (comments + share) ----------------------------------- */
+.bis-popover {
+  position: fixed;
+  z-index: 90;
+  padding: 12px;
+  border: 1px solid #e8dee3;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(45, 20, 32, .18);
+  animation: bisPopoverIn .16s ease-out both;
+}
+@keyframes bisPopoverIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.bis-panel { display: grid; gap: 10px; }
+.bis-panel-head { display: flex; align-items: center; gap: 8px; }
+.bis-panel-title {
+  margin: 0;
+  color: var(--bis-ink, #24191d);
+  font-size: 13.5px;
+  font-weight: 800;
+}
+.bis-panel-count {
+  padding: 2px 8px;
+  border: 1px solid #eee1e7;
+  border-radius: 999px;
+  background: #fbf6f8;
+  color: #7d666f;
+  font-size: 11px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+.bis-panel-close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: none;
+  color: #7d666f;
+}
+.bis-panel-close:hover { border-color: #f0e2e9; background: #faf4f7; color: var(--bis-accent); }
+.bis-panel-close-icon { width: 15px; height: 15px; }
+.bis-panel-empty {
+  margin: 0;
+  color: #7d666f;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.bis-panel-note {
+  margin: 0;
+  color: #a08f97;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.bis-thread { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.bis-thread-item { display: grid; gap: 3px; }
+.bis-thread-author { color: #24191d; font-size: 12px; font-weight: 800; }
+.bis-thread-when { color: #a08f97; font-size: 10.5px; }
+.bis-thread-body { margin: 0; color: #5f4c55; font-size: 12.5px; line-height: 1.55; }
+.bis-panel--share { gap: 2px; }
+.bis-share-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: none;
+  color: #3a2b32;
+  font-size: 12.5px;
+  font-weight: 750;
+  text-align: left;
+  transition: background-color .18s ease, border-color .18s ease, color .18s ease;
+}
+.bis-share-item:hover:not(:disabled) {
+  border-color: #f0e2e9;
+  background: #faf4f7;
+  color: var(--bis-accent);
+}
+.bis-share-item:disabled { color: #a89aa1; cursor: not-allowed; }
+.bis-share-icon { display: grid; place-items: center; width: 18px; height: 18px; flex: none; }
+.bis-share-icon svg { width: 16px; height: 16px; fill: currentColor; }
+.bis-share-label { min-width: 0; }
+
+/* ---- Hint + confirmation ------------------------------------------------- */
+/* Touch-only devices get the swipe half of the hint, not the hover half. */
+@media (hover: none) {
+  .bis-hint-hover { display: none; }
+}
+.bis-hint {
+  margin: 16px 0 0;
+  color: #9a8790;
+  font-size: 12px;
+  font-weight: 600;
+}
+.bis-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  z-index: 95;
+  margin: 0;
+  padding: 11px 18px;
+  border-radius: 999px;
+  background: #24191d;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 750;
+  box-shadow: 0 16px 40px rgba(20, 8, 15, .28);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, 12px);
+  transition: opacity .22s ease, transform .22s ease, visibility .22s;
+}
+.bis-toast[data-visible="true"] {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+/* ---- Breakpoints --------------------------------------------------------- */
+@media (min-width: 720px) {
+  .bis-section { --bis-per-view: 2; --bis-peek: 34px; --bis-gap: 22px; }
+}
+@media (min-width: 1120px) {
+  .bis-section { --bis-per-view: 3; --bis-peek: 46px; --bis-gap: 24px; }
+}
+@media (max-width: 560px) {
+  .bis-section { padding-inline: 16px; }
+  .bis-arrow { padding: 0 12px; }
+  .bis-arrow-label { display: none; }
+  .bis-play { width: 56px; height: 56px; }
+  .bis-play svg { width: 22px; height: 22px; }
+  .bis-card { padding: 11px 11px 9px; }
+  .bis-header { margin-bottom: 20px; }
+  .bis-controls { width: 100%; justify-content: space-between; }
+}
+
+/* ---- Dark theme ---------------------------------------------------------- */
+html.dark .bis-section {
+  --bis-stage: #0d0d12;
+  --bis-card-bg: #14141b;
+  --bis-card-line: #26262f;
+  --bis-ink: #f5f5f7;
+  --bis-muted: #a0a0b0;
+  --bis-accent: #ff8fc0;
+  background: #0d0d12;
+}
+html.dark .bis-eyebrow-count {
+  border-color: #2c2c37;
+  background: #17171f;
+  color: #a8a4b0;
+}
+html.dark .bis-subtitle,
+html.dark .bis-hint { color: #9b97a4; }
+html.dark .bis-arrow {
+  border-color: #2c2c37;
+  background: #17171f;
+  color: #e8e4ec;
+  box-shadow: none;
+}
+html.dark .bis-arrow:hover:not(:disabled) {
+  border-color: #5a3a4a;
+  background: #1e1e28;
+  color: #ffb0c8;
+}
+html.dark .bis-card { box-shadow: 0 8px 24px rgba(0, 0, 0, .35); }
+html.dark .bis-card:hover {
+  border-color: #3a3a46;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, .45);
+}
+html.dark .bis-thumb { background: #1b1b23; }
+html.dark .bis-thumb-skeleton {
+  background: linear-gradient(100deg, #1b1b23 30%, #23232c 50%, #1b1b23 70%);
+  background-size: 220% 100%;
+}
+/* Keep the bright tier posters from glaring out of a dark card. */
+html.dark .bis-poster { filter: saturate(.72) brightness(.78); }
+html.dark .bis-poster-mono {
+  border-color: rgba(255, 255, 255, .18);
+  background: rgba(255, 255, 255, .14);
+  color: #f0e9ee;
+}
+html.dark .bis-poster-brand { color: #cfc7cd; }
+html.dark .bis-tier--diamond { border-color: #3c5878; background: linear-gradient(135deg, #223244, #1b2733); color: #b8cdec; }
+html.dark .bis-tier--platinum { border-color: #44424c; background: linear-gradient(135deg, #2a2932, #212029); color: #cfccd8; }
+html.dark .bis-tier--gold { border-color: #6b5526; background: linear-gradient(135deg, #3a2f18, #2c2413); color: #eed7a1; }
+html.dark .bis-sponsored {
+  border-color: #5a2f42;
+  background: linear-gradient(135deg, #3a1d2c, #25121b);
+  color: #ffd0e4;
+}
+html.dark .bis-play { background: rgba(255, 255, 255, .94); color: #14101a; }
+html.dark .bis-brand { color: #d7d3da; }
+html.dark .bis-category { color: #8b8794; }
+html.dark button.bis-title-link { color: #7f7b88; }
+html.dark .bis-actions { border-top-color: #26262f; }
+html.dark .bis-action:hover {
+  border-color: #33333f;
+  background: #1d1d26;
+  color: #ff9ec7;
+}
+html.dark .bis-action[aria-pressed="true"] {
+  border-color: #4a2c3c;
+  background: #26181f;
+  color: #ff8fc0;
+}
+html.dark .bis-popover {
+  border-color: #2c2c37;
+  background: #17171f;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+}
+html.dark .bis-panel-count { border-color: #33333f; background: #1f1f29; color: #a8a4b0; }
+html.dark .bis-panel-empty { color: #a0a0b0; }
+html.dark .bis-panel-note { color: #807c89; }
+html.dark .bis-panel-close { color: #a0a0b0; }
+html.dark .bis-panel-close:hover { border-color: #33333f; background: #1f1f29; color: #ff9ec7; }
+html.dark .bis-thread-author { color: #f5f5f7; }
+html.dark .bis-thread-body { color: #b6b2bd; }
+html.dark .bis-share-item { color: #e8e4ec; }
+html.dark .bis-share-item:hover:not(:disabled) {
+  border-color: #33333f;
+  background: #1f1f29;
+  color: #ff9ec7;
+}
+html.dark .bis-share-item:disabled { color: #6f6b78; }
+html.dark .bis-toast { background: #f5f5f7; color: #13131a; }
+
+/* ---- Reduced motion ------------------------------------------------------
+   The preview itself is content (it still plays when hovered) but every
+   decorative ramp, lift and slide is switched off; the carousel then jumps
+   instead of gliding (useCarouselScroll matches this via matchMedia). */
+@media (prefers-reduced-motion: reduce) {
+  .bis-card,
+  .bis-play,
+  .bis-arrow,
+  .bis-action,
+  .bis-share-item,
+  .bis-thumb-img,
+  .bis-poster,
+  .bis-fade,
+  .bis-toast,
+  .bis-popover,
+  .bis-preview { transition: none !important; animation: none !important; }
+  .bis-card:hover { transform: none; }
+  .bis-thumb-shell:hover .bis-play { transform: none; }
+  .bis-card:hover .bis-thumb-img,
+  .bis-card:hover .bis-poster { transform: none; }
+  .bis-arrow:hover:not(:disabled) { transform: none; }
+  .bis-track { scroll-behavior: auto; }
+}

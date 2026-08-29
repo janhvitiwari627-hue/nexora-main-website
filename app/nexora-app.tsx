@@ -46,6 +46,9 @@ import FreeWebsiteCTA from "./components/premium/FreeWebsiteCTA";
 import GrowMoreSection from "./components/premium/GrowMoreSection";
 import TrendingShops from "./components/premium/TrendingShops";
 import SponsoredBrands from "./components/premium/SponsoredBrands";
+// Beauty Industry Spotlight — the ten-slot YouTube-style video rail. Fully
+// data-driven: swap BEAUTY_SPOTLIGHT_VIDEOS (or pass `videos`) for live rows.
+import BeautyIndustrySpotlight from "./components/spotlight/BeautyIndustrySpotlight";
 import InstallApps from "./components/premium/InstallApps";
 import TrustFlow from "./components/premium/TrustFlow";
 // Phase 1 · Section 03 Smart Search — Jaipur boundary check for the
@@ -1546,6 +1549,19 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
           </>
         ) : <StateCard title="No sponsored content yet" text="Admin-approved sponsored shops, brands and videos appear here." />}
       </section>)}
+
+      {/*
+        ── BEAUTY INDUSTRY SPOTLIGHT ────────────────────────────────────────
+        Premium editorial video rail (ten slots, three per view on desktop with
+        the next card peeking, one per view + native swipe on mobile) with the
+        platform interaction layer: hover → silent muted preview → click opens
+        the configured destination in a new tab, while like / comments / share /
+        save stay independent of that navigation. Sits with the other brand
+        content, after the admin-gated Sponsored section. Ungated on purpose:
+        like GrowMoreSection/FAQSection it is static editorial content, so an
+        admin visibility key is not required for it to render.
+      */}
+      <BeautyIndustrySpotlight />
 
       {/* Recently viewed — logged-in + consent only */}
       {visible('recently_viewed') && (isCustomer ? (
