@@ -1,7 +1,7 @@
 'use client';
 
 import AnimatedSection from './AnimatedSection';
-import { Store, ArrowRight, Sparkles, Check, Zap, Globe } from 'lucide-react';
+import { Store, ArrowRight, Sparkles, Check, Globe } from 'lucide-react';
 
 /*
  * NOTE: the href below is the real Owner PWA deployment, as referenced by

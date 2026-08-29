@@ -2,7 +2,7 @@
 
 import { motion } from 'framer-motion';
 import AnimatedSection from './AnimatedSection';
-import { Sparkles, TrendingUp, Heart, Star } from 'lucide-react';
+import { Sparkles, Star } from 'lucide-react';
 
 /*
  * NOTE ( adaptations from the original snippet ):
@@ -111,6 +111,7 @@ export default function AISmartPicks() {
               className="group relative"
             >
               <div className="relative aspect-square rounded-2xl overflow-hidden bg-nexora-pink-soft/30 border border-nexora-pink/10 group-hover:border-nexora-pink/30 transition-all">
+                {/* eslint-disable-next-line @next/next/no-img-element -- local generated assets from /public; this repo deliberately does not use next/image (see NOTE 2 above). */}
                 <img
                   src={product.image}
                   alt={product.name}

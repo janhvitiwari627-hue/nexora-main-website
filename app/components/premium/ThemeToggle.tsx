@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 /**
  * Dark/light theme switch for the premium homepage.
@@ -8,24 +8,34 @@ import { useEffect, useState } from 'react';
  * The entire dark theme in globals.css is scoped under `html.dark`; this
  * toggle flips that class. Preference persists in localStorage under
  * "nexora-theme-v2" ("dark" | "light") — the no-FOUC head script in
- * app/layout.tsx applies it before first paint, so this component only
- * needs to sync its icon after mount.
+ * app/layout.tsx applies it before first paint.
+ *
+ * The active theme is external DOM state (the `html` class), so the icon is
+ * read with `useSyncExternalStore` + a MutationObserver instead of an effect
+ * that calls setState on mount. SSR renders <html className="dark">; the
+ * server snapshot matches that, and the store re-syncs after hydration.
  *
  * The mobile browser chrome colour (meta[name=theme-color]) follows the
  * active theme too.
  */
+
+/** Observe the `html` class attribute — the single source of truth for theme. */
+function subscribeToThemeClass(onChange: () => void) {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+  return () => observer.disconnect();
+}
+
 export default function ThemeToggle() {
-  // SSR renders <html className="dark"> — start matched to avoid a
-  // hydration mismatch, then sync with the real DOM state after mount.
-  const [dark, setDark] = useState(true);
+  const dark = useSyncExternalStore(
+    subscribeToThemeClass,
+    () => document.documentElement.classList.contains('dark'),
+    // SSR renders <html className="dark"> — start matched, no hydration mismatch.
+    () => true,
+  );
 
-  useEffect(() => {
-    setDark(document.documentElement.classList.contains('dark'));
-  }, []);
-
-  const toggle = () => {
-    const next = !dark;
-    setDark(next);
+  const toggle = useCallback(() => {
+    const next = !document.documentElement.classList.contains('dark');
     document.documentElement.classList.toggle('dark', next);
     try {
       localStorage.setItem('nexora-theme-v2', next ? 'dark' : 'light');
@@ -34,7 +44,7 @@ export default function ThemeToggle() {
     }
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', next ? '#0a0a0f' : '#fffdfc');
-  };
+  }, []);
 
   return (
     <button

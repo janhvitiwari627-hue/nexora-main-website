@@ -10,7 +10,8 @@
  * that could silently drift apart:
  *
  *   1. `app/lib/portalRoutes.ts`   — four `/app/*` portals only
- *   2. `app/lib/portalOrigins.ts`  — three mount paths only
+ *   2. `app/lib/portalOrigins.ts`  — three mount paths only (removed in the
+ *      dead-code audit; live origin resolution is `config/portalOrigins.ts`)
  *   3. `next.config.ts`            — redirects (portals) + rewrites (static apps)
  *   4. `app/nexora-app.tsx`        — hand-written links inside the page body
  *
