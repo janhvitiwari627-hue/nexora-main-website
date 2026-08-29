@@ -142,9 +142,11 @@ test("SPONSORED is disclosed only where the data says sponsored", () => {
     (sectionHtml.match(/class="bis-sponsored"/g) ?? []).length,
     sponsoredCount,
   );
-  // Unconfigured placeholders keep the branded poster, never a broken image.
-  // The two live Nexora showcase slots render their real poster image instead.
-  assert.equal((sectionHtml.match(/class="bis-poster /g) ?? []).length, 8);
+  // Unconfigured placeholders keep the branded fallback, never a broken image.
+  // All ten slots ship real self-hosted editorial posters, so the branded
+  // fallback poster appears in SSR markup nowhere (it remains the on-error
+  // path in the browser).
+  assert.equal((sectionHtml.match(/class="bis-poster /g) ?? []).length, 0);
 });
 
 test("channel, title and category all render from the data row", () => {
@@ -218,6 +220,22 @@ test("the two live showcase slots ship real local media", () => {
   // The rendered markup actually references both posters and clips.
   assert.match(sectionHtml, /src="\/spotlight\/nexora-luxe-sourcing\.jpg"/);
   assert.match(sectionHtml, /src="\/spotlight\/nexora-salon-glow\.jpg"/);
+});
+
+test("every slot ships a real self-hosted editorial poster", () => {
+  for (const video of BEAUTY_SPOTLIGHT_VIDEOS) {
+    assert.match(
+      video.thumbnailUrl,
+      /^\/spotlight\/[\w-]+\.jpg$/,
+      `${video.brandName} must carry a local poster`,
+    );
+    assert.ok(
+      sectionHtml.includes(`src="${video.thumbnailUrl}"`),
+      `${video.brandName} poster must render`,
+    );
+  }
+  // Ten lazy, async-decoded posters — one per card.
+  assert.equal((sectionHtml.match(/loading="lazy"/g) ?? []).length, 10);
 });
 
 test("a configured video opens in a new tab with a hardened rel", () => {

@@ -73,8 +73,10 @@ export interface BeautySpotlightVideo {
  * Slots 01–02 are the live Nexora showcase entries (self-hosted media in
  * `public/spotlight/`, watch link = the app the teaser showcases). Slots 03–10
  * are the professional-brand editorial lineup: real brands, placeholder demo
- * copy — no claims are fabricated and no YouTube URL is invented until an
- * approved one is supplied for the row.
+ * copy, each with a self-generated thematic editorial poster (no brand
+ * footage/logos) — and no fabricated claims. Their preview/watch URLs stay
+ * empty until an approved one is supplied for the row: a rich poster never
+ * implies a working destination.
  */
 export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
   {
@@ -110,7 +112,7 @@ export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
     brandName: "Wahl Professional",
     title: "Fade Fundamentals: Precision Clipper Techniques for Barbers",
     category: "BARBERING",
-    thumbnailUrl: "",
+    thumbnailUrl: "/spotlight/vid-barbering.jpg",
     previewUrl: "",
     youtubeUrl: "",
     duration: "08:47",
@@ -124,7 +126,7 @@ export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
     brandName: "L'Oréal Professionnel",
     title: "Color Diagnostics: Mastering Dimensional Blondes",
     category: "HAIR COLOR",
-    thumbnailUrl: "",
+    thumbnailUrl: "/spotlight/vid-blondes.jpg",
     previewUrl: "",
     youtubeUrl: "",
     duration: "12:05",
@@ -138,7 +140,7 @@ export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
     brandName: "Schwarzkopf Professional",
     title: "Bond Architecture: Repairing Lightened Hair",
     category: "HAIR CARE",
-    thumbnailUrl: "",
+    thumbnailUrl: "/spotlight/vid-bondcare.jpg",
     previewUrl: "",
     youtubeUrl: "",
     duration: "09:58",
@@ -152,7 +154,7 @@ export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
     brandName: "Dyson Beauty",
     title: "Heat-Control Styling: The Science of Controlled Airflow",
     category: "PROFESSIONAL TOOLS",
-    thumbnailUrl: "",
+    thumbnailUrl: "/spotlight/vid-heattools.jpg",
     previewUrl: "",
     youtubeUrl: "",
     duration: "14:32",
@@ -166,7 +168,7 @@ export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
     brandName: "Wella Professionals",
     title: "Balayage Placement: A Dimensional Colour Study",
     category: "TREND COLLECTIONS",
-    thumbnailUrl: "",
+    thumbnailUrl: "/spotlight/vid-balayage.jpg",
     previewUrl: "",
     youtubeUrl: "",
     duration: "11:19",
@@ -180,7 +182,7 @@ export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
     brandName: "Olaplex",
     title: "Bond Building Science: The Salon Treatment Protocol",
     category: "SALON EDUCATION",
-    thumbnailUrl: "",
+    thumbnailUrl: "/spotlight/vid-treatment.jpg",
     previewUrl: "",
     youtubeUrl: "",
     duration: "10:44",
@@ -194,7 +196,7 @@ export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
     brandName: "Moroccanoil",
     title: "The Argan Ritual: Editorial Shine & Finish",
     category: "HAIR CARE",
-    thumbnailUrl: "",
+    thumbnailUrl: "/spotlight/vid-argan.jpg",
     previewUrl: "",
     youtubeUrl: "",
     duration: "07:21",
@@ -208,7 +210,7 @@ export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
     brandName: "Lakmé Salon",
     title: "The Bridal Glow: Editorial Indian Bridal Beauty",
     category: "SALON TRENDS",
-    thumbnailUrl: "",
+    thumbnailUrl: "/spotlight/vid-bridal.jpg",
     previewUrl: "",
     youtubeUrl: "",
     duration: "09:12",
