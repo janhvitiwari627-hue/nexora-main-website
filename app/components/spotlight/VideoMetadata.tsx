@@ -37,7 +37,7 @@ export function VideoMetadata({ video }: { video: BeautySpotlightVideo }) {
             <path
               d="M8 12.6l2.7 2.7 5.3-5.9"
               fill="none"
-              stroke="#171310"
+              stroke="#20180f"
               strokeWidth="2.4"
               strokeLinecap="round"
               strokeLinejoin="round"

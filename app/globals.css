@@ -2132,13 +2132,13 @@ html.dark .premium-home .smart-picks-reason {
 
 /* ---- Section stage ------------------------------------------------------- */
 .bis-section {
-  --bis-stage: #0f0d0b;
-  --bis-card-bg: #171310;
-  --bis-card-line: rgba(203, 170, 120, 0.15);
+  --bis-stage: #161210;
+  --bis-card-bg: #1e1812;
+  --bis-card-line: rgba(210, 178, 128, 0.15);
   --bis-ink: #f3ecdf;
   --bis-muted: #a8977f;
-  --bis-accent: #c9a962;
-  --bis-gold-soft: rgba(201, 169, 98, 0.12);
+  --bis-accent: #d9b46a;
+  --bis-gold-soft: rgba(217, 180, 106, 0.12);
   --bis-gap: 20px;
   --bis-per-view: 1;
   --bis-peek: 26px;
@@ -2147,11 +2147,11 @@ html.dark .premium-home .smart-picks-reason {
   padding: clamp(64px, 8vw, 108px) clamp(20px, 7vw, 110px) clamp(48px, 6vw, 80px);
   /* Near-black with a barely-there tonal drift — never a bright gradient. */
   background:
-    radial-gradient(120% 90% at 88% -12%, rgba(58, 44, 32, 0.35) 0%, transparent 58%),
-    radial-gradient(90% 70% at -8% 112%, rgba(38, 32, 22, 0.5) 0%, transparent 55%),
+    radial-gradient(120% 90% at 88% -12%, rgba(62, 47, 34, 0.38) 0%, transparent 58%),
+    radial-gradient(90% 70% at -8% 112%, rgba(44, 36, 25, 0.52) 0%, transparent 55%),
     var(--bis-stage);
   /* The brief's thin horizontal divider closing the section. */
-  border-bottom: 1px solid rgba(201, 169, 98, 0.13);
+  border-bottom: 1px solid rgba(217, 180, 106, 0.13);
   color: var(--bis-ink);
   font-family: Inter, Arial, Helvetica, sans-serif;
   overflow: hidden;
@@ -2167,7 +2167,7 @@ html.dark .premium-home .smart-picks-reason {
   border-radius: 50%;
   background: repeating-conic-gradient(
     from 0deg,
-    rgba(201, 169, 98, 0.055) 0deg 1.1deg,
+    rgba(217, 180, 106, 0.06) 0deg 1.1deg,
     transparent 1.1deg 7.4deg
   );
   -webkit-mask-image: radial-gradient(closest-side, rgba(0, 0, 0, 0.95), transparent 74%);
@@ -2203,10 +2203,10 @@ html.dark .premium-home .smart-picks-reason {
 .bis-eyebrow-line {
   width: clamp(26px, 4vw, 52px);
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(201, 169, 98, 0.75));
+  background: linear-gradient(90deg, transparent, rgba(217, 180, 106, 0.75));
 }
 .bis-eyebrow-line--right {
-  background: linear-gradient(270deg, transparent, rgba(201, 169, 98, 0.75));
+  background: linear-gradient(270deg, transparent, rgba(217, 180, 106, 0.75));
 }
 .bis-header h2 {
   margin: 16px 0 12px;
@@ -2226,7 +2226,7 @@ html.dark .premium-home .smart-picks-reason {
 .bis-subtitle {
   margin: 0;
   max-width: 58ch;
-  color: #b3a58f;
+  color: #b7a78e;
   font-size: 14px;
   font-weight: 400;
   letter-spacing: 0.015em;
@@ -2239,7 +2239,7 @@ html.dark .premium-home .smart-picks-reason {
   gap: 8px;
   min-height: 40px;
   padding: 0 18px;
-  border: 1px solid rgba(201, 169, 98, 0.3);
+  border: 1px solid rgba(217, 180, 106, 0.3);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.015);
   color: #e8ddc6;
@@ -2251,7 +2251,7 @@ html.dark .premium-home .smart-picks-reason {
 .bis-arrow-icon { width: 16px; height: 16px; }
 .bis-arrow:hover:not(:disabled) {
   transform: translateY(-1px);
-  border-color: rgba(201, 169, 98, 0.6);
+  border-color: rgba(217, 180, 106, 0.6);
   background: var(--bis-gold-soft);
   color: #f0e6cf;
 }
@@ -2262,8 +2262,8 @@ html.dark .premium-home .smart-picks-reason {
 }
 /* Next carries the slightly stronger outlined treatment. */
 .bis-arrow--next {
-  border-color: rgba(201, 169, 98, 0.58);
-  background: rgba(201, 169, 98, 0.06);
+  border-color: rgba(217, 180, 106, 0.58);
+  background: rgba(217, 180, 106, 0.06);
   color: var(--bis-accent);
 }
 .bis-arrow:focus-visible,
@@ -2333,7 +2333,7 @@ html.dark .premium-home .smart-picks-reason {
 }
 .bis-card:hover {
   transform: translateY(-5px);
-  border-color: rgba(203, 170, 120, 0.34);
+  border-color: rgba(210, 178, 128, 0.34);
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
 }
 .bis-thumb-shell { position: relative; }
@@ -2367,19 +2367,19 @@ html.dark .premium-home .smart-picks-reason {
   color: #d9d4c8;
 }
 .bis-tier--gold {
-  border-color: rgba(201, 169, 98, 0.46);
-  background: rgba(201, 169, 98, 0.07);
-  color: #d9b877;
+  border-color: rgba(217, 180, 106, 0.46);
+  background: rgba(217, 180, 106, 0.07);
+  color: #e6c381;
 }
 .bis-sponsored {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  border: 1px solid rgba(201, 169, 98, 0.24);
+  border: 1px solid rgba(217, 180, 106, 0.24);
   border-radius: 999px;
   background: rgba(30, 23, 17, 0.9);
-  color: #c8b598;
+  color: #cbb894;
   font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.16em;
@@ -2406,7 +2406,7 @@ button.bis-thumb-link {
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border-radius: 12px;
-  background: #241d16;
+  background: #261f17;
   isolation: isolate;
 }
 .bis-thumb-img,
@@ -2469,7 +2469,7 @@ button.bis-thumb-link {
 .bis-thumb-skeleton {
   position: absolute;
   inset: 0;
-  background: linear-gradient(100deg, #1d1815 30%, #272018 50%, #1d1815 70%);
+  background: linear-gradient(100deg, #221b14 30%, #2c2318 50%, #221b14 70%);
   background-size: 220% 100%;
   animation: bisShimmer 1.5s ease-in-out infinite;
 }
@@ -2507,7 +2507,7 @@ button.bis-thumb-link {
   content: "";
   position: absolute;
   inset: 5px;
-  border: 1px solid rgba(201, 169, 98, 0.55);
+  border: 1px solid rgba(217, 180, 106, 0.55);
   border-radius: 50%;
   transition: border-color 0.25s ease;
 }
@@ -2556,17 +2556,17 @@ button.bis-thumb-link {
   flex: none;
   width: 27px;
   height: 27px;
-  border: 1px solid rgba(201, 169, 98, 0.42);
+  border: 1px solid rgba(217, 180, 106, 0.42);
   border-radius: 50%;
-  background: rgba(201, 169, 98, 0.07);
-  color: #d9c294;
+  background: rgba(217, 180, 106, 0.07);
+  color: #dfc79a;
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.04em;
 }
 .bis-avatar--diamond { border-color: rgba(147, 177, 214, 0.45); background: rgba(147, 177, 214, 0.08); color: #c3d4ea; }
 .bis-avatar--platinum { border-color: rgba(214, 210, 200, 0.4); background: rgba(214, 210, 200, 0.07); color: #ddd8cc; }
-.bis-avatar--gold { border-color: rgba(201, 169, 98, 0.5); background: rgba(201, 169, 98, 0.09); color: #dcc084; }
+.bis-avatar--gold { border-color: rgba(217, 180, 106, 0.5); background: rgba(217, 180, 106, 0.09); color: #e6c78e; }
 .bis-channel-name {
   display: inline-flex;
   align-items: center;
@@ -2615,7 +2615,7 @@ button.bis-title-link {
   align-items: center;
   gap: 8px;
   margin: 0;
-  color: #c0a469;
+  color: #d2b274;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.16em;
@@ -2627,7 +2627,7 @@ button.bis-title-link {
   flex: none;
   width: 16px;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(201, 169, 98, 0.8));
+  background: linear-gradient(90deg, transparent, rgba(217, 180, 106, 0.8));
 }
 
 /* ---- Interaction row ----------------------------------------------------- */
@@ -2637,7 +2637,7 @@ button.bis-title-link {
   gap: 4px;
   margin-top: auto;
   padding: 11px 0 1px;
-  border-top: 1px solid rgba(203, 170, 120, 0.13);
+  border-top: 1px solid rgba(210, 178, 128, 0.13);
 }
 .bis-meta + .bis-actions { margin-top: 13px; }
 .bis-action {
@@ -2656,13 +2656,13 @@ button.bis-title-link {
 }
 .bis-action-icon { width: 15px; height: 15px; flex: none; }
 .bis-action:hover {
-  border-color: rgba(201, 169, 98, 0.24);
+  border-color: rgba(217, 180, 106, 0.24);
   background: var(--bis-gold-soft);
   color: var(--bis-accent);
 }
 .bis-action[aria-pressed="true"] {
-  border-color: rgba(201, 169, 98, 0.34);
-  background: rgba(201, 169, 98, 0.14);
+  border-color: rgba(217, 180, 106, 0.34);
+  background: rgba(217, 180, 106, 0.14);
   color: var(--bis-accent);
 }
 .bis-action-icon[data-filled="true"] { fill: currentColor; }
@@ -2674,7 +2674,7 @@ button.bis-title-link {
   position: fixed;
   z-index: 90;
   padding: 12px;
-  border: 1px solid rgba(203, 170, 120, 0.22);
+  border: 1px solid rgba(210, 178, 128, 0.22);
   border-radius: 14px;
   background: #1c1613;
   box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6);
@@ -2691,10 +2691,10 @@ button.bis-title-link {
 }
 .bis-panel-count {
   padding: 2px 8px;
-  border: 1px solid rgba(203, 170, 120, 0.2);
+  border: 1px solid rgba(210, 178, 128, 0.2);
   border-radius: 999px;
-  background: rgba(201, 169, 98, 0.06);
-  color: #c0a469;
+  background: rgba(217, 180, 106, 0.06);
+  color: #d2b274;
   font-size: 11px;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
@@ -2711,7 +2711,7 @@ button.bis-title-link {
   color: #a8977f;
 }
 .bis-panel-close:hover {
-  border-color: rgba(201, 169, 98, 0.24);
+  border-color: rgba(217, 180, 106, 0.24);
   background: var(--bis-gold-soft);
   color: var(--bis-accent);
 }
@@ -2724,14 +2724,14 @@ button.bis-title-link {
 }
 .bis-panel-note {
   margin: 0;
-  color: #8d7d69;
+  color: #93826b;
   font-size: 11px;
   line-height: 1.55;
 }
 .bis-thread { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
 .bis-thread-item { display: grid; gap: 3px; }
 .bis-thread-author { color: #f3ecdf; font-size: 12px; font-weight: 800; }
-.bis-thread-when { color: #8d7d69; font-size: 10.5px; }
+.bis-thread-when { color: #93826b; font-size: 10.5px; }
 .bis-thread-body { margin: 0; color: #c4b49c; font-size: 12.5px; line-height: 1.55; }
 .bis-panel--share { gap: 2px; }
 .bis-share-item {
@@ -2751,11 +2751,11 @@ button.bis-title-link {
   transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 .bis-share-item:hover:not(:disabled) {
-  border-color: rgba(201, 169, 98, 0.24);
+  border-color: rgba(217, 180, 106, 0.24);
   background: var(--bis-gold-soft);
   color: var(--bis-accent);
 }
-.bis-share-item:disabled { color: #786b58; cursor: not-allowed; }
+.bis-share-item:disabled { color: #7d7060; cursor: not-allowed; }
 .bis-share-icon { display: grid; place-items: center; width: 18px; height: 18px; flex: none; }
 .bis-share-icon svg { width: 16px; height: 16px; fill: currentColor; }
 .bis-share-label { min-width: 0; }
@@ -2767,7 +2767,7 @@ button.bis-title-link {
 }
 .bis-hint {
   margin: 18px 0 0;
-  color: #8d7d69;
+  color: #93826b;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -2779,9 +2779,9 @@ button.bis-title-link {
   z-index: 95;
   margin: 0;
   padding: 11px 18px;
-  border: 1px solid rgba(201, 169, 98, 0.35);
+  border: 1px solid rgba(217, 180, 106, 0.35);
   border-radius: 999px;
-  background: #1f1913;
+  background: #241d15;
   color: #f0e6cf;
   font-size: 12.5px;
   font-weight: 750;
@@ -2823,11 +2823,11 @@ button.bis-title-link {
    The section is already an editorial dark stage; the site's dark theme only
    deepens the stage a step so it never reads lighter than its page. */
 html.dark .bis-section {
-  --bis-stage: #0c0a09;
+  --bis-stage: #12100d;
   background:
-    radial-gradient(120% 90% at 88% -12%, rgba(50, 38, 28, 0.32) 0%, transparent 58%),
-    radial-gradient(90% 70% at -8% 112%, rgba(32, 27, 19, 0.45) 0%, transparent 55%),
-    #0c0a09;
+    radial-gradient(120% 90% at 88% -12%, rgba(56, 42, 30, 0.34) 0%, transparent 58%),
+    radial-gradient(90% 70% at -8% 112%, rgba(38, 32, 22, 0.46) 0%, transparent 55%),
+    #12100d;
 }
 
 /* ---- Reduced motion ------------------------------------------------------

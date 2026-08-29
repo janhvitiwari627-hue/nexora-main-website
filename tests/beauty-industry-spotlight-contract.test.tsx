@@ -324,13 +324,13 @@ test("globals.css carries the section's responsive and motion contract", async (
   // Dark theme (the site default) must cover the section.
   assert.match(css, /html\.dark \.bis-section \{/);
   // Luxury editorial tokens: near-black stage, champagne accent, italic serif accent.
-  assert.match(css, /--bis-stage: #0f0d0b/);
-  assert.match(css, /--bis-accent: #c9a962/);
+  assert.match(css, /--bis-stage: #161210/);
+  assert.match(css, /--bis-accent: #d9b46a/);
   assert.match(css, /\.bis-title-accent \{\s*\n?\s*font-style: italic/);
   // Flanked eyebrow hairlines + the starburst backdrop + the closing divider.
   assert.match(css, /\.bis-eyebrow-line \{/);
   assert.match(css, /repeating-conic-gradient/);
-  assert.match(css, /border-bottom: 1px solid rgba\(201, 169, 98/);
+  assert.match(css, /border-bottom: 1px solid rgba\(217, 180, 106/);
   // Reduced motion is honoured.
   const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce) {", css.indexOf(".bis-section {")));
   assert.ok(reduced.includes(".bis-card:hover { transform: none; }"));
