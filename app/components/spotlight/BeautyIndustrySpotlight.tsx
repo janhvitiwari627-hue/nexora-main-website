@@ -16,9 +16,11 @@ import {
 
 /*
  * ── BEAUTY INDUSTRY SPOTLIGHT ──────────────────────────────────────────────
- * A premium, editorial video rail: the calm light-gray stage and white cards of
- * the reference design, layered with the interaction model people already know
- * from a video platform —
+ * A luxury-editorial video rail on a deep near-black stage: warm ivory serif
+ * typography, champagne-gold hairlines, dark brown cards and cinematic
+ * thumbnails — an exclusive professional beauty video editorial inside a
+ * luxury digital magazine — layered with the interaction model people already
+ * know from a video platform —
  *
  *   hover → silent preview → click → destination opens in a new tab
  *   like · comments · share · save (never opens the destination)
@@ -32,10 +34,10 @@ import {
  *    ├── SectionHeader
  *    └── BeautyVideoCarousel
  *         └── BeautyVideoCard × N
- *              ├── VideoThumbnail (poster, tier + sponsored pills, duration)
+ *              ├── VideoThumbnail (poster, duration)
  *              ├── HoverPreview   (muted clip, fade-in, quiet failure)
  *              ├── PlayButton
- *              ├── VideoMetadata  (channel, title link, category)
+ *              ├── VideoMetadata  (channel identity, title link, category)
  *              └── VideoActions   (like, comments, share, save)
  *
  * Nothing about a video is hardcoded here: pass `videos` (from an admin table,
@@ -51,15 +53,17 @@ export interface BeautyIndustrySpotlightProps {
   /** Supplies a comment thread for a card once the site's system is wired up. */
   resolveComments?: (video: BeautySpotlightVideo) => readonly BeautyVideoComment[];
   eyebrow?: string;
-  title?: string;
+  titleLead?: string;
+  titleAccent?: string;
   subtitle?: string;
 }
 
 export function BeautyIndustrySpotlight({
   videos = BEAUTY_SPOTLIGHT_VIDEOS,
   resolveComments,
-  eyebrow = "Beauty Industry",
-  title = "Beauty Industry Spotlight",
+  eyebrow = "The Professional Edit",
+  titleLead = "Beauty Industry",
+  titleAccent = "Spotlight",
   subtitle = "Discover products, brands and innovations trusted by beauty professionals.",
 }: BeautyIndustrySpotlightProps) {
   // Nothing configured → no empty stage. The section simply is not there.
@@ -72,7 +76,8 @@ export function BeautyIndustrySpotlight({
           videos={videos}
           resolveComments={resolveComments}
           eyebrow={eyebrow}
-          title={title}
+          titleLead={titleLead}
+          titleAccent={titleAccent}
           subtitle={subtitle}
         />
       </PreviewCoordinatorProvider>
@@ -86,7 +91,8 @@ interface SpotlightStageProps {
   videos: readonly BeautySpotlightVideo[];
   resolveComments?: (video: BeautySpotlightVideo) => readonly BeautyVideoComment[];
   eyebrow: string;
-  title: string;
+  titleLead: string;
+  titleAccent: string;
   subtitle: string;
 }
 
@@ -99,7 +105,8 @@ function SpotlightStage({
   videos,
   resolveComments,
   eyebrow,
-  title,
+  titleLead,
+  titleAccent,
   subtitle,
 }: SpotlightStageProps) {
   const carousel = useCarouselScroll();
@@ -108,9 +115,9 @@ function SpotlightStage({
     <section id={SECTION_ID} className="bis-section" aria-labelledby={HEADING_ID}>
       <SectionHeader
         eyebrow={eyebrow}
-        title={title}
+        titleLead={titleLead}
+        titleAccent={titleAccent}
         subtitle={subtitle}
-        total={videos.length}
         headingId={HEADING_ID}
         canPrev={carousel.canPrev}
         canNext={carousel.canNext}

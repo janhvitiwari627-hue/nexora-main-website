@@ -2111,115 +2111,160 @@ html.dark .premium-home .smart-picks-reason {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   BEAUTY INDUSTRY SPOTLIGHT — premium YouTube-style video rail
+   BEAUTY INDUSTRY SPOTLIGHT — luxury editorial dark video rail
    (app/components/spotlight/*)
    ───────────────────────────────────────────────────────────────────────────
-   Reference treatment: a calm light-gray stage, white cards, generous rounded
-   thumbnail containers, minimal shadows, editorial serif headline. On top of
-   that sits the interaction grammar people already know from a video
-   platform: poster → dwell → silent preview → play → title → channel →
+   Reference treatment: a deep near-black editorial stage with a whisper of a
+   starburst in the top corner, warm ivory type, champagne-gold accents, dark
+   brown cards and thin gold hairlines — a professional beauty video editorial
+   inside a luxury digital magazine. On top of that sits the interaction
+   grammar people already know from a video platform:
+   poster → dwell → silent preview → play → title → channel →
    like / comments / share / save.
 
    Layout is pure CSS (flex-basis + scroll-snap), so the per-breakpoint card
    count never depends on JS measurement and cannot desync on resize:
      mobile   1 card + peek        (≥720px)  2 cards + peek
      (≥1120px) 3 cards + peek
-   Every token below is re-declared under html.dark so the section reads
-   correctly in the site's default dark theme as well as the light one.
+   The section carries its own dark palette in both site themes: the editorial
+   stage is the design, not a theme toggle.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ---- Section stage ------------------------------------------------------- */
 .bis-section {
-  --bis-stage: #f7f5f6;
-  --bis-card-bg: #ffffff;
-  --bis-card-line: #ebe4e8;
-  --bis-ink: #24191d;
-  --bis-muted: #6d5960;
-  --bis-accent: var(--premium-primary, #8e004b);
+  --bis-stage: #0f0d0b;
+  --bis-card-bg: #171310;
+  --bis-card-line: rgba(203, 170, 120, 0.15);
+  --bis-ink: #f3ecdf;
+  --bis-muted: #a8977f;
+  --bis-accent: #c9a962;
+  --bis-gold-soft: rgba(201, 169, 98, 0.12);
   --bis-gap: 20px;
   --bis-per-view: 1;
   --bis-peek: 26px;
-  --bis-radius: 20px;
+  --bis-radius: 18px;
   position: relative;
-  padding: clamp(56px, 7vw, 92px) clamp(20px, 7vw, 110px) clamp(46px, 6vw, 78px);
-  background: var(--bis-stage);
+  padding: clamp(64px, 8vw, 108px) clamp(20px, 7vw, 110px) clamp(48px, 6vw, 80px);
+  /* Near-black with a barely-there tonal drift — never a bright gradient. */
+  background:
+    radial-gradient(120% 90% at 88% -12%, rgba(58, 44, 32, 0.35) 0%, transparent 58%),
+    radial-gradient(90% 70% at -8% 112%, rgba(38, 32, 22, 0.5) 0%, transparent 55%),
+    var(--bis-stage);
+  /* The brief's thin horizontal divider closing the section. */
+  border-bottom: 1px solid rgba(201, 169, 98, 0.13);
   color: var(--bis-ink);
   font-family: Inter, Arial, Helvetica, sans-serif;
+  overflow: hidden;
 }
+/* Extremely subtle oversized starburst, top-right, under the content. */
+.bis-section::before {
+  content: "";
+  position: absolute;
+  top: -280px;
+  right: -220px;
+  width: 660px;
+  height: 660px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    from 0deg,
+    rgba(201, 169, 98, 0.055) 0deg 1.1deg,
+    transparent 1.1deg 7.4deg
+  );
+  -webkit-mask-image: radial-gradient(closest-side, rgba(0, 0, 0, 0.95), transparent 74%);
+  mask-image: radial-gradient(closest-side, rgba(0, 0, 0, 0.95), transparent 74%);
+  pointer-events: none;
+}
+.bis-header,
+.bis-viewport,
+.bis-hint { position: relative; z-index: 1; }
 
-/* ---- Header + arrow controls -------------------------------------------- */
+/* ---- Header: eyebrow, editorial serif title, pill controls ---------------- */
 .bis-header {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 26px;
+  gap: 28px;
   flex-wrap: wrap;
-  margin-bottom: 26px;
+  margin-bottom: 30px;
 }
 .bis-header-copy { min-width: 0; }
 .bis-eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
   color: var(--bis-accent);
-  font-size: 11px;
-  font-weight: 850;
-  letter-spacing: .15em;
-  text-transform: uppercase;
-}
-.bis-eyebrow-count {
-  padding: 3px 10px;
-  border: 1px solid #e6d7de;
-  border-radius: 999px;
-  background: #fff;
-  color: #7d666f;
   font-size: 10.5px;
-  font-weight: 750;
-  letter-spacing: .05em;
+  font-weight: 700;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* Thin champagne hairlines flanking the eyebrow, fading outward. */
+.bis-eyebrow-line {
+  width: clamp(26px, 4vw, 52px);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(201, 169, 98, 0.75));
+}
+.bis-eyebrow-line--right {
+  background: linear-gradient(270deg, transparent, rgba(201, 169, 98, 0.75));
 }
 .bis-header h2 {
-  margin: 9px 0 10px;
+  margin: 16px 0 12px;
   font-family: "Playfair Display", Georgia, serif;
-  font-size: clamp(28px, 3.4vw, 42px);
-  line-height: 1.08;
-  letter-spacing: -.03em;
+  font-size: clamp(32px, 3.9vw, 50px);
+  font-weight: 700;
+  line-height: 1.06;
+  letter-spacing: -0.015em;
   color: var(--bis-ink);
+}
+/* "Beauty Industry" in warm ivory, "Spotlight" in italic champagne. */
+.bis-title-lead { color: var(--bis-ink); }
+.bis-title-accent {
+  font-style: italic;
+  color: var(--bis-accent);
 }
 .bis-subtitle {
   margin: 0;
   max-width: 58ch;
-  color: var(--bis-muted);
-  font-size: 14.5px;
-  line-height: 1.65;
+  color: #b3a58f;
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0.015em;
+  line-height: 1.7;
 }
 .bis-controls { display: flex; flex: none; gap: 10px; }
 .bis-arrow {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  min-height: 42px;
-  padding: 0 17px;
-  border: 1px solid #e3d6dd;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 18px;
+  border: 1px solid rgba(201, 169, 98, 0.3);
   border-radius: 999px;
-  background: #fff;
-  color: #3a2b32;
-  font-size: 13px;
-  font-weight: 750;
-  box-shadow: 0 2px 8px rgba(60, 32, 44, .05);
-  transition: transform .2s ease, background-color .2s ease, border-color .2s ease, color .2s ease;
+  background: rgba(255, 255, 255, 0.015);
+  color: #e8ddc6;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
-.bis-arrow-icon { width: 17px; height: 17px; }
+.bis-arrow-icon { width: 16px; height: 16px; }
 .bis-arrow:hover:not(:disabled) {
   transform: translateY(-1px);
-  border-color: #d9b3c6;
-  background: #fffafc;
-  color: var(--bis-accent);
+  border-color: rgba(201, 169, 98, 0.6);
+  background: var(--bis-gold-soft);
+  color: #f0e6cf;
 }
 .bis-arrow:active:not(:disabled) { transform: translateY(0); }
 .bis-arrow:disabled {
-  opacity: .45;
+  opacity: 0.35;
   cursor: not-allowed;
-  box-shadow: none;
+}
+/* Next carries the slightly stronger outlined treatment. */
+.bis-arrow--next {
+  border-color: rgba(201, 169, 98, 0.58);
+  background: rgba(201, 169, 98, 0.06);
+  color: var(--bis-accent);
 }
 .bis-arrow:focus-visible,
 .bis-action:focus-visible,
@@ -2266,7 +2311,7 @@ html.dark .premium-home .smart-picks-reason {
   width: 46px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity .3s ease;
+  transition: opacity 0.3s ease;
 }
 .bis-fade--left { left: 0; background: linear-gradient(90deg, var(--bis-stage), transparent); }
 .bis-fade--right { right: 0; background: linear-gradient(270deg, var(--bis-stage), transparent); }
@@ -2278,22 +2323,22 @@ html.dark .premium-home .smart-picks-reason {
   display: flex;
   flex: 0 0 var(--_card);
   flex-direction: column;
-  padding: 13px 13px 11px;
+  padding: 12px 12px 10px;
   border: 1px solid var(--bis-card-line);
   border-radius: var(--bis-radius);
   background: var(--bis-card-bg);
-  box-shadow: 0 8px 24px rgba(60, 32, 44, .05);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
   scroll-snap-align: start;
-  transition: transform .28s ease, box-shadow .28s ease, border-color .28s ease;
+  transition: transform 0.28s ease, box-shadow 0.28s ease, border-color 0.28s ease;
 }
 .bis-card:hover {
-  transform: translateY(-4px);
-  border-color: #e2d3da;
-  box-shadow: 0 16px 34px rgba(60, 32, 44, .09);
+  transform: translateY(-5px);
+  border-color: rgba(203, 170, 120, 0.34);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5);
 }
 .bis-thumb-shell { position: relative; }
 
-/* ---- Badge row: tier pill + sponsorship disclosure ---------------------- */
+/* ---- Badge strip: tier + sponsorship disclosure -------------------------- */
 .bis-badges {
   display: flex;
   align-items: center;
@@ -2306,41 +2351,41 @@ html.dark .premium-home .smart-picks-reason {
   padding: 4px 11px;
   border: 1px solid transparent;
   border-radius: 999px;
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: .1em;
+  font-size: 9.5px;
+  font-weight: 750;
+  letter-spacing: 0.18em;
   white-space: nowrap;
 }
 .bis-tier--diamond {
-  border-color: #cddcf3;
-  background: linear-gradient(135deg, #f4f8ff, #dde9fb);
-  color: #2f4d76;
+  border-color: rgba(147, 177, 214, 0.4);
+  background: rgba(147, 177, 214, 0.06);
+  color: #b9cde8;
 }
 .bis-tier--platinum {
-  border-color: #d9d6de;
-  background: linear-gradient(135deg, #f7f6f8, #e6e4ea);
-  color: #4a4753;
+  border-color: rgba(214, 210, 200, 0.34);
+  background: rgba(214, 210, 200, 0.05);
+  color: #d9d4c8;
 }
 .bis-tier--gold {
-  border-color: #e9d3a4;
-  background: linear-gradient(135deg, #fff6e3, #f6e3bd);
-  color: #7a5a17;
+  border-color: rgba(201, 169, 98, 0.46);
+  background: rgba(201, 169, 98, 0.07);
+  color: #d9b877;
 }
 .bis-sponsored {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   padding: 4px 10px;
-  border: 1px solid #3b2630;
+  border: 1px solid rgba(201, 169, 98, 0.24);
   border-radius: 999px;
-  background: linear-gradient(135deg, #2b1a22, #191015);
-  color: #ffd9ea;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: .08em;
+  background: rgba(30, 23, 17, 0.9);
+  color: #c8b598;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
   white-space: nowrap;
 }
-.bis-sponsored > span { color: #ff7ab8; }
+.bis-sponsored > span { color: var(--bis-accent); }
 
 /* ---- Thumbnail ----------------------------------------------------------- */
 .bis-thumb-link { display: block; }
@@ -2354,14 +2399,14 @@ button.bis-thumb-link {
   text-align: left;
 }
 .bis-thumb-link--unavailable { cursor: not-allowed; }
-.bis-thumb-link--unavailable .bis-thumb { opacity: .94; }
+.bis-thumb-link--unavailable .bis-thumb { opacity: 0.92; }
 .bis-thumb {
   position: relative;
   display: block;
   aspect-ratio: 16 / 9;
   overflow: hidden;
-  border-radius: 16px;
-  background: #ece7ea;
+  border-radius: 12px;
+  background: #241d16;
   isolation: isolate;
 }
 .bis-thumb-img,
@@ -2375,7 +2420,7 @@ button.bis-thumb-link {
 }
 .bis-thumb-img {
   opacity: 0;
-  transition: opacity .45s ease, transform .45s ease;
+  transition: opacity 0.45s ease, transform 0.45s ease;
 }
 .bis-thumb-img[data-loaded="true"] { opacity: 1; }
 .bis-card:hover .bis-thumb-img,
@@ -2386,15 +2431,16 @@ button.bis-thumb-link {
   align-items: center;
   justify-content: center;
   gap: 11px;
-  transition: transform .45s ease;
+  transition: transform 0.45s ease;
 }
-.bis-poster--diamond { background: radial-gradient(120% 100% at 20% 8%, #f4f8ff 0%, #e2ebf8 45%, #ccd9ec 100%); }
-.bis-poster--platinum { background: radial-gradient(120% 100% at 20% 8%, #f8f7f9 0%, #e8e6ec 45%, #d3d0da 100%); }
-.bis-poster--gold { background: radial-gradient(120% 100% at 20% 8%, #fff8ec 0%, #f7e7c8 45%, #e9d2a4 100%); }
+/* Unconfigured slots keep a cinematic dark fallback poster, tier-tinted. */
+.bis-poster--diamond { background: radial-gradient(125% 110% at 25% 8%, #232a36 0%, #161b24 46%, #0f1218 100%); }
+.bis-poster--platinum { background: radial-gradient(125% 110% at 25% 8%, #272320 0%, #1a1614 46%, #111010 100%); }
+.bis-poster--gold { background: radial-gradient(125% 110% at 25% 8%, #2c2214 0%, #1e1710 46%, #131009 100%); }
 .bis-poster-glow {
   position: absolute;
   inset: 0;
-  background: radial-gradient(58% 58% at 78% 16%, rgba(255, 255, 255, .72), transparent 70%);
+  background: radial-gradient(58% 58% at 78% 14%, rgba(233, 220, 190, 0.08), transparent 70%);
 }
 .bis-poster-mono {
   position: relative;
@@ -2402,31 +2448,28 @@ button.bis-thumb-link {
   place-items: center;
   width: 54px;
   height: 54px;
-  border: 1px solid rgba(255, 255, 255, .92);
+  border: 1px solid rgba(233, 222, 199, 0.3);
   border-radius: 50%;
-  background: rgba(255, 255, 255, .7);
-  box-shadow: 0 8px 20px rgba(60, 32, 44, .12);
-  color: #3a2b32;
+  background: rgba(233, 222, 199, 0.05);
+  color: #eadfc6;
   font-family: "Playfair Display", Georgia, serif;
   font-size: 20px;
   font-weight: 700;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
 }
 .bis-poster-brand {
   position: relative;
   padding: 0 14px;
-  color: #5b4750;
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: .09em;
+  color: #b9a990;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   text-align: center;
   text-transform: uppercase;
 }
 .bis-thumb-skeleton {
   position: absolute;
   inset: 0;
-  background: linear-gradient(100deg, #ece7ea 30%, #f6f1f4 50%, #ece7ea 70%);
+  background: linear-gradient(100deg, #1d1815 30%, #272018 50%, #1d1815 70%);
   background-size: 220% 100%;
   animation: bisShimmer 1.5s ease-in-out infinite;
 }
@@ -2435,11 +2478,13 @@ button.bis-thumb-link {
 /* Silent hover preview: one opacity ramp, no flashing. */
 .bis-preview {
   opacity: 0;
-  transition: opacity .3s ease;
+  transition: opacity 0.3s ease;
 }
 .bis-preview[data-ready="true"] { opacity: 1; }
 
-/* Play button: white disc, dark glyph, grows on hover, steps back on preview. */
+/* Play control: outlined cinematic ring — outer ivory ring, inner champagne
+   ring, translucent dark centre, small ivory triangle. Grows on hover and
+   steps back while the silent preview plays. */
 .bis-play {
   position: absolute;
   top: 50%;
@@ -2447,52 +2492,100 @@ button.bis-thumb-link {
   translate: -50% -50%;
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
+  width: 66px;
+  height: 66px;
+  border: 1px solid rgba(240, 231, 210, 0.5);
   border-radius: 50%;
-  background: rgba(255, 255, 255, .96);
-  box-shadow: 0 10px 26px rgba(30, 12, 22, .28);
-  color: #191018;
-  transition: width .25s ease, height .25s ease, transform .25s ease, opacity .25s ease;
+  background: rgba(14, 11, 9, 0.52);
+  box-shadow: 0 6px 26px rgba(0, 0, 0, 0.45), inset 0 0 20px rgba(0, 0, 0, 0.35);
+  color: #f2ead9;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  transition: width 0.25s ease, height 0.25s ease, transform 0.25s ease, opacity 0.25s ease, border-color 0.25s ease;
 }
-.bis-play svg { width: 26px; height: 26px; margin-left: 3px; }
-.bis-thumb-shell:hover .bis-play { transform: scale(1.08); }
-.bis-play[data-previewing="true"] { width: 44px; height: 44px; opacity: .9; }
-.bis-play[data-previewing="true"] svg { width: 18px; height: 18px; margin-left: 2px; }
+.bis-play::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border: 1px solid rgba(201, 169, 98, 0.55);
+  border-radius: 50%;
+  transition: border-color 0.25s ease;
+}
+.bis-play svg {
+  width: 21px;
+  height: 21px;
+  margin-left: 3px;
+  fill: #f2ead9;
+  transition: transform 0.25s ease;
+}
+.bis-thumb-shell:hover .bis-play {
+  transform: scale(1.07);
+  border-color: rgba(240, 231, 210, 0.85);
+}
+.bis-thumb-shell:hover .bis-play::before { border-color: rgba(222, 192, 128, 0.9); }
+.bis-thumb-shell:hover .bis-play svg { transform: scale(1.06); }
+.bis-play[data-previewing="true"] { width: 46px; height: 46px; opacity: 0.9; }
+.bis-play[data-previewing="true"] svg { width: 17px; height: 17px; margin-left: 2px; }
 
 /* Duration pill (bottom-right, platform-style). */
 .bis-duration {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
+  right: 9px;
+  bottom: 9px;
   padding: 3px 7px;
-  border-radius: 7px;
-  background: rgba(11, 7, 10, .82);
-  color: #fff;
-  font-size: 11.5px;
-  font-weight: 750;
-  letter-spacing: .02em;
+  border-radius: 6px;
+  background: rgba(9, 7, 5, 0.8);
+  color: #f4ecdc;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
   font-variant-numeric: tabular-nums;
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
 }
 
-/* ---- Metadata ------------------------------------------------------------ */
+/* ---- Metadata: channel identity, title, category ------------------------- */
 .bis-meta { padding: 13px 2px 0; }
-.bis-brand {
-  margin: 0;
-  color: #4b3a42;
-  font-size: 12.5px;
-  font-weight: 800;
-  letter-spacing: .01em;
+.bis-channel {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 8px;
 }
+.bis-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 27px;
+  height: 27px;
+  border: 1px solid rgba(201, 169, 98, 0.42);
+  border-radius: 50%;
+  background: rgba(201, 169, 98, 0.07);
+  color: #d9c294;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.bis-avatar--diamond { border-color: rgba(147, 177, 214, 0.45); background: rgba(147, 177, 214, 0.08); color: #c3d4ea; }
+.bis-avatar--platinum { border-color: rgba(214, 210, 200, 0.4); background: rgba(214, 210, 200, 0.07); color: #ddd8cc; }
+.bis-avatar--gold { border-color: rgba(201, 169, 98, 0.5); background: rgba(201, 169, 98, 0.09); color: #dcc084; }
+.bis-channel-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #cbbba2;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.bis-brand { color: inherit; }
+.bis-verified { flex: none; width: 13px; height: 13px; color: var(--bis-accent); }
 .bis-title {
-  margin: 3px 0 5px;
-  color: var(--bis-ink);
-  font-size: 15.5px;
-  font-weight: 750;
-  line-height: 1.35;
-  letter-spacing: -.01em;
+  margin: 0 0 6px;
+  color: #f4ecdd;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.42;
+  letter-spacing: 0;
 }
 .bis-title-link {
   /* Two-line clamp keeps every card the same height: no row reflow. */
@@ -2503,7 +2596,7 @@ button.bis-thumb-link {
   overflow: hidden;
   color: inherit;
   text-decoration: none;
-  transition: color .2s ease;
+  transition: color 0.2s ease;
 }
 a.bis-title-link:hover { color: var(--bis-accent); }
 /* Unconfigured watch link: same box, honest disabled state. */
@@ -2514,16 +2607,27 @@ button.bis-title-link {
   background: none;
   font: inherit;
   text-align: left;
-  color: #8a7a82;
+  color: #97886f;
   cursor: not-allowed;
 }
 .bis-category {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
-  color: #9a8790;
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: .07em;
+  color: #c0a469;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
+}
+/* Thin decorative champagne line preceding the category. */
+.bis-category::before {
+  content: "";
+  flex: none;
+  width: 16px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(201, 169, 98, 0.8));
 }
 
 /* ---- Interaction row ----------------------------------------------------- */
@@ -2533,9 +2637,9 @@ button.bis-title-link {
   gap: 4px;
   margin-top: auto;
   padding: 11px 0 1px;
-  border-top: 1px solid #f1eaee;
+  border-top: 1px solid rgba(203, 170, 120, 0.13);
 }
-.bis-meta + .bis-actions { margin-top: 12px; }
+.bis-meta + .bis-actions { margin-top: 13px; }
 .bis-action {
   display: inline-flex;
   align-items: center;
@@ -2545,20 +2649,20 @@ button.bis-title-link {
   border: 1px solid transparent;
   border-radius: 10px;
   background: none;
-  color: var(--bis-muted);
-  font-size: 12px;
-  font-weight: 750;
-  transition: background-color .2s ease, color .2s ease, border-color .2s ease;
+  color: #b7a68d;
+  font-size: 11.5px;
+  font-weight: 700;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 .bis-action-icon { width: 15px; height: 15px; flex: none; }
 .bis-action:hover {
-  border-color: #f0e2e9;
-  background: #faf4f7;
+  border-color: rgba(201, 169, 98, 0.24);
+  background: var(--bis-gold-soft);
   color: var(--bis-accent);
 }
 .bis-action[aria-pressed="true"] {
-  border-color: #f3d5e2;
-  background: #fff2f7;
+  border-color: rgba(201, 169, 98, 0.34);
+  background: rgba(201, 169, 98, 0.14);
   color: var(--bis-accent);
 }
 .bis-action-icon[data-filled="true"] { fill: currentColor; }
@@ -2570,27 +2674,27 @@ button.bis-title-link {
   position: fixed;
   z-index: 90;
   padding: 12px;
-  border: 1px solid #e8dee3;
-  border-radius: 16px;
-  background: #fff;
-  box-shadow: 0 24px 60px rgba(45, 20, 32, .18);
-  animation: bisPopoverIn .16s ease-out both;
+  border: 1px solid rgba(203, 170, 120, 0.22);
+  border-radius: 14px;
+  background: #1c1613;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6);
+  animation: bisPopoverIn 0.16s ease-out both;
 }
 @keyframes bisPopoverIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 .bis-panel { display: grid; gap: 10px; }
 .bis-panel-head { display: flex; align-items: center; gap: 8px; }
 .bis-panel-title {
   margin: 0;
-  color: var(--bis-ink, #24191d);
+  color: #f3ecdf;
   font-size: 13.5px;
   font-weight: 800;
 }
 .bis-panel-count {
   padding: 2px 8px;
-  border: 1px solid #eee1e7;
+  border: 1px solid rgba(203, 170, 120, 0.2);
   border-radius: 999px;
-  background: #fbf6f8;
-  color: #7d666f;
+  background: rgba(201, 169, 98, 0.06);
+  color: #c0a469;
   font-size: 11px;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
@@ -2604,27 +2708,31 @@ button.bis-title-link {
   border: 1px solid transparent;
   border-radius: 9px;
   background: none;
-  color: #7d666f;
+  color: #a8977f;
 }
-.bis-panel-close:hover { border-color: #f0e2e9; background: #faf4f7; color: var(--bis-accent); }
+.bis-panel-close:hover {
+  border-color: rgba(201, 169, 98, 0.24);
+  background: var(--bis-gold-soft);
+  color: var(--bis-accent);
+}
 .bis-panel-close-icon { width: 15px; height: 15px; }
 .bis-panel-empty {
   margin: 0;
-  color: #7d666f;
+  color: #a8977f;
   font-size: 12.5px;
   line-height: 1.6;
 }
 .bis-panel-note {
   margin: 0;
-  color: #a08f97;
+  color: #8d7d69;
   font-size: 11px;
   line-height: 1.55;
 }
 .bis-thread { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
 .bis-thread-item { display: grid; gap: 3px; }
-.bis-thread-author { color: #24191d; font-size: 12px; font-weight: 800; }
-.bis-thread-when { color: #a08f97; font-size: 10.5px; }
-.bis-thread-body { margin: 0; color: #5f4c55; font-size: 12.5px; line-height: 1.55; }
+.bis-thread-author { color: #f3ecdf; font-size: 12px; font-weight: 800; }
+.bis-thread-when { color: #8d7d69; font-size: 10.5px; }
+.bis-thread-body { margin: 0; color: #c4b49c; font-size: 12.5px; line-height: 1.55; }
 .bis-panel--share { gap: 2px; }
 .bis-share-item {
   display: flex;
@@ -2636,18 +2744,18 @@ button.bis-title-link {
   border: 1px solid transparent;
   border-radius: 11px;
   background: none;
-  color: #3a2b32;
+  color: #e4d9c2;
   font-size: 12.5px;
   font-weight: 750;
   text-align: left;
-  transition: background-color .18s ease, border-color .18s ease, color .18s ease;
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 .bis-share-item:hover:not(:disabled) {
-  border-color: #f0e2e9;
-  background: #faf4f7;
+  border-color: rgba(201, 169, 98, 0.24);
+  background: var(--bis-gold-soft);
   color: var(--bis-accent);
 }
-.bis-share-item:disabled { color: #a89aa1; cursor: not-allowed; }
+.bis-share-item:disabled { color: #786b58; cursor: not-allowed; }
 .bis-share-icon { display: grid; place-items: center; width: 18px; height: 18px; flex: none; }
 .bis-share-icon svg { width: 16px; height: 16px; fill: currentColor; }
 .bis-share-label { min-width: 0; }
@@ -2658,10 +2766,11 @@ button.bis-title-link {
   .bis-hint-hover { display: none; }
 }
 .bis-hint {
-  margin: 16px 0 0;
-  color: #9a8790;
+  margin: 18px 0 0;
+  color: #8d7d69;
   font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0.01em;
 }
 .bis-toast {
   position: fixed;
@@ -2670,17 +2779,18 @@ button.bis-title-link {
   z-index: 95;
   margin: 0;
   padding: 11px 18px;
+  border: 1px solid rgba(201, 169, 98, 0.35);
   border-radius: 999px;
-  background: #24191d;
-  color: #fff;
+  background: #1f1913;
+  color: #f0e6cf;
   font-size: 12.5px;
   font-weight: 750;
-  box-shadow: 0 16px 40px rgba(20, 8, 15, .28);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
   pointer-events: none;
   opacity: 0;
   visibility: hidden;
   transform: translate(-50%, 12px);
-  transition: opacity .22s ease, transform .22s ease, visibility .22s;
+  transition: opacity 0.22s ease, transform 0.22s ease, visibility 0.22s;
 }
 .bis-toast[data-visible="true"] {
   opacity: 1;
@@ -2697,104 +2807,28 @@ button.bis-title-link {
 }
 @media (max-width: 560px) {
   .bis-section { padding-inline: 16px; }
-  .bis-arrow { padding: 0 12px; }
+  .bis-arrow { padding: 0 13px; }
   .bis-arrow-label { display: none; }
-  .bis-play { width: 56px; height: 56px; }
-  .bis-play svg { width: 22px; height: 22px; }
-  .bis-card { padding: 11px 11px 9px; }
-  .bis-header { margin-bottom: 20px; }
+  .bis-play { width: 58px; height: 58px; }
+  .bis-play svg { width: 18px; height: 18px; }
+  .bis-card { padding: 10px 10px 8px; }
+  .bis-header { margin-bottom: 22px; }
   .bis-controls { width: 100%; justify-content: space-between; }
+  /* Keep the flanked eyebrow on one comfortable line on small phones. */
+  .bis-eyebrow { gap: 10px; letter-spacing: 0.2em; }
+  .bis-eyebrow-line { width: 16px; }
 }
 
-/* ---- Dark theme ---------------------------------------------------------- */
+/* ---- Site dark theme ------------------------------------------------------
+   The section is already an editorial dark stage; the site's dark theme only
+   deepens the stage a step so it never reads lighter than its page. */
 html.dark .bis-section {
-  --bis-stage: #0d0d12;
-  --bis-card-bg: #14141b;
-  --bis-card-line: #26262f;
-  --bis-ink: #f5f5f7;
-  --bis-muted: #a0a0b0;
-  --bis-accent: #ff8fc0;
-  background: #0d0d12;
+  --bis-stage: #0c0a09;
+  background:
+    radial-gradient(120% 90% at 88% -12%, rgba(50, 38, 28, 0.32) 0%, transparent 58%),
+    radial-gradient(90% 70% at -8% 112%, rgba(32, 27, 19, 0.45) 0%, transparent 55%),
+    #0c0a09;
 }
-html.dark .bis-eyebrow-count {
-  border-color: #2c2c37;
-  background: #17171f;
-  color: #a8a4b0;
-}
-html.dark .bis-subtitle,
-html.dark .bis-hint { color: #9b97a4; }
-html.dark .bis-arrow {
-  border-color: #2c2c37;
-  background: #17171f;
-  color: #e8e4ec;
-  box-shadow: none;
-}
-html.dark .bis-arrow:hover:not(:disabled) {
-  border-color: #5a3a4a;
-  background: #1e1e28;
-  color: #ffb0c8;
-}
-html.dark .bis-card { box-shadow: 0 8px 24px rgba(0, 0, 0, .35); }
-html.dark .bis-card:hover {
-  border-color: #3a3a46;
-  box-shadow: 0 16px 34px rgba(0, 0, 0, .45);
-}
-html.dark .bis-thumb { background: #1b1b23; }
-html.dark .bis-thumb-skeleton {
-  background: linear-gradient(100deg, #1b1b23 30%, #23232c 50%, #1b1b23 70%);
-  background-size: 220% 100%;
-}
-/* Keep the bright tier posters from glaring out of a dark card. */
-html.dark .bis-poster { filter: saturate(.72) brightness(.78); }
-html.dark .bis-poster-mono {
-  border-color: rgba(255, 255, 255, .18);
-  background: rgba(255, 255, 255, .14);
-  color: #f0e9ee;
-}
-html.dark .bis-poster-brand { color: #cfc7cd; }
-html.dark .bis-tier--diamond { border-color: #3c5878; background: linear-gradient(135deg, #223244, #1b2733); color: #b8cdec; }
-html.dark .bis-tier--platinum { border-color: #44424c; background: linear-gradient(135deg, #2a2932, #212029); color: #cfccd8; }
-html.dark .bis-tier--gold { border-color: #6b5526; background: linear-gradient(135deg, #3a2f18, #2c2413); color: #eed7a1; }
-html.dark .bis-sponsored {
-  border-color: #5a2f42;
-  background: linear-gradient(135deg, #3a1d2c, #25121b);
-  color: #ffd0e4;
-}
-html.dark .bis-play { background: rgba(255, 255, 255, .94); color: #14101a; }
-html.dark .bis-brand { color: #d7d3da; }
-html.dark .bis-category { color: #8b8794; }
-html.dark button.bis-title-link { color: #7f7b88; }
-html.dark .bis-actions { border-top-color: #26262f; }
-html.dark .bis-action:hover {
-  border-color: #33333f;
-  background: #1d1d26;
-  color: #ff9ec7;
-}
-html.dark .bis-action[aria-pressed="true"] {
-  border-color: #4a2c3c;
-  background: #26181f;
-  color: #ff8fc0;
-}
-html.dark .bis-popover {
-  border-color: #2c2c37;
-  background: #17171f;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
-}
-html.dark .bis-panel-count { border-color: #33333f; background: #1f1f29; color: #a8a4b0; }
-html.dark .bis-panel-empty { color: #a0a0b0; }
-html.dark .bis-panel-note { color: #807c89; }
-html.dark .bis-panel-close { color: #a0a0b0; }
-html.dark .bis-panel-close:hover { border-color: #33333f; background: #1f1f29; color: #ff9ec7; }
-html.dark .bis-thread-author { color: #f5f5f7; }
-html.dark .bis-thread-body { color: #b6b2bd; }
-html.dark .bis-share-item { color: #e8e4ec; }
-html.dark .bis-share-item:hover:not(:disabled) {
-  border-color: #33333f;
-  background: #1f1f29;
-  color: #ff9ec7;
-}
-html.dark .bis-share-item:disabled { color: #6f6b78; }
-html.dark .bis-toast { background: #f5f5f7; color: #13131a; }
 
 /* ---- Reduced motion ------------------------------------------------------
    The preview itself is content (it still plays when hovered) but every

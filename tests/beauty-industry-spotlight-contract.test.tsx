@@ -66,17 +66,17 @@ test("renders all ten beauty-industry slots in order", () => {
   const expected = [
     "Nexora Luxe",
     "Nexora Salon",
+    "Wahl Professional",
     "L'Oréal Professionnel",
     "Schwarzkopf Professional",
     "Dyson Beauty",
     "Wella Professionals",
     "Olaplex",
     "Moroccanoil",
-    "Matrix Professional",
-    "Redken",
+    "Lakmé Salon",
   ];
   assert.equal(BEAUTY_SPOTLIGHT_VIDEOS.length, 10);
-  const positions = expected.map((brand) => sectionHtml.indexOf(`>${esc(brand)}</p>`));
+  const positions = expected.map((brand) => sectionHtml.indexOf(`>${esc(brand)}</span>`));
   positions.forEach((position, index) => {
     assert.ok(position > -1, `${expected[index]} must render as a channel byline`);
   });
@@ -87,7 +87,13 @@ test("renders all ten beauty-industry slots in order", () => {
 });
 
 test("section header carries the briefed title, subtitle and arrows", () => {
-  assert.match(sectionHtml, /Beauty Industry Spotlight/);
+  // "Beauty Industry" in ivory, "Spotlight" in italic champagne — two spans,
+  // one serif headline.
+  assert.match(sectionHtml, /class="bis-title-lead">Beauty Industry<\/span>/);
+  assert.match(sectionHtml, /class="bis-title-accent">Spotlight<\/span>/);
+  // The flanked editorial eyebrow.
+  assert.match(sectionHtml, /class="bis-eyebrow-line"/);
+  assert.match(sectionHtml, /The Professional Edit/i);
   assert.match(
     sectionHtml,
     /Discover products, brands and innovations trusted by beauty professionals\./,
@@ -147,6 +153,10 @@ test("channel, title and category all render from the data row", () => {
   assert.ok(sectionHtml.includes(`>${first.category}</p>`), "category renders");
   assert.match(sectionHtml, /class="bis-title"/);
   assert.match(sectionHtml, /class="bis-category"/);
+  // Channel identity: circular avatar with the brand monogram + tiny seal.
+  assert.match(sectionHtml, /class="bis-channel"/);
+  assert.match(sectionHtml, /class="bis-avatar bis-avatar--\w+"/);
+  assert.match(sectionHtml, /class="bis-verified"/);
 });
 
 /* ── Accessibility labels ────────────────────────────────────────────────── */
@@ -313,6 +323,14 @@ test("globals.css carries the section's responsive and motion contract", async (
   assert.match(css, /scroll-snap-type: x mandatory/);
   // Dark theme (the site default) must cover the section.
   assert.match(css, /html\.dark \.bis-section \{/);
+  // Luxury editorial tokens: near-black stage, champagne accent, italic serif accent.
+  assert.match(css, /--bis-stage: #0f0d0b/);
+  assert.match(css, /--bis-accent: #c9a962/);
+  assert.match(css, /\.bis-title-accent \{\s*\n?\s*font-style: italic/);
+  // Flanked eyebrow hairlines + the starburst backdrop + the closing divider.
+  assert.match(css, /\.bis-eyebrow-line \{/);
+  assert.match(css, /repeating-conic-gradient/);
+  assert.match(css, /border-bottom: 1px solid rgba\(201, 169, 98/);
   // Reduced motion is honoured.
   const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce) {", css.indexOf(".bis-section {")));
   assert.ok(reduced.includes(".bis-card:hover { transform: none; }"));
