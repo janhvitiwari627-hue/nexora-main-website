@@ -1,16 +1,30 @@
+import { Suspense, lazy } from 'react';
 import { SalonData, getPublicStaffData } from '../types';
 import { getSalonNameStyle } from '../lib/brandIdentity';
 import { getReadableTextColor, withHexAlpha } from '../lib/websiteCustomization';
 import { normalizeThemeId } from '../lib/themeServices';
 import { DEFAULT_BRAND_CONFIG } from '../config/brandConfig';
 import OwnerAvatar from './OwnerAvatar';
-import BarberTemplateRenderer from './BarberTemplateRenderer';
-import HairStudioTemplateRenderer from './HairStudioTemplateRenderer';
-import BeautySpaTemplateRenderer from './BeautySpaTemplateRenderer';
-import FamilyFullServiceTemplateRenderer from './FamilyFullServiceTemplateRenderer';
-import NailLashStudioTemplateRenderer from './NailLashStudioTemplateRenderer';
 import { BundlePrice, ServicePrice } from './PromotionalPricing';
 import { Sparkles, Phone, MessageCircle, CalendarCheck, MapPin, Clock, Navigation, Instagram, Facebook, Youtube, Video, Heart, ExternalLink, CreditCard } from 'lucide-react';
+
+// The five full-site theme renderers are code-split: a visitor only downloads
+// the renderer for the theme the salon actually uses.
+const BarberTemplateRenderer = lazy(() => import('./BarberTemplateRenderer'));
+const HairStudioTemplateRenderer = lazy(() => import('./HairStudioTemplateRenderer'));
+const BeautySpaTemplateRenderer = lazy(() => import('./BeautySpaTemplateRenderer'));
+const FamilyFullServiceTemplateRenderer = lazy(() => import('./FamilyFullServiceTemplateRenderer'));
+const NailLashStudioTemplateRenderer = lazy(() => import('./NailLashStudioTemplateRenderer'));
+
+/** Placeholder shown while a lazy theme renderer chunk downloads. */
+function TemplateFallback() {
+  return (
+    <div className="w-full h-full min-h-[600px] flex items-center justify-center bg-gray-50 text-xs font-bold uppercase tracking-wider text-gray-400">
+      Loading template…
+    </div>
+  );
+}
+
 
 interface Props {
   data: SalonData;
@@ -23,19 +37,39 @@ export default function TemplateRenderer({ data, mode }: Props) {
   // The Barber, Hair Studio and Beauty/Spa themes are fully separate renderers —
   // not colour variations of the other themes. Render each through its own component.
   if (templateId === 'barber_mens_grooming') {
-    return <BarberTemplateRenderer data={data} mode={mode} />;
+    return (
+      <Suspense fallback={<TemplateFallback />}>
+        <BarberTemplateRenderer data={data} mode={mode} />
+      </Suspense>
+    );
   }
   if (templateId === 'hair_studio_color_bar') {
-    return <HairStudioTemplateRenderer data={data} mode={mode} />;
+    return (
+      <Suspense fallback={<TemplateFallback />}>
+        <HairStudioTemplateRenderer data={data} mode={mode} />
+      </Suspense>
+    );
   }
   if (templateId === 'beauty_skin_spa') {
-    return <BeautySpaTemplateRenderer data={data} mode={mode} />;
+    return (
+      <Suspense fallback={<TemplateFallback />}>
+        <BeautySpaTemplateRenderer data={data} mode={mode} />
+      </Suspense>
+    );
   }
   if (templateId === 'family_full_service') {
-    return <FamilyFullServiceTemplateRenderer data={data} mode={mode} />;
+    return (
+      <Suspense fallback={<TemplateFallback />}>
+        <FamilyFullServiceTemplateRenderer data={data} mode={mode} />
+      </Suspense>
+    );
   }
   if (templateId === 'nail_lash_studio') {
-    return <NailLashStudioTemplateRenderer data={data} mode={mode} />;
+    return (
+      <Suspense fallback={<TemplateFallback />}>
+        <NailLashStudioTemplateRenderer data={data} mode={mode} />
+      </Suspense>
+    );
   }
 
   // Template-specific styling configurations (remaining themes)

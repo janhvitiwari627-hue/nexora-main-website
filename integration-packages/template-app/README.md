@@ -2,6 +2,12 @@
 
 - **Authoritative source repository:** [`templateapp67-oss/FINAL-NEW-APP-TEMPLETE-`](https://github.com/templateapp67-oss/FINAL-NEW-APP-TEMPLETE-) (branch `main`)
 - **Authoritative source HEAD (vendored):** `8d7bb251fab0c6d640c99f7d95a1daf38f41abe4` (2026-08-21)
+- **In-repo changes on top of the vendored HEAD:** 2026-08-29 — `files/src/lib/supabaseClient.ts`
+  was already rebound to the Nexora canonical auth client (`packages/auth/src`) at vendoring time;
+  a Landing-refactor + bundle-optimization pass then landed (see
+  `LANDING_REFACTOR_COMPLETION_REPORT.md` at the repo root). `files/` is therefore
+  **no longer byte-identical** to the vendored HEAD — it is the vendored source plus
+  the documented in-repo changes below.
 - **Authoritative source Vercel deployment:** `https://final-new-app-templete.vercel.app/` (live, confirmed)
 - **Integration date:** 2026-08-21
 - **Operator decision:** explicit operator approval on 2026-08-21 to switch the Template App source from `templateapp67-oss/NEW-TAMPLETE-APP` to `templateapp67-oss/FINAL-NEW-APP-TEMPLETE-`, accepting the regression risk identified in earlier audits (220 → 207 source files, no `database.types.ts` and no `@nexora/auth` vendor in the FINAL repo, less feature work in the FINAL repo's history).
@@ -9,9 +15,39 @@
 ## What this directory contains
 
 This is the complete, vendored copy of `FINAL-NEW-APP-TEMPLETE-` (the
-authoritative Template App source) at the commit listed above. The vendored
-copy is preserved as a byte-identical audit artifact under `files/` so the
-Nexora repo always carries the exact source it integrates against.
+authoritative Template App source) at the commit listed above, plus documented
+in-repo changes (see the provenance bullet above). The vendored baseline is
+recoverable at any time via
+`git show 8d7bb251fab0c6d640c99f7d95a1daf38f41abe4` in the source repo or from
+this repo's git history at the integration commit.
+
+### In-repo changes on top of the vendored HEAD (2026-08-29)
+
+1. `src/lib/supabaseClient.ts` — rebound to the repo-wide canonical Supabase
+   client factory in `packages/auth/src` (predates the refactor; part of the
+   original integration).
+2. **Landing refactor + bundle optimization** (`LANDING_REFACTOR_COMPLETION_REPORT.md`
+   at the repo root has full details):
+   - `src/screens/Landing.tsx` (4,408-line monolith) split into
+     `src/screens/landing/` (Landing branch, WelcomeScreen, DashboardScreen,
+     useDashboardState hook, DashboardSidebar, DashboardContext, 10 lazy owner
+     tabs under `tabs/`, 7 modal components under `modals/`, skeletons).
+     Props contract unchanged — `src/App.tsx` render sites untouched in shape.
+   - `src/App.tsx` — wizard step screens + feature modules converted to
+     `React.lazy` + `Suspense` (justified: required to bring the entry chunk
+     under 500 kB; no behavior change).
+   - `src/components/TemplateRenderer.tsx` — the five full-site theme
+     renderers are lazy-loaded per theme.
+   - `src/components/SiteBookingHost.tsx` — the booking flow downloads only
+     when a visitor opens a Book CTA.
+   - `src/components/PublicSalonView.tsx` — TemplateRenderer lazy.
+   - `src/lib/savedServiceService.ts` — 6 shadowing dynamic imports of
+     `./supabaseClient` removed (static import already present).
+   - `vite.config.ts` — vendor `manualChunks` (react/react-dom/scheduler,
+     @supabase, motion, lucide-react); leaflet stays in its lazy LocationMap
+     chunk.
+   - Entry chunk: 2,269 kB → 98 kB; every emitted chunk < 500 kB; warning-free
+     build (see the completion report for the full chunk table).
 
 ```
 integration-packages/template-app/

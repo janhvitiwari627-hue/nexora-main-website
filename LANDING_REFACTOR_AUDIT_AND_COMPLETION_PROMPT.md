@@ -258,7 +258,7 @@ ACCEPTANCE CRITERIA
 | Task | Status | Owner of remaining work |
 |---|---|---|
 | 1. Dead code + bundle + lint/build clean (main website) | ✅ Complete & re-verified | — |
-| 2. Landing.tsx monolith refactor (Template App) | ❌ 0% — not started | Execute PART 3 prompt |
+| 2. Landing.tsx monolith refactor (Template App) | ✅ **Complete (2026-08-29)** — see `LANDING_REFACTOR_COMPLETION_REPORT.md` | — |
 
 The quoted baseline in the task spec was stale: the real entry chunk is
 **2,269 kB**, not 1,286 kB, and the monolith is 4,408 lines, not ~4,430. The
