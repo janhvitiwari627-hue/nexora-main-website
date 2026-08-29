@@ -10,7 +10,6 @@ import {
   SUPABASE_PROJECT_REF,
   authErrorMessage,
   getSupabaseClient,
-  homePathForRole,
   isSignupRole,
   neutralRecoveryMessage,
   normalizeSignupRole,
@@ -6643,7 +6642,10 @@ function ResetPasswordPage({ navigate }: { navigate: (path: string) => void }) {
     try {
       await updatePassword(password);
       const { profile } = await requireAuth();
-      navigate(homePathForRole(profile.role));
+      // After password reset the user stays on the Main Website dashboard,
+      // matching the post-login destination. The role's /app/* mount would
+      // otherwise 307-redirect into an external sub-app.
+      navigate(profile ? "/" : "/auth/login");
     } catch (cause) { setMessage(authErrorMessage(cause)); } finally { setBusy(false); }
   };
 

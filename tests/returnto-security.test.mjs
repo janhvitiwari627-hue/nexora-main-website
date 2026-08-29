@@ -23,6 +23,11 @@ const ROLE_HOME = {
   admin: "/app/admin",
 };
 
+// Post-auth default landing on the Main Website. Deliberately the Main
+// Website dashboard, NOT the role's /app/* mount (which 307-redirects to an
+// external sub-app), so a plain login stays on the Main Website.
+const MAIN_SITE_HOME = "/";
+
 function safeReturnPath(candidate, fallback = "/") {
   if (!candidate) return fallback;
   const value = candidate.trim();
@@ -33,7 +38,7 @@ function safeReturnPath(candidate, fallback = "/") {
 }
 
 function destinationForVerifiedRole(role, requestedReturnTo) {
-  return safeReturnPath(requestedReturnTo, ROLE_HOME[role]);
+  return safeReturnPath(requestedReturnTo, MAIN_SITE_HOME);
 }
 
 function safeRedirectUrl(candidate, currentOrigin) {
@@ -90,20 +95,22 @@ test("6. partner may open any mounted shell", () => {
   assert.equal(destinationForVerifiedRole("growth_partner", "/app/template"), "/app/template");
 });
 
-test("7. missing returnTo falls back to the role home", () => {
-  assert.equal(destinationForVerifiedRole("customer", null), "/app/customer");
-  assert.equal(destinationForVerifiedRole("business_user", undefined), "/app/owner");
-  assert.equal(destinationForVerifiedRole("growth_partner", ""), "/app/partner");
-  assert.match(redirects, /safeReturnPath\(requestedReturnTo, homePathForRole\(role\)\)/);
+test("7. missing returnTo lands on the Main Website home, not a sub-app mount", () => {
+  // A plain Main Website login (no returnTo) must NOT 307 into /app/* → the
+  // external sub-app. It stays on the Main Website dashboard instead.
+  assert.equal(destinationForVerifiedRole("customer", null), "/");
+  assert.equal(destinationForVerifiedRole("business_user", undefined), "/");
+  assert.equal(destinationForVerifiedRole("growth_partner", ""), "/");
+  assert.match(redirects, /safeReturnPath\(requestedReturnTo, MAIN_SITE_HOME\)/);
 });
 
 test("8. protocol-relative //evil.com is rejected", () => {
-  assert.equal(destinationForVerifiedRole("customer", "//evil.com"), "/app/customer");
+  assert.equal(destinationForVerifiedRole("customer", "//evil.com"), "/");
   assert.match(redirects, /value\.startsWith\("\/\/"\)/);
 });
 
 test("9. absolute https://evil.example is rejected for same-origin returnTo", () => {
-  assert.equal(destinationForVerifiedRole("customer", "https://evil.example/phish"), "/app/customer");
+  assert.equal(destinationForVerifiedRole("customer", "https://evil.example/phish"), "/");
   assert.equal(
     safeRedirectUrl("https://evil.example/phish", "https://nexora-main-website.vercel.app"),
     null,
@@ -111,13 +118,13 @@ test("9. absolute https://evil.example is rejected for same-origin returnTo", ()
 });
 
 test("10. javascript: and data: payloads are rejected", () => {
-  assert.equal(destinationForVerifiedRole("customer", "javascript:alert(1)"), "/app/customer");
-  assert.equal(destinationForVerifiedRole("customer", "/javascript:alert(1)"), "/app/customer");
+  assert.equal(destinationForVerifiedRole("customer", "javascript:alert(1)"), "/");
+  assert.equal(destinationForVerifiedRole("customer", "/javascript:alert(1)"), "/");
   assert.match(redirects, /javascript:/i);
 });
 
 test("11. backslash-smuggled hosts are rejected", () => {
-  assert.equal(destinationForVerifiedRole("customer", "/\\evil.com"), "/app/customer");
+  assert.equal(destinationForVerifiedRole("customer", "/\\evil.com"), "/");
   assert.match(redirects, /value\.includes\("\\\\"\)/);
 });
 
