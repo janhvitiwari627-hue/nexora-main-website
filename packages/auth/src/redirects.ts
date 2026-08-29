@@ -28,7 +28,7 @@
  * Supabase → Authentication → URL Configuration → Redirect URLs.
  */
 
-import { homePathForRole, type PlatformRole } from "./roles";
+import { type PlatformRole } from "./roles";
 
 /** Paths that make up the central auth surface on the Main Website. */
 export const AUTH_ROUTES = {
@@ -147,18 +147,33 @@ export function safeReturnPath(candidate: string | null | undefined, fallback = 
 }
 
 /**
+ * The landing page for a user who just authenticated on the Main Website.
+ *
+ * This is deliberately the Main Website dashboard (`/`), NOT the role's
+ * `/app/*` portal mount. The `/app/customer|owner|partner|template` paths are
+ * 307-redirected by `next.config.ts` to the external sub-app origins, so using
+ * the role home as the post-login default was bouncing a plain Main Website
+ * login straight into a sub-app. Authentication now keeps the user on the
+ * Main Website; they open a specific portal only by navigating to its mount
+ * explicitly.
+ */
+export const MAIN_SITE_HOME = "/";
+
+/**
  * After a verified login, honor any safe same-origin `returnTo`.
  *
  * Every authenticated role may resume any shell (`/app/customer`,
- * `/app/owner`, `/app/partner`, `/app/template`, public pages). Role-home
- * is only the fallback when `returnTo` is missing or unsafe. Data access
- * stays on RLS — this function never grants a role.
+ * `/app/owner`, `/app/partner`, `/app/template`, public pages) — but only
+ * when the caller explicitly asked for it via an allowlisted same-origin
+ * `returnTo`. When `returnTo` is missing or unsafe the user lands on the Main
+ * Website home (`/`), never an external sub-app mount. Data access stays on
+ * RLS — this function never grants a role.
  */
 export function destinationForVerifiedRole(
   role: PlatformRole,
   requestedReturnTo: string | null | undefined,
 ): string {
-  return safeReturnPath(requestedReturnTo, homePathForRole(role));
+  return safeReturnPath(requestedReturnTo, MAIN_SITE_HOME);
 }
 
 /**
