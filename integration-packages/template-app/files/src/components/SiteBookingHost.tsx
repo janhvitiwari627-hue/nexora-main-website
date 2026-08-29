@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import type { SalonData } from '../types';
-import SiteBookingFullFlow from './SiteBookingFullFlow';
+// The full booking flow (service → payment → receipt) is code-split: it only
+// downloads when a visitor actually taps a Book CTA on the public site.
+const SiteBookingFullFlow = lazy(() => import('./SiteBookingFullFlow'));
 import type { SiteHeaderThemeId } from '../lib/siteNavigation';
 import {
   BOOKING_TRIGGER_ATTR,
@@ -60,7 +62,15 @@ export default function SiteBookingHost({ themeId, data }: { themeId: SiteHeader
       className="absolute inset-0 z-[70] flex flex-col overflow-hidden"
       style={{ transform: 'translateZ(0)' }}
     >
-      <SiteBookingFullFlow themeId={themeId} data={data} />
+      <Suspense
+        fallback={
+          <div className="flex h-full w-full items-center justify-center bg-white/90 text-xs font-bold uppercase tracking-wider text-gray-400">
+            Opening booking…
+          </div>
+        }
+      >
+        <SiteBookingFullFlow themeId={themeId} data={data} />
+      </Suspense>
     </div>
   );
 }

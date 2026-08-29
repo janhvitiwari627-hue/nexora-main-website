@@ -3,26 +3,31 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import Landing from './screens/Landing';
-import HeroSplit from './screens/HeroSplit';
-import StepTemplate from './screens/StepTemplate';
-import StepDetails from './screens/StepDetails';
-import StepServices from './screens/StepServices';
-import StepTeam from './screens/StepTeam';
-import StepPhotos from './screens/StepPhotos';
-import StepSocials from './screens/StepSocials';
-import StepLocation from './screens/StepLocation';
-import StepContactBooking from './screens/StepContactBooking';
-import StepPublish from './screens/StepPublish';
-import StepAIContentReview from './screens/StepAIContentReview';
-import StepFullWebsitePreview from './screens/StepFullWebsitePreview';
-import StepPublishSetup from './screens/StepPublishSetup';
-import StepPublishSuccess from './screens/StepPublishSuccess';
-import BookingConfirmation from './components/BookingConfirmation';
-import StaffManagementModule from './components/StaffManagementModule';
-import OwnerDashboard from './components/OwnerDashboard';
 import TopBar from './components/TopBar';
+import ScreenSkeleton from './screens/landing/ScreenSkeleton';
+
+// Wizard steps and feature modules are code-split: only the app shell
+// (TopBar + Landing) ships in the entry chunk. Each step/module downloads
+// on demand behind a Suspense fallback (same pattern as the owner tabs).
+const HeroSplit = lazy(() => import('./screens/HeroSplit'));
+const StepTemplate = lazy(() => import('./screens/StepTemplate'));
+const StepDetails = lazy(() => import('./screens/StepDetails'));
+const StepServices = lazy(() => import('./screens/StepServices'));
+const StepTeam = lazy(() => import('./screens/StepTeam'));
+const StepPhotos = lazy(() => import('./screens/StepPhotos'));
+const StepSocials = lazy(() => import('./screens/StepSocials'));
+const StepLocation = lazy(() => import('./screens/StepLocation'));
+const StepContactBooking = lazy(() => import('./screens/StepContactBooking'));
+const StepPublish = lazy(() => import('./screens/StepPublish'));
+const StepAIContentReview = lazy(() => import('./screens/StepAIContentReview'));
+const StepFullWebsitePreview = lazy(() => import('./screens/StepFullWebsitePreview'));
+const StepPublishSetup = lazy(() => import('./screens/StepPublishSetup'));
+const StepPublishSuccess = lazy(() => import('./screens/StepPublishSuccess'));
+const BookingConfirmation = lazy(() => import('./components/BookingConfirmation'));
+const StaffManagementModule = lazy(() => import('./components/StaffManagementModule'));
+const OwnerDashboard = lazy(() => import('./components/OwnerDashboard'));
 import { initialData, SalonData } from './types';
 import type { ThemeId } from './lib/themeServices';
 import { getBrandConfig } from './config/brandConfig';
@@ -385,7 +390,9 @@ export default function App() {
           onNavigate={navigateToScreen}
         />
         <main className="flex-1 flex overflow-hidden">
-          <OwnerDashboard />
+          <Suspense fallback={<ScreenSkeleton label="Loading dashboard module…" />}>
+            <OwnerDashboard />
+          </Suspense>
         </main>
         <AnimatePresence>
           {toastMessage && (
@@ -416,12 +423,14 @@ export default function App() {
           onNavigate={navigateToScreen}
         />
         <main className="flex-1 flex overflow-hidden">
-          <StaffManagementModule
-            data={data}
-            setData={setData}
-            onSave={handleSave}
-            onBackToWizard={() => setActiveModule('wizard')}
-          />
+          <Suspense fallback={<ScreenSkeleton label="Loading staff module…" />}>
+            <StaffManagementModule
+              data={data}
+              setData={setData}
+              onSave={handleSave}
+              onBackToWizard={() => setActiveModule('wizard')}
+            />
+          </Suspense>
         </main>
         <AnimatePresence>
           {toastMessage && (
@@ -488,7 +497,9 @@ export default function App() {
         onNavigate={navigateToScreen}
       />
       <div className="flex-1 overflow-auto">
-        <HeroSplit onNext={nextStep} />
+        <Suspense fallback={<ScreenSkeleton label="Loading…" />}>
+          <HeroSplit onNext={nextStep} />
+        </Suspense>
       </div>
       <div className="p-4 bg-white border-t border-gray-200 flex justify-between items-center">
         <button onClick={prevStep} className="px-4 py-2 border border-gray-300 rounded-xl text-xs font-semibold">Back</button>
@@ -548,6 +559,7 @@ export default function App() {
       </AnimatePresence>
       
       <main className="flex-1 flex overflow-hidden">
+        <Suspense fallback={<ScreenSkeleton label="Loading step…" />}>
         <>
           {step === 2 && <StepTemplate data={data} setData={setData} onNext={nextStep} onPrev={prevStep} onSave={handleSave} onThemeChange={handleThemeChange} />}
           {step === 3 && <StepDetails data={data} setData={setData} onNext={nextStep} onPrev={prevStep} onSave={handleSave} />}
@@ -644,6 +656,7 @@ export default function App() {
             </div>
           )}
         </>
+        </Suspense>
       </main>
 
       {/* Toast Notification */}

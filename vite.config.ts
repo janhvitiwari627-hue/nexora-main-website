@@ -11,6 +11,39 @@ const { d1, r2 } = hostingConfig;
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
+/**
+ * Client-bundle vendor chunking (bundle-size optimization).
+ *
+ * The homepage client graph otherwise lands in one >500 kB chunk. These
+ * groups move the large, rarely-changing third-party dependencies into their
+ * own long-term-cacheable chunks so each emitted chunk stays small, the
+ * browser can download them in parallel, and a deploy that only changes app
+ * code keeps the vendor chunks (and their cache entries) byte-identical.
+ *
+ * Implemented as extra `codeSplitting.groups` for the `client` environment
+ * (Vite 8 / rolldown): vinext already owns a `framework` group for
+ * react/react-dom/scheduler, and groups it does not claim (returning null)
+ * fall through to these vendor groups. The SSR/RSC server bundles are left
+ * untouched — browser-cache chunking does not apply to them.
+ */
+const CLIENT_VENDOR_CHUNKING = {
+  minSize: 10_000,
+  groups: [
+    {
+      name: "vendor-framer-motion",
+      test: /[\\/]node_modules[\\/](?:framer-motion|motion-dom|motion-utils)[\\/]/,
+    },
+    {
+      name: "vendor-supabase",
+      test: /[\\/]node_modules[\\/]@supabase[\\/]/,
+    },
+    {
+      name: "vendor-lucide",
+      test: /[\\/]node_modules[\\/]lucide-react[\\/]/,
+    },
+  ],
+};
+
 const localBindingConfig = {
   main: "./worker/index.ts",
   // compatibility_flags are already declared in wrangler.json; defining them
@@ -117,5 +150,16 @@ function devRevalidationOnlyCache(): Plugin {
         config: localBindingConfig,
       }),
     ],
+    environments: {
+      client: {
+        build: {
+          rolldownOptions: {
+            output: {
+              codeSplitting: CLIENT_VENDOR_CHUNKING,
+            },
+          },
+        },
+      },
+    },
   };
 });

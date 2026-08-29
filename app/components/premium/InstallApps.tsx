@@ -2,7 +2,8 @@
 
 import { motion } from 'framer-motion';
 import AnimatedSection from './AnimatedSection';
-import { Smartphone, Download, Apple, PlayCircle, Globe, ArrowRight } from 'lucide-react';
+import { Smartphone, Apple, PlayCircle, Globe, ArrowRight } from 'lucide-react';
+import Link from 'next/link';
 
 /*
  * NOTE ( adaptations from the original snippet ):
@@ -148,7 +149,7 @@ export default function InstallApps() {
                     <div className="text-sm font-bold leading-none">Google Play</div>
                   </div>
                 </a>
-                <a
+                <Link
                   href="/"
                   className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white/20 backdrop-blur text-white font-semibold hover:bg-white/30 transition-colors border border-white/30"
                 >
@@ -157,7 +158,7 @@ export default function InstallApps() {
                     <div className="text-[10px] opacity-80">Use on</div>
                     <div className="text-sm font-bold leading-none">Web App</div>
                   </div>
-                </a>
+                </Link>
               </div>
             </div>
           </div>

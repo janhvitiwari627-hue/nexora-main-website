@@ -67,6 +67,10 @@ import {
 // (renumbered from "Section 08" per locked MEMORY.md order — PHASE1_SECTION10.md).
 // area names and missing cities never qualify).
 import { isJaipurCity } from "./lib/jaipurCity";
+// Strict typing for the JSON payload published from salon_setup_proposals
+// into salon_public_websites.config (profile / services / staff / photos /
+// amenities). All reads go through one runtime-narrowed shape.
+import { readWebsiteConfig, readWebsiteConfigOpeningHours } from "./lib/websiteConfig";
 // GPS location system — browser-native geolocation only. No Google
 // Geolocation/Maps Geocoding, no Mapbox, no Nominatim, no API keys.
 import {
@@ -109,7 +113,13 @@ type Website = {
   salon_id: string;
   slug: string;
   template_key: string;
-  config: Record<string, unknown>;
+  /**
+   * Untyped JSON straight from Postgres (`salon_public_websites.config` —
+   * the published salon setup proposal payload). Read it only through
+   * `readWebsiteConfig` / `readWebsiteConfigOpeningHours` from
+   * `./lib/websiteConfig`, which narrow it to the strict payload shape.
+   */
+  config: unknown;
   published_at: string | null;
 };
 type CatalogItem = Salon & { website: Website };
@@ -447,29 +457,6 @@ function friendlyError(error: unknown) {
   return message;
 }
 
-function parseSupabaseAuthError(error: unknown): string {
-  const raw = friendlyError(error);
-  const lower = raw.toLowerCase();
-
-  if (lower.includes("user already registered") || lower.includes("already registered") || lower.includes("user already exists")) {
-    return "An account with this email already exists. Please log in instead.";
-  }
-  if (lower.includes("email not confirmed") || lower.includes("confirmation")) {
-    return "Please confirm your email first. Check your inbox (and spam) for a confirmation link.";
-  }
-  if (lower.includes("invalid login credentials") || lower.includes("invalid credentials")) {
-    // Show real cause – could be wrong project, wrong password, etc.
-    return raw;
-  }
-  if (lower.includes("password should be at least") || lower.includes("password is too short") || lower.includes("weak password")) {
-    return raw;
-  }
-  if (lower.includes("signup disabled") || lower.includes("signups not allowed")) {
-    return "New account creation is temporarily disabled. Please contact support.";
-  }
-  return raw;
-}
-
 export function NexoraApp({ initialPath }: { initialPath: string }) {
   const [path, setPath] = useState(initialPath);
   const [online, setOnline] = useState(true);
@@ -683,6 +670,11 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
     load: reloadMarketplaceStats,
   } = useMarketplaceStats(online);
   const { services: popularServices, loading: popularLoading, error: popularError, load: retryPopularServices } = usePopularServices(online);
+  // Locked contract (PHASE1 Section 09/11 consolidation): the
+  // useCustomerSuggestions hook call and this exact destructure are preserved
+  // by tests/homepage-phase1-section{09,11}-contract.test.mjs. Its rows are no
+  // longer rendered directly — SmartPicksSection consumes useRecommendations.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- locked contract line; see comment above.
   const { personalized, favorites, ready } = useCustomerSuggestions(online, authState.session, items);
   const { rows: recommendationRows, loading: recommendationsLoading, isPersonalized, load: refreshRecommendations, error: recommendationsError } = useRecommendations(online, authState.session);
   const { plans: membershipPlans, loading: membershipLoading } = useMembershipPlans(online);
@@ -720,16 +712,11 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
   // "Use My Current Location" action below (or the signed-in shell flow).
   const location = useLocation({ auto: false });
   const { buckets: nearbyBuckets, ranked: nearbyRanked } = useNearbySalons(nearbyRows, location.fix);
-  const categories = Array.from(new Set(items.map(i=>i.business_category).filter(Boolean))) as string[];
   // Live customer signals: rating avg + review count from customer_reviews,
   // booking counts from bookings (security-definer aggregates).
   const ratingOf = (i: CatalogItem) => { const s = statsBySalon[i.id]; return s ? Number(s.rating_avg) : Number(i.rating_average); };
   const reviewsOf = (i: CatalogItem) => { const s = statsBySalon[i.id]; return s ? Number(s.review_count) : Number(i.review_count); };
   const bookingsOf = (i: CatalogItem) => { const s = statsBySalon[i.id]; return s ? Number(s.booking_count) : 0; };
-  const topRated = [...items].sort((a,b)=>ratingOf(b)-ratingOf(a) || reviewsOf(b)-reviewsOf(a)).slice(0,3);
-  // Section 12 Trending is exclusively the marketplace_trending RPC order;
-  // do not recreate a frontend booking/rating sort here.
-  const nearbyAreas = Array.from(new Set(items.map(i=>i.area).filter(Boolean))) as string[];
   const recommended = [...items].sort((a,b)=>((ratingOf(b)*reviewsOf(b))+bookingsOf(b))-((ratingOf(a)*reviewsOf(a))+bookingsOf(a))).slice(0,3);
   // Section 14: join public salon names/slugs to the existing public aggregate
   // without querying customer, booking, or auth tables. The adapter preserves
@@ -745,7 +732,6 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
     () => adaptMarketplaceReviews(statsRows, section14SalonReferences),
     [statsRows, section14SalonReferences],
   );
-  const showForYou = isCustomer && ready && (personalized !== null || favorites.length > 0);
   // Section 12 receives only the public fields it needs from the published
   // catalog. A memoized map avoids repeated O(catalog) slug/image lookups and
   // keeps phone/address/config data outside the Section 12 component path.
@@ -1014,6 +1000,7 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
       >
         <div className="premium-hero-backdrop" aria-hidden="true">
           {/* Local responsive LCP asset — no expiring remote image URL. */}
+          {/* eslint-disable-next-line @next/next/no-img-element -- deliberate: this repo does not use next/image; local LCP asset served from /public with an explicit srcSet/sizes contract. */}
           <img
             src="/home/hero-salon-800.jpg"
             srcSet="/home/hero-salon-480.jpg 480w, /home/hero-salon-800.jpg 800w, /home/hero-salon-1200.jpg 1200w"
@@ -2126,8 +2113,8 @@ function OpenTodayStrip({ items, navigate, preloaded }: {
         // Config fallback for salons with no salon_hours rows yet.
         for (const item of items) {
           if (map[item.id]) continue;
-          const cfg = (item.website.config as { profile?: { opening_hours?: { opens?: string; closes?: string } } })?.profile?.opening_hours;
-          if (cfg?.opens) map[item.id] = { opens: cfg.opens, closes: cfg.closes ?? null, closed: false };
+          const cfg = readWebsiteConfigOpeningHours(item.website.config);
+          if (cfg) map[item.id] = { opens: cfg.opens, closes: cfg.closes, closed: false };
         }
         setOwnRows(map);
       } catch { /* degrade to empty */ } finally { if (active) setOwnLoading(false); }
@@ -2153,29 +2140,6 @@ function OpenTodayStrip({ items, navigate, preloaded }: {
   );
 }
 
-
-type Offer = {
-  id: string;
-  salon_id: string;
-  name: string | null;
-  description: string | null;
-  discount_type: string | null;
-  discount_value: number | null;
-  is_active: boolean;
-};
-
-function OfferCard({ offer, salonName, salonSlug, navigate }: { offer: Offer; salonName: string | null; salonSlug: string | null; navigate: (path: string) => void }) {
-  return (
-    <article className="service-card">
-      <div>
-        <h3>{offer.name ?? "Offer"}</h3>
-        <p>{offer.description || ""}</p>
-        <small>{offer.discount_type === "percent" ? `${offer.discount_value}% off` : offer.discount_value != null ? `${money(offer.discount_value * 100)} off` : "Limited offer"}{salonName ? ` · ${salonName}` : ""}</small>
-      </div>
-      <button className="text-button" onClick={() => navigate(salonSlug ? `/salons/${salonSlug}` : "/salons")}>View salon</button>
-    </article>
-  );
-}
 
 /**
  * Public Best Offers source. Reuses the existing marketplace_offers RPC
@@ -2841,8 +2805,8 @@ async function fetchOpenNowIds(client: SupabaseClient, items: Array<{ id: string
       if (!hours.is_closed && isOpenAtMinutes(hours.opens_at, hours.closes_at, nowMinutes)) open.add(item.id);
       continue;
     }
-    const cfg = (item.website.config as { profile?: { opening_hours?: { opens?: string; closes?: string } } })?.profile?.opening_hours;
-    if (cfg?.opens && isOpenAtMinutes(cfg.opens, cfg.closes ?? null, nowMinutes)) open.add(item.id);
+    const cfg = readWebsiteConfigOpeningHours(item.website.config);
+    if (cfg && isOpenAtMinutes(cfg.opens, cfg.closes, nowMinutes)) open.add(item.id);
   }
   return open;
 }
@@ -2967,8 +2931,8 @@ function salonOpenState(item: CatalogItem, hours: { opens_at: string | null; clo
     if (hours.is_closed) return false;
     return isOpenWindowActiveIST(hours.opens_at, hours.closes_at);
   }
-  const cfg = (item.website.config as { profile?: { opening_hours?: { opens?: string; closes?: string } } })?.profile?.opening_hours;
-  if (cfg?.opens) return isOpenWindowActiveIST(cfg.opens, cfg.closes ?? null);
+  const cfg = readWebsiteConfigOpeningHours(item.website.config);
+  if (cfg) return isOpenWindowActiveIST(cfg.opens, cfg.closes);
   return null;
 }
 
@@ -3122,8 +3086,8 @@ function useMinutesNowIST(): number | null {
 
 /** Config-published opening hours fallback (same contract Section 06 uses). */
 function configOpeningHours(item: CatalogItem): { opens_at: string | null; closes_at: string | null; is_closed: boolean } | null {
-  const cfg = (item.website.config as { profile?: { opening_hours?: { opens?: string; closes?: string } } })?.profile?.opening_hours;
-  if (cfg?.opens) return { opens_at: cfg.opens, closes_at: cfg.closes ?? null, is_closed: false };
+  const cfg = readWebsiteConfigOpeningHours(item.website.config);
+  if (cfg) return { opens_at: cfg.opens, closes_at: cfg.closes, is_closed: false };
   return null;
 }
 
@@ -5839,23 +5803,20 @@ function SalonPage({
 
   if (loading) return <main className="section page-top"><SalonSkeletons count={1} /></main>;
   if (error || !item) return <main className="center-page"><StateCard title="Salon unavailable" text={error || "This website is not public."} action="Back to salons" onAction={() => navigate("/salons")} /></main>;
-  const config = item.website.config as { profile?: Record<string, unknown>; services?: Array<Record<string, unknown>>; staff?: Array<Record<string, unknown>>; photos?: unknown; amenities?: unknown };
-  const configServices = Array.isArray(config.services) ? config.services : [];
-  const configStaff = Array.isArray(config.staff) ? config.staff : [];
-  const configProfile = (config.profile ?? {}) as { opening_hours?: { opens?: string; closes?: string } };
+  const config = readWebsiteConfig(item.website.config);
   // DB is the source of truth; website config is the fallback (owner may
   // still be publishing via the proposal payload before using the PWA CRUD).
   const services = marketplace.services.length
     ? marketplace.services.map((s) => ({ id: s.id, name: s.name, description: s.description ?? "Professional salon service", duration_minutes: s.duration_minutes ?? 0, price_paise: s.price_paise ?? 0 }))
-    : configServices;
+    : config.services;
   const staffRows = marketplace.staff.length
     ? marketplace.staff.map((s) => ({ id: s.id, name: s.name, role: s.role ?? "Stylist", specialty: s.specialty ?? null }))
-    : configStaff.map((s) => ({ id: String(s.id ?? ""), name: String(s.name ?? "Professional"), role: String(s.role ?? "Stylist"), specialty: s.specialty != null ? String(s.specialty) : null }));
-  const configOpening = configProfile.opening_hours;
+    : config.staff.map((s) => ({ id: s.id ?? "", name: s.name ?? "Professional", role: s.role ?? "Stylist", specialty: s.specialty }));
+  const configOpening = config.profile?.opening_hours ?? null;
   const openingSummary = marketplace.hours.length
     ? marketplace.hours
-    : configOpening?.opens
-      ? [{ day_of_week: -1, opens_at: configOpening.opens, closes_at: configOpening.closes ?? null, is_closed: false }]
+    : configOpening
+      ? [{ day_of_week: -1, opens_at: configOpening.opens, closes_at: configOpening.closes, is_closed: false }]
       : [];
   const customerPortalBookingPath = (serviceName?: string) => {
     const params = new URLSearchParams();
@@ -5883,11 +5844,13 @@ function SalonPage({
     && nowMinutes >= Number(String(todayHours.opens_at).split(":").slice(0, 2).join(".").split(".")[0]) * 60 + Number(String(todayHours.opens_at).split(":")[1] ?? 0)
     && nowMinutes <= Number(String(todayHours.closes_at).split(":")[0]) * 60 + Number(String(todayHours.closes_at).split(":")[1] ?? 0));
   const gallery = (() => {
-    const photos = Array.isArray(config.photos) ? (config.photos as string[]).filter((p) => typeof p === "string" && p.startsWith("http")) : [];
+    // Photos are runtime-narrowed to absolute http(s) URL strings by
+    // readWebsiteConfig; no untyped JSON reaches this render path.
+    const photos = config.photos;
     const cover = item.cover_image_path?.startsWith("http") ? item.cover_image_path : null;
     return Array.from(new Set([...(cover ? [cover] : []), ...photos])).slice(0, 6);
   })();
-  const amenities = Array.isArray(config.amenities) ? (config.amenities as string[]).filter((a) => typeof a === "string") : [];
+  const amenities = config.amenities;
   const maxMemberDiscount = membershipPlans.length ? Math.max(...membershipPlans.map((p) => Number(p.discount_percent))) : 0;
   const mapsUrl = item.approval_status === "approved" && item.latitude != null && item.longitude != null
     ? `https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}`
@@ -5920,7 +5883,10 @@ function SalonPage({
       <p className="preview-note" style={{ color: "inherit" }}>Bookings, payment, history, reviews, and support are owned by the Customer PWA.</p></section>
       {gallery.length > 1 && (
         <section className="section" style={{ paddingTop: 8 }}>
-          <div className="button-row" style={{ overflowX: "auto", flexWrap: "nowrap" }}>{gallery.map((g, i) => <img key={i} src={g} alt={`${item.name} photo ${i + 1}`} style={{ width: 160, height: 100, objectFit: "cover", borderRadius: 12, flexShrink: 0 }} loading="lazy" referrerPolicy="no-referrer" />)}</div>
+          <div className="button-row" style={{ overflowX: "auto", flexWrap: "nowrap" }}>{gallery.map((g, i) => (
+            // eslint-disable-next-line @next/next/no-img-element -- dynamic public salon media uses the existing catalog URL contract.
+            <img key={i} src={g} alt={`${item.name} photo ${i + 1}`} style={{ width: 160, height: 100, objectFit: "cover", borderRadius: 12, flexShrink: 0 }} loading="lazy" referrerPolicy="no-referrer" />
+          ))}</div>
         </section>
       )}
       <section className="section"><div className="section-heading"><span className="eyebrow">Services</span><h2>Choose your service</h2><p>Browse the owner-published catalog, then continue to the Customer PWA to book.</p></div>
@@ -5940,7 +5906,7 @@ function SalonPage({
       {openingSummary.length > 0 && (
         <section className="section">
           <div className="section-heading"><span className="eyebrow">Opening hours</span><h2>When to visit</h2><p>Weekly opening hours set by the shop owner.</p></div>
-          <div className="role-grid">{openingSummary.map((hours, index) => <article className="role-card" key={hours.day_of_week === -1 ? "default" : hours.day_of_week}><span className="role-icon">🕑</span><h3>{hours.day_of_week === -1 ? "Open daily" : DAY_NAMES[hours.day_of_week]}</h3><p>{hours.is_closed ? "Closed" : formatHours(hours.opens_at, hours.closes_at)}</p></article>)}</div>
+          <div className="role-grid">{openingSummary.map((hours) => <article className="role-card" key={hours.day_of_week === -1 ? "default" : hours.day_of_week}><span className="role-icon">🕑</span><h3>{hours.day_of_week === -1 ? "Open daily" : DAY_NAMES[hours.day_of_week]}</h3><p>{hours.is_closed ? "Closed" : formatHours(hours.opens_at, hours.closes_at)}</p></article>)}</div>
         </section>
       )}
       {marketplace.offers.length > 0 && (
@@ -6165,7 +6131,8 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
 
   return (
     <div className="min-h-screen w-full bg-[#fff8f8] text-[#26181c] relative overflow-hidden font-[Inter] -mt-[76px]">
-      <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet" />
+      {/* eslint-disable-next-line @next/next/no-page-custom-font -- icon-font stylesheet for this marketing screen; app fonts are managed by the root layout <head> in app/layout.tsx. */}
+      <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet" />
       <div className="absolute top-[-20%] left-[-10%] w-[45%] h-[45%] bg-[#fce2e7]/50 rounded-full blur-[120px] pointer-events-none"></div>
       <div className="absolute bottom-[-15%] right-[-10%] w-[55%] h-[55%] bg-[#ffd9e2]/30 rounded-full blur-[140px] pointer-events-none"></div>
       
@@ -6200,6 +6167,7 @@ function AuthPage({ mode, navigate, refCode }: { mode: "login" | "signup"; navig
             
             <div className="absolute top-8 left-8 right-8">
               <div className="flex items-center gap-3">
+                {/* eslint-disable-next-line @next/next/no-img-element -- remote brand logo from the locked visual identity set; next/image is deliberately not used in this repo. */}
                 <img alt="logo" className="h-9 w-auto mix-blend-multiply" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCTXSM1uXL6IZPG2d5vJrZHTp3meZp3ugCNqDfmM7XSBsqTiBEoB65raTIgfM87Q2-Nycckxt2jvImXTu8qIEq3irPWeRIpQcZNxA4R0JaTlBwKqvBvcc-Go9UAWl5bVcwWmbbqlBTIK2-NJT9uA6x1Y3iGKNV8Fot_Z4oI5bt0ftITdQR9jr2ggS1Gi8h5RWL06dUsqs_AdG7E2j9RVLMYR7_A2uBY63Kav7vuNUajTreWXFazOVDuCuv5FTdEwPxqmoM"/>
                 <span className="text-white/90 text-[11px] font-semibold tracking-[0.12em] uppercase">Est. Jaipur 2024</span>
               </div>
@@ -6770,7 +6738,6 @@ function PortalGateway({
 }) {
   const { requireAuth, client } = useAuth();
   const [state, setState] = useState<{ loading: boolean; error?: string; role?: Role }>({ loading: true });
-  const [workspace, setWorkspace] = useState<{ userId?: string; salonIds: string[] }>({ salonIds: [] });
   const load = useCallback(async () => {
     const currentPath = window.location.pathname;
     const requestedRole = expectedRole ?? portalRoleFromPath(currentPath) ?? legacyDashboardRoleFromPath(currentPath);
@@ -6790,18 +6757,18 @@ function PortalGateway({
       const profileRole = profile.platform_role;
       // Phase 2 — no role-home redirects. Every authenticated active profile
       // may open any mounted shell. RLS and the PWA's own gates authorize data.
-      // Workspace checks stay best-effort so Template can list salon ids.
+      // Workspace checks stay best-effort: they verify the caller's
+      // membership (owner workspace / partner membership / customer account);
+      // the mounted PWA and RLS decide what data the caller can actually see.
 
       if (!client) throw new Error(missingSupabaseConfigMessage);
-      let salonIds: string[] = [];
       const mountKey = portalMountKeyFromPath(currentPath)
         ?? (requestedRole === "business_user" ? "owner"
           : requestedRole === "growth_partner" ? "partner"
           : "customer");
       try {
         if (mountKey === "owner" || mountKey === "template") {
-          const workspace = await requireOwnerWorkspace(client);
-          salonIds = workspace.salonIds;
+          await requireOwnerWorkspace(client);
         } else if (mountKey === "partner") {
           await requirePartnerMembership(client);
         } else {
@@ -6819,7 +6786,6 @@ function PortalGateway({
         return;
       }
       setState({ loading: false, role: profileRole });
-      setWorkspace({ userId: access.user.id, salonIds });
     } catch (cause) {
       const code = cause && typeof cause === "object" && "code" in cause ? String((cause as { code: unknown }).code) : "";
       if (code === "session_expired" || code === "profile_inactive" || code === "not_configured") {
@@ -6876,6 +6842,13 @@ function UnavailableAuthenticatedPortal({ path, navigate }: { path: string; navi
   return <main className="center-page"><section className="entry-card"><span className="eyebrow">Nexora portal gateway</span><h1>{isAdmin ? "Administrator" : "Delivery Partner"} portal is not mounted</h1><p>Your account is authenticated and role-verified. This portal mount has not been deployed yet, so Nexora cannot render a duplicate dashboard here.</p></section></main>;
 }
 
+/**
+ * Locked architectural contract (tests/full-website-test.mjs — "Main Website
+ * is a portal gateway, not a copied PWA"): the admin surface stays restricted
+ * with no public admin signup, even while no route currently mounts it. Keep
+ * this component exported-shape-stable and unreferenced by render paths.
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- locked contract; see comment above.
 function AdminUnavailable() {
   return <main className="center-page"><section className="entry-card"><span className="eyebrow">Nexora administration</span><h1>Admin surface is restricted</h1><p>Moderation, sponsored content, disputes, and payout operations are provisioned by administrators only. There is no public admin signup.</p></section></main>;
 }

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { initialData, type GalleryImage, type SalonData, type Service } from '../types';
-import TemplateRenderer from './TemplateRenderer';
+/** The full public-site renderer tree is code-split: it only downloads when a public salon page actually renders. */
+const TemplateRenderer = lazy(() => import('./TemplateRenderer'));
 import { isSupabaseConfigured, requireSupabase } from '../lib/supabaseClient';
 import { listPublicSalonMedia } from '../lib/salonMediaService';
 import { PUBLIC_SALON_CATALOG_VIEW } from '../lib/nearbySalons';
@@ -215,7 +216,15 @@ export default function PublicSalonView({ slug }: Props) {
         <span>Public Salon Website: /{slug}</span>
       </div>
       <div className="flex-1 w-full flex items-center justify-center p-0 md:p-4">
-        <TemplateRenderer data={state.data} mode={mode} />
+        <Suspense
+          fallback={
+            <div className="flex-1 w-full flex items-center justify-center text-xs font-bold uppercase tracking-wider text-gray-400">
+              Loading salon website…
+            </div>
+          }
+        >
+          <TemplateRenderer data={state.data} mode={mode} />
+        </Suspense>
       </div>
     </div>
   );

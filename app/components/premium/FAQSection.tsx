@@ -122,7 +122,7 @@ export default function FAQSection() {
         <AnimatedSection delay={0.3}>
           <div className="mt-12 text-center p-8 rounded-2xl bg-gradient-to-br from-nexora-pink/10 to-nexora-pink-vibrant/5 border border-nexora-pink/20 backdrop-blur">
             <p className="text-nexora-ink mb-4 font-medium">
-              Still have questions? We're here to help 24/7
+              Still have questions? We&apos;re here to help 24/7
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <a

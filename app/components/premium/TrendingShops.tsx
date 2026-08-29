@@ -89,6 +89,7 @@ export default function TrendingShops({ navigate }: { navigate?: (path: string) 
                 <div className="relative rounded-2xl overflow-hidden border border-nexora-pink/20 group-hover:border-nexora-pink/50 transition-all bg-nexora-pink-soft/10">
                   {/* Image */}
                   <div className="relative aspect-[4/3] overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- local generated assets from /public; this repo deliberately does not use next/image (see NOTE 2 above). */}
                     <img
                       src={shop.image}
                       alt={`${shop.name} — ${shop.category}`}

@@ -11,6 +11,28 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          /**
+           * Vendor chunking. Framework/runtime vendors are grouped so the
+           * app-code chunks (entry + lazy wizard steps + lazy owner tabs)
+           * stay small and cache independently. Leaflet is deliberately NOT
+           * grouped here: it is only reachable through the lazy LocationMap
+           * chunk (components/LocationPickerModal.tsx) and must stay there.
+           */
+          manualChunks(id: string) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('leaflet')) return undefined;
+            if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'react-vendor';
+            if (id.includes('@supabase')) return 'supabase-vendor';
+            if (/[\\/]node_modules[\\/](motion|motion-dom|motion-utils)[\\/]/.test(id)) return 'motion-vendor';
+            if (id.includes('lucide-react')) return 'icons-vendor';
+            return undefined;
+          },
+        },
+      },
+    },
     server: {
       host: '0.0.0.0',
       port: 3000,

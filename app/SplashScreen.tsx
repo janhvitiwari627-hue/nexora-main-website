@@ -45,6 +45,7 @@ export function SplashScreen({
             className="w-[190px] aspect-square mb-8 transition-all duration-[600ms] ease-out"
             style={{ opacity: entered ? 1 : 0, transform: entered ? "scale(1)" : "scale(0.94)" }}
           >
+            {/* eslint-disable-next-line @next/next/no-img-element -- remote brand asset from the locked visual identity set; next/image is deliberately not used in this repo. */}
             <img
               alt="Nexora SalonoS"
               src="https://lh3.googleusercontent.com/aida-public/AB6AXuAMp2YUtoao1inoRUbyQMo-sftVQYAn9f_cBlHhkZXv8mTTYvmftFclnIXjOQXxDZFlZ4qvKID8cIQU4RBFs-xeuK6LjL2zTuLVkY_jfmsD7RijrYlIlGCNteHknHtMm_KstbzNH2Vfv0KD1LRT_8puEQt75m2z0PW6t051bpj6Yd8eVBLVIa7OTFLznLcejgKJewicKr15GrmERbgyey1k9X3pRX6DBh3Texy1OePHeobiatnEuXxxY7A1UjVDh1qGURE"
