@@ -64,8 +64,8 @@ const configuredHtml = renderToStaticMarkup(
 
 test("renders all ten beauty-industry slots in order", () => {
   const expected = [
-    "Lakmé Salon",
-    "Wahl Professional",
+    "Nexora Luxe",
+    "Nexora Salon",
     "L'Oréal Professionnel",
     "Schwarzkopf Professional",
     "Dyson Beauty",
@@ -137,7 +137,8 @@ test("SPONSORED is disclosed only where the data says sponsored", () => {
     sponsoredCount,
   );
   // Unconfigured placeholders keep the branded poster, never a broken image.
-  assert.equal((sectionHtml.match(/class="bis-poster /g) ?? []).length, 10);
+  // The two live Nexora showcase slots render their real poster image instead.
+  assert.equal((sectionHtml.match(/class="bis-poster /g) ?? []).length, 8);
 });
 
 test("channel, title and category all render from the data row", () => {
@@ -171,21 +172,42 @@ test("every interactive control has the briefed accessible label", () => {
 /* ── External navigation policy ──────────────────────────────────────────── */
 
 test("an unconfigured video never invents a destination", () => {
-  assert.equal(BEAUTY_SPOTLIGHT_VIDEOS.every((v) => v.youtubeUrl === ""), true);
-  // No fabricated YouTube URL anywhere in the shipped placeholder markup.
+  // The eight placeholder slots stay empty; the two live showcase slots each
+  // carry a safe absolute https destination (the Nexora app they showcase).
+  const live = BEAUTY_SPOTLIGHT_VIDEOS.filter((v) => v.youtubeUrl !== "");
+  const placeholders = BEAUTY_SPOTLIGHT_VIDEOS.filter((v) => v.youtubeUrl === "");
+  assert.equal(live.length, 2);
+  assert.equal(placeholders.length, 8);
+  for (const video of live) {
+    assert.equal(safeExternalUrl(video.youtubeUrl), video.youtubeUrl);
+    assert.match(video.youtubeUrl, /^https:\/\/[\w.-]+\.vercel\.app\/$/);
+  }
+  // No fabricated YouTube URL anywhere in the shipped markup.
   assert.doesNotMatch(sectionHtml, /youtube\.com/i);
   assert.doesNotMatch(sectionHtml, /youtu\.be/i);
   assert.match(sectionHtml, /video link not configured yet/);
-  // Every watch control renders as a disabled button, not a live anchor.
-  assert.equal((sectionHtml.match(/<a class="bis-thumb-link"/g) ?? []).length, 0);
+  // Live slots render real anchors; the eight placeholders stay disabled buttons.
+  assert.equal((sectionHtml.match(/<a class="bis-thumb-link"/g) ?? []).length, 2);
   assert.equal(
     (sectionHtml.match(/class="bis-thumb-link bis-thumb-link--unavailable"/g) ?? []).length,
-    10,
+    8,
   );
   assert.equal(
     (sectionHtml.match(/disabled="" aria-disabled="true"/g) ?? []).length,
-    20, // thumbnail control + title control, per card
+    16, // thumbnail control + title control, per unconfigured card
   );
+});
+
+test("the two live showcase slots ship real local media", () => {
+  const live = BEAUTY_SPOTLIGHT_VIDEOS.filter((v) => v.previewUrl !== "");
+  assert.equal(live.length, 2);
+  for (const video of live) {
+    assert.match(video.thumbnailUrl, /^\/spotlight\/.+\.jpg$/);
+    assert.match(video.previewUrl, /^\/spotlight\/.+\.mp4$/);
+  }
+  // The rendered markup actually references both posters and clips.
+  assert.match(sectionHtml, /src="\/spotlight\/nexora-luxe-sourcing\.jpg"/);
+  assert.match(sectionHtml, /src="\/spotlight\/nexora-salon-glow\.jpg"/);
 });
 
 test("a configured video opens in a new tab with a hardened rel", () => {

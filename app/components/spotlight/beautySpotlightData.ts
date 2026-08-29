@@ -8,14 +8,18 @@
  * admin-managed table later). Swapping the ten placeholder entries for live
  * rows is a data change only — no component edit.
  *
- * HONEST PLACEHOLDERS
- * The ten slots below are the real partner brands the brief names, but their
- * `thumbnailUrl` / `previewUrl` / `youtubeUrl` are deliberately EMPTY strings.
- * No YouTube URL is invented here: an unconfigured entry renders the branded
- * fallback poster and an honest "link not configured" watch control instead of
- * a click that leads somewhere fabricated. Fill the three URL fields (or pass
- * your own array) and the card immediately gets a lazy poster image, a muted
- * hover preview and a new-tab destination — nothing else changes.
+ * HONEST PLACEHOLDERS + TWO LIVE SHOWCASE SLOTS
+ * Two of the ten slots (beauty-video-001 / -002) are LIVE: they carry real
+ * self-hosted media in `public/spotlight/` (a ~10 s muted cinematic teaser
+ * built for this carousel, plus its poster frame) and their watch link opens
+ * the Nexora app the teaser showcases. The remaining eight slots are the real
+ * partner brands the brief names, but their `thumbnailUrl` / `previewUrl` /
+ * `youtubeUrl` are deliberately EMPTY strings. No YouTube URL is invented
+ * here: an unconfigured entry renders the branded fallback poster and an
+ * honest "link not configured" watch control instead of a click that leads
+ * somewhere fabricated. Fill the three URL fields (or pass your own array)
+ * and the card immediately gets a lazy poster image, a muted hover preview
+ * and a new-tab destination — nothing else changes.
  */
 
 /** Partner tier shown as the top-left pill on every card. */
@@ -62,35 +66,36 @@ export interface BeautySpotlightVideo {
 }
 
 /**
- * The ten slots. Placeholder copy, real structure: each entry carries every
- * field the card renders, so the UI never branches on missing data.
+ * The ten slots. Two live showcase entries + placeholder copy, real structure:
+ * each entry carries every field the card renders, so the UI never branches
+ * on missing data.
  */
 export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
   {
     id: "beauty-video-001",
-    brandName: "Lakmé Salon",
-    title: "The Bridal Glow Ritual",
-    category: "Bridal Beauty",
-    thumbnailUrl: "",
-    previewUrl: "",
-    youtubeUrl: "",
-    duration: "0:45",
+    brandName: "Nexora Luxe",
+    title: "Inside the B2B Beauty Marketplace",
+    category: "Nexora Apps",
+    thumbnailUrl: "/spotlight/nexora-luxe-sourcing.jpg",
+    previewUrl: "/spotlight/nexora-luxe-sourcing.mp4",
+    youtubeUrl: "https://beauty-shop-2.vercel.app/",
+    duration: "0:10",
     badge: "DIAMOND",
-    sponsored: true,
+    sponsored: false,
     likes: 1284,
     comments: 96,
   },
   {
     id: "beauty-video-002",
-    brandName: "Wahl Professional",
-    title: "Precision Clipper Masterclass",
-    category: "Barbering Tools",
-    thumbnailUrl: "",
-    previewUrl: "",
-    youtubeUrl: "",
-    duration: "1:12",
+    brandName: "Nexora Salon",
+    title: "The Salon Glow Ritual, On Demand",
+    category: "Nexora Apps",
+    thumbnailUrl: "/spotlight/nexora-salon-glow.jpg",
+    previewUrl: "/spotlight/nexora-salon-glow.mp4",
+    youtubeUrl: "https://remix-final-salon-app.vercel.app/",
+    duration: "0:10",
     badge: "PLATINUM",
-    sponsored: true,
+    sponsored: false,
     likes: 942,
     comments: 61,
   },
