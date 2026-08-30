@@ -1,84 +1,54 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  youtubeEmbedUrl,
+  youtubeVideoId,
+  type BeautySpotlightVideo,
+} from "./beautySpotlightData";
 
 /*
- * Silent hover preview — the production-safe equivalent of a YouTube
- * hover-preview clip.
+ * Muted hover autoplay — the actual YouTube video, started on hover.
  *
- * Why not an iframe embed: a YouTube embed cannot be started on hover without
- * the IFrame API plus a ready handshake, needs network round-trips before the
- * first frame, and is frequently blocked by embed/consent policy. Instead this
- * plays the card's own `previewUrl` clip: muted (never audible), playsInline
- * (no fullscreen hijack on iOS), looped, and mounted only while the cursor is
- * dwelling — so nothing is fetched or decoded until a preview is real.
+ * The card's `youtubeUrl` is parsed to its video id and embedded as a muted
+ * `youtube-nocookie` player that autoplays inline (muted autoplay is the one
+ * autoplay browsers allow without a user gesture, which is exactly what makes
+ * a hover-to-play YouTube preview possible without the IFrame API):
  *
- * Failure is quiet: a refused play() or a load error calls `onFailed`, the
- * clip unmounts and the poster simply stays. The crossfade is a single opacity
- * transition — no flashing, no strobe.
+ *   <iframe src="…/embed/<id>?autoplay=1&mute=1&playsinline=1&controls=0&…"
+ *           allow="autoplay; …" />
+ *
+ * Lifecycle is driven by the coordinator: `active` is true only while this
+ * card owns the single preview slot (dwell elapsed, no other card playing).
+ * The iframe MOUNTS on grant and UNMOUNTS on release — unmounting is the
+ * reliable cross-origin way to stop YouTube without the IFrame API handshake,
+ * so mouseleave (or a carousel scroll, or a hidden tab) truly stops playback.
+ *
+ * The fade-in is a pure CSS keyframe on mount (see .bis-preview), so there is
+ * no extra render pass and no JS timer to desync: the poster shows through
+ * for the first instant, then the clip ramps in — no flash, no strobe. Clicks
+ * pass through to the watch link underneath (pointer-events: none), so the
+ * affordance stays "go watch it" even while a preview is playing.
  */
 interface HoverPreviewProps {
-  url: string;
+  video: BeautySpotlightVideo;
   /** True only while the coordinator has granted this card the preview slot. */
   active: boolean;
-  onFailed: () => void;
 }
 
-export function HoverPreview({ url, active, onFailed }: HoverPreviewProps) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [ready, setReady] = useState(false);
-  const [failed, setFailed] = useState(false);
+export function HoverPreview({ video, active }: HoverPreviewProps) {
+  const videoId = youtubeVideoId(video.youtubeUrl);
 
-  useEffect(() => {
-    const element = videoRef.current;
-    if (!element || !active) return;
-    let cancelled = false;
-
-    const attempt = element.play();
-    // play() is a promise in every browser this ships to; the branch keeps a
-    // non-conforming implementation from throwing an unhandled rejection.
-    if (attempt && typeof attempt.then === "function") {
-      attempt
-        .then(() => {
-          if (!cancelled) setReady(true);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setFailed(true);
-          onFailed();
-        });
-    } else if (!cancelled) {
-      // Ancient engines whose play() returns undefined: still reveal the clip,
-      // but off the synchronous path so the mount render stays single-pass.
-      queueMicrotask(() => {
-        if (!cancelled) setReady(true);
-      });
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [active, onFailed]);
-
-  if (!url.trim() || failed || !active) return null;
+  if (!videoId || !active) return null;
 
   return (
-    <video
-      ref={videoRef}
+    <iframe
       className="bis-preview"
-      data-ready={ready ? "true" : "false"}
-      src={url}
-      muted
-      loop
-      playsInline
-      preload="none"
-      disablePictureInPicture
+      src={youtubeEmbedUrl(videoId)}
+      title={video.title}
+      allow="autoplay; encrypted-media; picture-in-picture"
+      referrerPolicy="strict-origin-when-cross-origin"
       tabIndex={-1}
       aria-hidden="true"
-      onError={() => {
-        setFailed(true);
-        onFailed();
-      }}
     />
   );
 }

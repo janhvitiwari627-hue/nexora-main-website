@@ -22,17 +22,16 @@ import { HOVER_PREVIEW_DELAY_MS } from "./beautySpotlightData";
  *  - `PreviewCoordinatorProvider` owns the single "which card is previewing"
  *    slot, so moving across the row cannot start three clips at once.
  *  - `useHoverPreview` owns the dwell timer (HOVER_PREVIEW_DELAY_MS) and the
- *    state machine idle → waiting → previewing → failed.
+ *    state machine idle → waiting → previewing.
  *
- * It is a MUTED PREVIEW SYSTEM, not a YouTube embed: an iframe cannot be
- * reliably autoplayed on hover (it needs the IFrame API, a ready handshake and
- * a user-gesture-free muted start), so the production-safe equivalent is a
- * silent local clip from `previewUrl` with the poster as its fallback. A card
- * without a `previewUrl` keeps its poster — nothing flashes, nothing breaks.
+ * The clip itself is a MUTED YouTube embed (see HoverPreview): it mounts only
+ * while the slot is granted and unmounts on leave — unmounting the iframe is
+ * the reliable way to stop YouTube without the IFrame API. A card without a
+ * parsable YouTube id simply never previews and keeps its poster.
  */
 
 /** idle: nothing. waiting: dwell timer running. previewing: clip playing. */
-export type HoverPreviewState = "idle" | "waiting" | "previewing" | "failed";
+export type HoverPreviewState = "idle" | "waiting" | "previewing";
 
 interface PreviewCoordinator {
   /** The one card currently allowed to play, or null. */
@@ -98,7 +97,7 @@ export function usePreviewCoordinator(): PreviewCoordinator {
 
 export interface HoverPreviewControls {
   state: HoverPreviewState;
-  /** True while this card's silent clip is actually on screen. */
+  /** True only while the coordinator has granted this card the preview slot. */
   previewActive: boolean;
   /** Attach to the thumbnail wrapper. */
   onPointerEnter: (event: ReactPointerEvent<HTMLElement>) => void;
@@ -106,17 +105,16 @@ export interface HoverPreviewControls {
   /** Keyboard parity: focusing the watch control previews it too. */
   onFocus: () => void;
   onBlur: () => void;
-  /** Called by the clip when playback is refused/blocked → back to poster. */
-  markFailed: () => void;
 }
 
 /**
  * Dwell-timer hover preview for one card.
  *
- * @param id          stable card id (the coordinator slot key)
- * @param previewUrl  silent clip to play; empty means "poster only"
+ * @param id         stable card id (the coordinator slot key)
+ * @param hasPreview whether this card can preview (it carries a parsable
+ *                   YouTube id) — false means "poster only"
  */
-export function useHoverPreview(id: string, previewUrl: string): HoverPreviewControls {
+export function useHoverPreview(id: string, hasPreview: boolean): HoverPreviewControls {
   const coordinator = usePreviewCoordinator();
   const [state, setState] = useState<HoverPreviewState>("idle");
   // Mirror of `state` for the timer callbacks: reading it inside a setState
@@ -124,8 +122,6 @@ export function useHoverPreview(id: string, previewUrl: string): HoverPreviewCon
   // twice, which would arm two timers for one hover).
   const stateRef = useRef<HoverPreviewState>("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const hasPreview = previewUrl.trim().length > 0;
 
   const applyState = useCallback((next: HoverPreviewState) => {
     stateRef.current = next;
@@ -207,12 +203,6 @@ export function useHoverPreview(id: string, previewUrl: string): HoverPreviewCon
     [end],
   );
 
-  const markFailed = useCallback(() => {
-    clearTimer();
-    coordinator.cancel(id);
-    applyState("failed");
-  }, [applyState, clearTimer, coordinator, id]);
-
   return {
     state,
     previewActive: state === "previewing" && coordinator.activeId === id,
@@ -220,6 +210,5 @@ export function useHoverPreview(id: string, previewUrl: string): HoverPreviewCon
     onPointerLeave,
     onFocus: begin,
     onBlur: end,
-    markFailed,
   };
 }

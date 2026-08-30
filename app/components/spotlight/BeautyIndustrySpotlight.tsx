@@ -10,32 +10,39 @@ import {
 } from "./spotlightInteractions";
 import {
   BEAUTY_SPOTLIGHT_VIDEOS,
+  filterUploadableVideos,
   type BeautySpotlightVideo,
   type BeautyVideoComment,
 } from "./beautySpotlightData";
 
 /*
  * ── BEAUTY INDUSTRY SPOTLIGHT ──────────────────────────────────────────────
- * A premium, editorial video rail: the calm light-gray stage and white cards of
- * the reference design, layered with the interaction model people already know
- * from a video platform —
+ * A luxury-editorial video rail on a deep near-black stage: warm ivory serif
+ * typography, champagne-gold hairlines, dark brown cards and cinematic
+ * thumbnails — an exclusive professional beauty video editorial inside a
+ * luxury digital magazine — layered with the interaction model people already
+ * know from a video platform —
  *
- *   hover → silent preview → click → destination opens in a new tab
+ *   hover → muted YouTube autoplay → click → opens on YouTube in a new tab
  *   like · comments · share · save (never opens the destination)
  *
  * Ten data-driven slots, three cards per view on desktop with the next card
  * peeking, one per view on mobile with native swipe, and Previous/Next that
  * stop honestly at both ends.
  *
+ * SOURCE-APP GATE — only videos uploaded from a Nexora app that offers video
+ * upload are surfaced: `filterUploadableVideos` drops rows whose `sourceAppId`
+ * belongs to an app without a video option before anything renders.
+ *
  * Structure (one component per concern, no duplicated card markup):
  *   BeautyIndustrySpotlight
  *    ├── SectionHeader
  *    └── BeautyVideoCarousel
  *         └── BeautyVideoCard × N
- *              ├── VideoThumbnail (poster, tier + sponsored pills, duration)
- *              ├── HoverPreview   (muted clip, fade-in, quiet failure)
+ *              ├── VideoThumbnail (poster, duration)
+ *              ├── HoverPreview   (muted YouTube embed, fade-in)
  *              ├── PlayButton
- *              ├── VideoMetadata  (channel, title link, category)
+ *              ├── VideoMetadata  (channel identity, title link, category, source app)
  *              └── VideoActions   (like, comments, share, save)
  *
  * Nothing about a video is hardcoded here: pass `videos` (from an admin table,
@@ -51,28 +58,34 @@ export interface BeautyIndustrySpotlightProps {
   /** Supplies a comment thread for a card once the site's system is wired up. */
   resolveComments?: (video: BeautySpotlightVideo) => readonly BeautyVideoComment[];
   eyebrow?: string;
-  title?: string;
+  titleLead?: string;
+  titleAccent?: string;
   subtitle?: string;
 }
 
 export function BeautyIndustrySpotlight({
   videos = BEAUTY_SPOTLIGHT_VIDEOS,
   resolveComments,
-  eyebrow = "Beauty Industry",
-  title = "Beauty Industry Spotlight",
+  eyebrow = "The Professional Edit",
+  titleLead = "Beauty Industry",
+  titleAccent = "Spotlight",
   subtitle = "Discover products, brands and innovations trusted by beauty professionals.",
 }: BeautyIndustrySpotlightProps) {
+  // Source-app gate: only videos uploaded from apps that offer video upload.
+  const visibleVideos = filterUploadableVideos(videos);
+
   // Nothing configured → no empty stage. The section simply is not there.
-  if (videos.length === 0) return null;
+  if (visibleVideos.length === 0) return null;
 
   return (
     <SpotlightInteractionsProvider>
       <PreviewCoordinatorProvider>
         <SpotlightStage
-          videos={videos}
+          videos={visibleVideos}
           resolveComments={resolveComments}
           eyebrow={eyebrow}
-          title={title}
+          titleLead={titleLead}
+          titleAccent={titleAccent}
           subtitle={subtitle}
         />
       </PreviewCoordinatorProvider>
@@ -86,7 +99,8 @@ interface SpotlightStageProps {
   videos: readonly BeautySpotlightVideo[];
   resolveComments?: (video: BeautySpotlightVideo) => readonly BeautyVideoComment[];
   eyebrow: string;
-  title: string;
+  titleLead: string;
+  titleAccent: string;
   subtitle: string;
 }
 
@@ -99,7 +113,8 @@ function SpotlightStage({
   videos,
   resolveComments,
   eyebrow,
-  title,
+  titleLead,
+  titleAccent,
   subtitle,
 }: SpotlightStageProps) {
   const carousel = useCarouselScroll();
@@ -108,9 +123,9 @@ function SpotlightStage({
     <section id={SECTION_ID} className="bis-section" aria-labelledby={HEADING_ID}>
       <SectionHeader
         eyebrow={eyebrow}
-        title={title}
+        titleLead={titleLead}
+        titleAccent={titleAccent}
         subtitle={subtitle}
-        total={videos.length}
         headingId={HEADING_ID}
         canPrev={carousel.canPrev}
         canNext={carousel.canNext}
@@ -131,7 +146,7 @@ function SpotlightStage({
         {/* The hover clause is a mouse affordance — hidden on touch-only
             devices so the hint never promises something a tap cannot do. */}
         <span className="bis-hint-hover">
-          Hover a thumbnail for a silent preview ·{" "}
+          Hover a card to auto-play a muted YouTube preview ·{" "}
         </span>
         swipe or use the arrows to browse all {videos.length} videos
       </p>

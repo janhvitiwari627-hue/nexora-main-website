@@ -8,22 +8,25 @@ import { VideoMetadata } from "./VideoMetadata";
 import { VideoThumbnail } from "./VideoThumbnail";
 import { WatchLink } from "./WatchLink";
 import { useHoverPreview } from "./previewCoordinator";
-import type {
-  BeautySpotlightVideo,
-  BeautyVideoComment,
+import {
+  youtubeVideoId,
+  type BeautySpotlightVideo,
+  type BeautyVideoComment,
 } from "./beautySpotlightData";
 
 /*
  * One Beauty Industry Spotlight card.
  *
- *   thumbnail → hover preview → play → title → channel → like/comment/share/save
+ *   thumbnail → hover autoplay → play → title → channel → like/comment/share/save
  *
  * Anatomy of the hover behaviour, in order:
  *   1. pointer-enter on the thumbnail shell (mouse only) arms the dwell timer;
  *   2. after HOVER_PREVIEW_DELAY_MS the coordinator is asked for the single
- *      preview slot and, if granted, the muted clip fades in over the poster;
+ *      preview slot and, if granted, the muted YouTube embed mounts over the
+ *      poster and autoplays;
  *   3. pointer-leave (or focus loss, or a carousel scroll) clears the timer,
- *      releases the slot and the poster returns — no flash, no stuck decoder.
+ *      releases the slot and unmounts the embed — the poster returns, no
+ *      stuck player.
  *
  * The click area is the WatchLink around the thumbnail (and the title link in
  * VideoMetadata). The interaction row is a sibling, never a descendant, so
@@ -35,7 +38,8 @@ interface BeautyVideoCardProps {
 }
 
 export function BeautyVideoCard({ video, resolveComments }: BeautyVideoCardProps) {
-  const preview = useHoverPreview(video.id, video.previewUrl);
+  const canPreview = youtubeVideoId(video.youtubeUrl) !== null;
+  const preview = useHoverPreview(video.id, canPreview);
 
   return (
     <li className="bis-card" data-previewing={preview.previewActive ? "true" : "false"}>
@@ -57,11 +61,7 @@ export function BeautyVideoCard({ video, resolveComments }: BeautyVideoCardProps
         >
           <span className="bis-thumb">
             <VideoThumbnail video={video} />
-            <HoverPreview
-              url={video.previewUrl}
-              active={preview.previewActive}
-              onFailed={preview.markFailed}
-            />
+            <HoverPreview video={video} active={preview.previewActive} />
             <PlayButton previewing={preview.previewActive} />
           </span>
         </WatchLink>
