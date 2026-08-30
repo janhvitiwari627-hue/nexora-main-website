@@ -2,9 +2,9 @@
  * Beauty Industry Spotlight — interaction contract (jsdom).
  *
  * Drives the REAL client components in a DOM: pointer events with the actual
- * dwell timer, the muted-preview mount/unmount, and the interaction row. These
- * are the behaviours the render test cannot see, because they only exist after
- * hydration and after a user moves a cursor.
+ * dwell timer, the muted YouTube embed mount/unmount, and the interaction row.
+ * These are the behaviours the render test cannot see, because they only exist
+ * after hydration and after a user moves a cursor.
  *
  * Run with: node --import tsx --test tests/beauty-industry-spotlight-interaction.test.tsx
  */
@@ -39,7 +39,7 @@ function installGlobals() {
   define("navigator", win.navigator);
   define("HTMLElement", win.HTMLElement);
   define("HTMLAnchorElement", win.HTMLAnchorElement);
-  define("HTMLVideoElement", win.HTMLVideoElement);
+  define("HTMLIFrameElement", win.HTMLIFrameElement);
   define("Element", win.Element);
   define("Node", win.Node);
   define("Event", win.Event);
@@ -58,20 +58,20 @@ installGlobals();
 const base = {
   category: "Hair Care",
   thumbnailUrl: "",
-  youtubeUrl: "https://www.youtube.com/watch?v=fixture",
   duration: "1:00",
   badge: "GOLD",
   sponsored: false,
   likes: 100,
   comments: 4,
+  sourceAppId: "distributors-beauty-industry",
 } as const;
 
 const withPreview: BeautySpotlightVideo = {
   ...base,
   id: "fixture-preview",
   brandName: "Preview Brand",
-  title: "Has A Silent Preview",
-  previewUrl: "/clips/preview-fixture.mp4",
+  title: "Has A Muted Preview",
+  youtubeUrl: "https://www.youtube.com/watch?v=kt8Yfs-IYqs",
 };
 
 const noPreview: BeautySpotlightVideo = {
@@ -79,7 +79,7 @@ const noPreview: BeautySpotlightVideo = {
   id: "fixture-poster",
   brandName: "Poster Brand",
   title: "Poster Only",
-  previewUrl: "",
+  youtubeUrl: "",
 };
 
 const secondWithPreview: BeautySpotlightVideo = {
@@ -87,7 +87,7 @@ const secondWithPreview: BeautySpotlightVideo = {
   id: "fixture-preview-2",
   brandName: "Second Preview Brand",
   title: "Competes For The Preview Slot",
-  previewUrl: "/clips/preview-fixture-2.mp4",
+  youtubeUrl: "https://www.youtube.com/watch?v=eKyD4yGgpCo",
 };
 
 const VIDEOS = [withPreview, noPreview, secondWithPreview];
@@ -125,8 +125,11 @@ function shellFor(cardIndex: number): HTMLElement {
   return shell;
 }
 
-function videoIn(cardIndex: number): HTMLVideoElement | null {
-  return container.querySelectorAll(".bis-card")[cardIndex]?.querySelector("video") ?? null;
+/** The muted YouTube preview iframe in a card, or null. */
+function previewIn(cardIndex: number): HTMLIFrameElement | null {
+  return (
+    container.querySelectorAll(".bis-card")[cardIndex]?.querySelector("iframe") ?? null
+  );
 }
 
 /**
@@ -163,54 +166,52 @@ test("a passing cursor does not start a preview; dwelling does", async () => {
   const shell = shellFor(0);
 
   pointer("over", shell);
-  assert.equal(videoIn(0), null, "no clip may mount the instant the cursor arrives");
+  assert.equal(previewIn(0), null, "no embed may mount the instant the cursor arrives");
 
   // Well inside the dwell window: still just the poster.
   await act(async () => {
     await wait(Math.floor(HOVER_PREVIEW_DELAY_MS / 3));
   });
-  assert.equal(videoIn(0), null, "the dwell delay must actually elapse first");
+  assert.equal(previewIn(0), null, "the dwell delay must actually elapse first");
 
   await act(async () => {
-    await wait(HOVER_PREVIEW_DELAY_MS + 120);
+    await wait(HOVER_PREVIEW_DELAY_MS + 160);
   });
-  const video = videoIn(0);
-  assert.ok(video, "a muted preview clip mounts after the dwell delay");
-  assert.equal(video.getAttribute("src"), "/clips/preview-fixture.mp4");
-  assert.equal(video.muted, true, "the preview must never be audible");
-  assert.equal(video.hasAttribute("controls"), false);
-  assert.equal(video.getAttribute("playsinline") !== null || (video as unknown as { playsInline: boolean }).playsInline, true);
-  assert.equal(video.getAttribute("aria-hidden"), "true", "the clip is decorative");
+  const embed = previewIn(0);
+  assert.ok(embed, "a muted YouTube embed mounts after the dwell delay");
+  assert.match(
+    embed.getAttribute("src") ?? "",
+    /youtube-nocookie\.com\/embed\/kt8Yfs-IYqs\?/,
+  );
+  const src = embed.getAttribute("src") ?? "";
+  assert.match(src, /autoplay=1/, "the preview must autoplay");
+  assert.match(src, /mute=1/, "the preview must be muted — the only autoplay browsers allow");
+  assert.match(src, /playsinline=1/, "the preview plays inline, never fullscreen");
+  assert.match(src, /controls=0/, "the preview shows no controls");
+  assert.match(embed.getAttribute("allow") ?? "", /autoplay/);
+  assert.equal(embed.getAttribute("aria-hidden"), "true", "the embed is decorative");
 });
 
 test("leaving stops the preview and restores the poster", async () => {
   const shell = shellFor(0);
   pointer("over", shell);
   await act(async () => {
-    await wait(HOVER_PREVIEW_DELAY_MS + 120);
+    await wait(HOVER_PREVIEW_DELAY_MS + 160);
   });
-  const before = videoIn(0);
-  assert.ok(before, "a muted preview clip mounts after the dwell delay");
-  assert.equal(before.getAttribute("data-ready"), "true", "the clip is revealed");
+  const before = previewIn(0);
+  assert.ok(before, "a muted YouTube embed mounts after the dwell delay");
 
   pointer("out", shell);
-  const after = videoIn(0);
-  assert.ok(after, "the paused element stays warm for an instant re-hover");
-  assert.equal(
-    after.getAttribute("data-ready"),
-    "false",
-    "the clip hides the moment the cursor leaves — the poster is restored",
-  );
-  assert.equal(after.currentTime, 0, "the clip is rewound to its poster frame");
+  assert.equal(previewIn(0), null, "unmounting the iframe is what stops the YouTube player");
 });
 
-test("a card with no preview clip keeps its poster, however long you hover", async () => {
+test("a card with no YouTube link keeps its poster, however long you hover", async () => {
   const shell = shellFor(1);
   pointer("over", shell);
   await act(async () => {
-    await wait(HOVER_PREVIEW_DELAY_MS + 120);
+    await wait(HOVER_PREVIEW_DELAY_MS + 160);
   });
-  assert.equal(videoIn(1), null);
+  assert.equal(previewIn(1), null);
   assert.ok(
     container.querySelectorAll(".bis-card")[1]?.querySelector(".bis-poster"),
     "the branded fallback poster stays on screen",
@@ -221,48 +222,45 @@ test("a card with no preview clip keeps its poster, however long you hover", asy
 test("touch input never arms a preview", async () => {
   pointer("over", shellFor(0), "touch");
   await act(async () => {
-    await wait(HOVER_PREVIEW_DELAY_MS + 120);
+    await wait(HOVER_PREVIEW_DELAY_MS + 160);
   });
-  // The element may stay warm from an earlier mouse preview; what matters is
-  // that a touch never arms one: no clip may be revealed.
-  const video = videoIn(0);
-  assert.ok(
-    !video || video.getAttribute("data-ready") === "false",
-    "a tap must not queue a preview behind the next action",
-  );
+  // A tap must never queue a preview behind the next action.
+  assert.equal(previewIn(0), null);
 });
 
 test("only one card previews at a time", async () => {
   pointer("over", shellFor(0));
   await act(async () => {
-    await wait(HOVER_PREVIEW_DELAY_MS + 120);
+    await wait(HOVER_PREVIEW_DELAY_MS + 160);
   });
-  assert.ok(videoIn(0), "the first hovered card previews");
-  assert.equal(videoIn(0)?.getAttribute("src"), "/clips/preview-fixture.mp4");
+  assert.ok(previewIn(0), "the first hovered card previews");
+  assert.match(
+    previewIn(0)?.getAttribute("src") ?? "",
+    /embed\/kt8Yfs-IYqs/,
+  );
 
-  // The cursor moves to another card that ALSO has a clip: it takes the single
-  // slot, so the first card must hand it back rather than decode two clips.
+  // The cursor moves to another card that ALSO has a link: it takes the single
+  // slot, so the first card must unmount its embed rather than play two.
   pointer("over", shellFor(2));
   await act(async () => {
-    await wait(HOVER_PREVIEW_DELAY_MS + 120);
+    await wait(HOVER_PREVIEW_DELAY_MS + 160);
   });
   assert.equal(
-    videoIn(0)?.getAttribute("data-ready") ?? "false",
-    "false",
+    previewIn(0),
+    null,
     "the previously hovered card stops previewing",
   );
-  assert.equal(
-    videoIn(2)?.getAttribute("src"),
-    "/clips/preview-fixture-2.mp4",
+  assert.match(
+    previewIn(2)?.getAttribute("src") ?? "",
+    /embed\/eKyD4yGgpCo/,
     "the newly hovered card owns the slot",
   );
 
   pointer("out", shellFor(0));
   pointer("out", shellFor(2));
-  const hidden = (index: number) => videoIn(index)?.getAttribute("data-ready") ?? "false";
-  assert.equal(hidden(0), "false");
-  assert.equal(hidden(1), "false");
-  assert.equal(hidden(2), "false");
+  assert.equal(previewIn(0), null);
+  assert.equal(previewIn(1), null);
+  assert.equal(previewIn(2), null);
 });
 
 /* ── Interaction row stays independent of the watch link ─────────────────── */
@@ -278,7 +276,7 @@ test("Save confirms in a live region and never navigates", async () => {
   const card = container.querySelectorAll(".bis-card")[0];
   const save = card?.querySelector<HTMLButtonElement>('.bis-action--save');
   assert.ok(save, "the save control exists");
-  assert.equal(save?.getAttribute("aria-label"), "Save Has A Silent Preview");
+  assert.equal(save?.getAttribute("aria-label"), "Save Has A Muted Preview");
   click(save!);
 
   const toast = container.querySelector(".bis-toast");
@@ -328,10 +326,10 @@ test("Comments opens an on-page panel — not YouTube", async () => {
 
   const card = container.querySelectorAll(".bis-card")[0];
   const comments = card?.querySelector<HTMLButtonElement>(".bis-action--comments");
-  assert.equal(comments?.getAttribute("aria-label"), "Open comments for Has A Silent Preview");
+  assert.equal(comments?.getAttribute("aria-label"), "Open comments for Has A Muted Preview");
   click(comments!);
 
-  const panel = win.document.querySelector('[role="dialog"][aria-label="Comments for Has A Silent Preview"]');
+  const panel = win.document.querySelector('[role="dialog"][aria-label="Comments for Has A Muted Preview"]');
   assert.ok(panel, "the comments panel opens");
   assert.match(panel?.textContent ?? "", /Comments/);
   assert.match(panel?.textContent ?? "", /No comments yet/);
@@ -340,15 +338,12 @@ test("Comments opens an on-page panel — not YouTube", async () => {
 
   // Escape closes it and returns focus to the trigger.
   act(() => {
-    win.document.dispatchEvent(new win.Event("keydown", { bubbles: true }));
-  });
-  act(() => {
     const event = new win.Event("keydown", { bubbles: true });
     Object.defineProperty(event, "key", { value: "Escape" });
     win.document.dispatchEvent(event);
   });
   assert.equal(
-    win.document.querySelector('[role="dialog"][aria-label="Comments for Has A Silent Preview"]'),
+    win.document.querySelector('[role="dialog"][aria-label="Comments for Has A Muted Preview"]'),
     null,
     "Escape closes the panel",
   );
@@ -379,7 +374,7 @@ test("Share copies the configured video URL", async () => {
   await act(async () => {
     await wait(10);
   });
-  assert.deepEqual(copied, ["https://www.youtube.com/watch?v=fixture"]);
+  assert.deepEqual(copied, ["https://www.youtube.com/watch?v=kt8Yfs-IYqs"]);
   assert.match(
     win.document.querySelector(".bis-share-item")?.textContent ?? "",
     /Link copied/,
@@ -407,7 +402,7 @@ test("the watch control is a real anchor with a hardened rel", () => {
   assert.equal(watch?.tagName, "A");
   assert.equal(watch?.getAttribute("target"), "_blank");
   assert.equal(watch?.getAttribute("rel"), "noopener noreferrer");
-  assert.equal(watch?.getAttribute("href"), "https://www.youtube.com/watch?v=fixture");
+  assert.equal(watch?.getAttribute("href"), "https://www.youtube.com/watch?v=kt8Yfs-IYqs");
   // The interaction row is a sibling of the anchor, never inside it.
   assert.equal(
     watch?.querySelector(".bis-actions"),

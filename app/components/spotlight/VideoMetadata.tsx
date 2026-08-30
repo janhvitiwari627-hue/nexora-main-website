@@ -1,10 +1,16 @@
 "use client";
 
-import { brandMonogram, tierSlug, type BeautySpotlightVideo } from "./beautySpotlightData";
+import {
+  brandMonogram,
+  sourceAppForVideo,
+  tierSlug,
+  type BeautySpotlightVideo,
+} from "./beautySpotlightData";
 import { WatchLink } from "./WatchLink";
 
 /*
- * Card metadata: channel identity, then the title, then the category.
+ * Card metadata: channel identity, then the title, then the category, then
+ * the source-app line.
  *
  * The channel row reads like a professional video platform without copying
  * anyone's branding: a small tier-tinted circular avatar carrying the brand
@@ -14,8 +20,13 @@ import { WatchLink } from "./WatchLink";
  * link — clicking it opens the configured destination in a new tab, exactly
  * like the thumbnail. Two-line clamp keeps every card the same height, so the
  * row never reflows.
+ *
+ * The "From …" line is the source-app wiring: which Nexora app the video was
+ * uploaded from. Rows without a known source app simply omit the line.
  */
 export function VideoMetadata({ video }: { video: BeautySpotlightVideo }) {
+  const sourceApp = sourceAppForVideo(video);
+
   return (
     <div className="bis-meta">
       <div className="bis-channel">
@@ -51,6 +62,14 @@ export function VideoMetadata({ video }: { video: BeautySpotlightVideo }) {
         </WatchLink>
       </h3>
       <p className="bis-category">{video.category}</p>
+      {sourceApp && (
+        <p className="bis-source">
+          <span className="bis-source-mark" aria-hidden="true">
+            ◆
+          </span>
+          From {sourceApp.name}
+        </p>
+      )}
     </div>
   );
 }

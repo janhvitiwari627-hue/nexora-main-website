@@ -2475,12 +2475,21 @@ button.bis-thumb-link {
 }
 @keyframes bisShimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
 
-/* Silent hover preview: one opacity ramp, no flashing. */
+/* Hover preview: the muted YouTube embed over the poster. A single CSS
+   keyframe ramp-in on mount (no flash, no JS timer); `pointer-events: none`
+   keeps the click on the watch link underneath, so the affordance stays "go
+   watch it" even mid-preview. Reduced motion disables the ramp and shows the
+   embed immediately. */
 .bis-preview {
-  opacity: 0;
-  transition: opacity 0.3s ease;
+  border: 0;
+  background: #000;
+  pointer-events: none;
+  animation: bisPreviewIn 0.3s ease;
 }
-.bis-preview[data-ready="true"] { opacity: 1; }
+@keyframes bisPreviewIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 
 /* Play control: outlined cinematic ring — outer ivory ring, inner champagne
    ring, translucent dark centre, small ivory triangle. Grows on hover and
@@ -2628,6 +2637,24 @@ button.bis-title-link {
   width: 16px;
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(217, 180, 106, 0.8));
+}
+
+/* Source-app wiring: which Nexora app the video was uploaded from. */
+.bis-source {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 7px 0 0;
+  color: #93826b;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.bis-source-mark {
+  flex: none;
+  color: var(--bis-accent);
+  font-size: 7px;
+  transform: translateY(-0.5px);
 }
 
 /* ---- Interaction row ----------------------------------------------------- */
