@@ -1554,12 +1554,14 @@ function HomePage({ navigate, online, authState, refCode }: { navigate: (path: s
         ── BEAUTY INDUSTRY SPOTLIGHT ────────────────────────────────────────
         Premium editorial video rail (ten slots, three per view on desktop with
         the next card peeking, one per view + native swipe on mobile) with the
-        platform interaction layer: hover → silent muted preview → click opens
-        the configured destination in a new tab, while like / comments / share /
-        save stay independent of that navigation. Sits with the other brand
-        content, after the admin-gated Sponsored section. Ungated on purpose:
-        like GrowMoreSection/FAQSection it is static editorial content, so an
-        admin visibility key is not required for it to render.
+        platform interaction layer: hover → muted YouTube autoplay → click
+        opens the video on YouTube in a new tab, while like / comments / share /
+        save stay independent of that navigation. Only videos uploaded from a
+        Nexora app with a video option are surfaced (source-app gate). Sits with
+        the other brand content, after the admin-gated Sponsored section.
+        Ungated on purpose: like GrowMoreSection/FAQSection it is static
+        editorial content, so an admin visibility key is not required for it
+        to render.
       */}
       <BeautyIndustrySpotlight />
 

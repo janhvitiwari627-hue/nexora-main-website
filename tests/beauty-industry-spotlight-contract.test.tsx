@@ -4,8 +4,8 @@
  * Executes the real components with a React render (react-dom/server — no
  * browser, no Supabase) and the pure helpers directly, so this covers the
  * render path a visitor actually hits: ten data-driven cards, tier/sponsored
- * pills, duration, the accessible labels, the unconfigured-URL honesty and the
- * carousel geometry.
+ * pills, duration, the accessible labels, the YouTube destination policy, the
+ * source-app gate and the carousel geometry.
  *
  * Run with: node --import tsx --test tests/beauty-industry-spotlight-contract.test.tsx
  */
@@ -18,9 +18,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { BeautyIndustrySpotlight } from "../app/components/spotlight/BeautyIndustrySpotlight";
 import {
   BEAUTY_SPOTLIGHT_VIDEOS,
+  VISIBLE_BEAUTY_SPOTLIGHT_VIDEOS,
   brandMonogram,
+  filterUploadableVideos,
   formatCompactCount,
+  hasVideoUpload,
   safeExternalUrl,
+  sourceAppById,
+  youtubeEmbedUrl,
+  youtubeThumbnailUrl,
+  youtubeVideoId,
+  youtubeWatchUrl,
 } from "../app/components/spotlight/beautySpotlightData";
 import {
   carouselEdges,
@@ -46,21 +54,39 @@ const configuredVideo: BeautySpotlightVideo = {
   title: "Configured Destination",
   category: "Hair Care",
   thumbnailUrl: "/products/vitamin-c-serum.jpg",
-  previewUrl: "/clips/preview.mp4",
   youtubeUrl: "https://www.youtube.com/watch?v=example",
   duration: "1:30",
   badge: "GOLD",
   sponsored: false,
   likes: 10,
   comments: 2,
+  sourceAppId: "distributors-beauty-industry",
+};
+
+const unconfiguredVideo: BeautySpotlightVideo = {
+  id: "unconfigured-001",
+  brandName: "Pending Brand",
+  title: "No Destination Yet",
+  category: "Hair Care",
+  thumbnailUrl: "",
+  youtubeUrl: "",
+  duration: "1:30",
+  badge: "GOLD",
+  sponsored: false,
+  likes: 0,
+  comments: 0,
+  sourceAppId: "distributors-beauty-industry",
 };
 
 const sectionHtml = renderToStaticMarkup(<BeautyIndustrySpotlight />);
 const configuredHtml = renderToStaticMarkup(
   <BeautyIndustrySpotlight videos={[configuredVideo]} />,
 );
+const unconfiguredHtml = renderToStaticMarkup(
+  <BeautyIndustrySpotlight videos={[unconfiguredVideo]} />,
+);
 
-/* ── Structure: exactly the ten slots from the brief ─────────────────────── */
+/* ── Structure: the ten visible slots from the brief ─────────────────────── */
 
 test("renders all ten beauty-industry slots in order", () => {
   const expected = [
@@ -75,7 +101,7 @@ test("renders all ten beauty-industry slots in order", () => {
     "Moroccanoil",
     "Lakmé Salon",
   ];
-  assert.equal(BEAUTY_SPOTLIGHT_VIDEOS.length, 10);
+  assert.equal(VISIBLE_BEAUTY_SPOTLIGHT_VIDEOS.length, 10);
   const positions = expected.map((brand) => sectionHtml.indexOf(`>${esc(brand)}</span>`));
   positions.forEach((position, index) => {
     assert.ok(position > -1, `${expected[index]} must render as a channel byline`);
@@ -114,7 +140,7 @@ test("Previous starts disabled — the rail has no infinite loop backwards", () 
 /* ── Card anatomy: badges, duration, metadata ────────────────────────────── */
 
 test("every card shows its data-driven tier pill and duration", () => {
-  for (const video of BEAUTY_SPOTLIGHT_VIDEOS) {
+  for (const video of VISIBLE_BEAUTY_SPOTLIGHT_VIDEOS) {
     const tierClass = `bis-tier bis-tier--${video.badge.toLowerCase()}`;
     assert.ok(
       sectionHtml.includes(tierClass),
@@ -132,25 +158,20 @@ test("every card shows its data-driven tier pill and duration", () => {
 });
 
 test("SPONSORED is disclosed only where the data says sponsored", () => {
-  const sponsoredCount = BEAUTY_SPOTLIGHT_VIDEOS.filter((v) => v.sponsored).length;
+  const sponsoredCount = VISIBLE_BEAUTY_SPOTLIGHT_VIDEOS.filter((v) => v.sponsored).length;
   assert.ok(sponsoredCount > 0, "the brief requires sponsored slots to exist");
   assert.ok(
-    sponsoredCount < BEAUTY_SPOTLIGHT_VIDEOS.length,
+    sponsoredCount < VISIBLE_BEAUTY_SPOTLIGHT_VIDEOS.length,
     "not every slot is sponsored — the badge must stay meaningful",
   );
   assert.equal(
     (sectionHtml.match(/class="bis-sponsored"/g) ?? []).length,
     sponsoredCount,
   );
-  // Unconfigured placeholders keep the branded fallback, never a broken image.
-  // All ten slots ship real self-hosted editorial posters, so the branded
-  // fallback poster appears in SSR markup nowhere (it remains the on-error
-  // path in the browser).
-  assert.equal((sectionHtml.match(/class="bis-poster /g) ?? []).length, 0);
 });
 
-test("channel, title and category all render from the data row", () => {
-  const first = BEAUTY_SPOTLIGHT_VIDEOS[0];
+test("channel, title, category and source app all render from the data row", () => {
+  const first = VISIBLE_BEAUTY_SPOTLIGHT_VIDEOS[0];
   assert.ok(sectionHtml.includes(`>${esc(first.title)}</`), "title renders");
   assert.ok(sectionHtml.includes(`>${first.category}</p>`), "category renders");
   assert.match(sectionHtml, /class="bis-title"/);
@@ -159,12 +180,47 @@ test("channel, title and category all render from the data row", () => {
   assert.match(sectionHtml, /class="bis-channel"/);
   assert.match(sectionHtml, /class="bis-avatar bis-avatar--\w+"/);
   assert.match(sectionHtml, /class="bis-verified"/);
+  // Source-app wiring: "From <app>" for the first row.
+  assert.match(sectionHtml, /class="bis-source"/);
+  const app = sourceAppById(first.sourceAppId);
+  assert.ok(app, "the first row resolves to a known source app");
+  assert.ok(sectionHtml.includes(`From ${app?.name}`), "the source-app line renders");
+});
+
+/* ── Source-app gate (which app a video came from) ───────────────────────── */
+
+test("only videos from apps with a video option are surfaced", () => {
+  // Twelve mock rows exist: ten from video-capable apps, two from apps
+  // without video upload (Customer App, Job Portal).
+  assert.equal(BEAUTY_SPOTLIGHT_VIDEOS.length, 12);
+  assert.equal(VISIBLE_BEAUTY_SPOTLIGHT_VIDEOS.length, 10);
+
+  const excluded = BEAUTY_SPOTLIGHT_VIDEOS.filter(
+    (v) => !VISIBLE_BEAUTY_SPOTLIGHT_VIDEOS.includes(v),
+  );
+  assert.equal(excluded.length, 2);
+  for (const video of excluded) {
+    assert.equal(
+      hasVideoUpload(video.sourceAppId),
+      false,
+      `${video.brandName} is excluded because its app has no video upload`,
+    );
+  }
+  // The excluded rows never reach the rendered markup.
+  for (const video of excluded) {
+    assert.ok(!sectionHtml.includes(esc(video.title)), `${video.title} must not render`);
+  }
+  // The pure gate is the same one the component uses.
+  assert.deepEqual(
+    filterUploadableVideos(BEAUTY_SPOTLIGHT_VIDEOS),
+    VISIBLE_BEAUTY_SPOTLIGHT_VIDEOS,
+  );
 });
 
 /* ── Accessibility labels ────────────────────────────────────────────────── */
 
 test("every interactive control has the briefed accessible label", () => {
-  const first = BEAUTY_SPOTLIGHT_VIDEOS[0];
+  const first = VISIBLE_BEAUTY_SPOTLIGHT_VIDEOS[0];
   for (const label of [
     esc(`Watch ${first.title} by ${first.brandName} (opens in a new tab)`),
     `Like ${first.title}`,
@@ -183,61 +239,71 @@ test("every interactive control has the briefed accessible label", () => {
 
 /* ── External navigation policy ──────────────────────────────────────────── */
 
+test("every visible slot carries a safe YouTube destination", () => {
+  for (const video of VISIBLE_BEAUTY_SPOTLIGHT_VIDEOS) {
+    assert.equal(safeExternalUrl(video.youtubeUrl), video.youtubeUrl);
+    assert.match(video.youtubeUrl, /^https:\/\/www\.youtube\.com\/watch\?v=[A-Za-z0-9_-]{11}$/);
+    assert.equal(youtubeVideoId(video.youtubeUrl)?.length, 11);
+  }
+  // All ten cards render real anchors (thumbnail + title) to YouTube.
+  assert.equal((sectionHtml.match(/<a class="bis-thumb-link"/g) ?? []).length, 10);
+  assert.equal((sectionHtml.match(/youtube\.com\/watch/g) ?? []).length, 20);
+  // The anchors are hardened against opener/referrer leaks.
+  assert.equal((sectionHtml.match(/rel="noopener noreferrer"/g) ?? []).length, 20);
+});
+
 test("an unconfigured video never invents a destination", () => {
-  // The eight placeholder slots stay empty; the two live showcase slots each
-  // carry a safe absolute https destination (the Nexora app they showcase).
-  const live = BEAUTY_SPOTLIGHT_VIDEOS.filter((v) => v.youtubeUrl !== "");
-  const placeholders = BEAUTY_SPOTLIGHT_VIDEOS.filter((v) => v.youtubeUrl === "");
-  assert.equal(live.length, 2);
-  assert.equal(placeholders.length, 8);
-  for (const video of live) {
-    assert.equal(safeExternalUrl(video.youtubeUrl), video.youtubeUrl);
-    assert.match(video.youtubeUrl, /^https:\/\/[\w.-]+\.vercel\.app\/$/);
-  }
-  // No fabricated YouTube URL anywhere in the shipped markup.
-  assert.doesNotMatch(sectionHtml, /youtube\.com/i);
-  assert.doesNotMatch(sectionHtml, /youtu\.be/i);
-  assert.match(sectionHtml, /video link not configured yet/);
-  // Live slots render real anchors; the eight placeholders stay disabled buttons.
-  assert.equal((sectionHtml.match(/<a class="bis-thumb-link"/g) ?? []).length, 2);
+  // A row whose youtubeUrl is empty renders an honestly disabled control.
+  assert.doesNotMatch(unconfiguredHtml, /youtube\.com/i);
+  assert.match(unconfiguredHtml, /video link not configured yet/);
   assert.equal(
-    (sectionHtml.match(/class="bis-thumb-link bis-thumb-link--unavailable"/g) ?? []).length,
-    8,
+    (unconfiguredHtml.match(/class="bis-thumb-link bis-thumb-link--unavailable"/g) ?? []).length,
+    1,
   );
   assert.equal(
-    (sectionHtml.match(/disabled="" aria-disabled="true"/g) ?? []).length,
-    16, // thumbnail control + title control, per unconfigured card
+    (unconfiguredHtml.match(/disabled="" aria-disabled="true"/g) ?? []).length,
+    2, // thumbnail control + title control
   );
 });
 
-test("every slot ships a dedicated local preview clip; destinations stay honest", () => {
-  // Hover previews never depend on the watch URL: every card carries its own
-  // short self-hosted muted clip.
-  for (const video of BEAUTY_SPOTLIGHT_VIDEOS) {
-    assert.match(
-      video.previewUrl,
-      /^\/spotlight\/[\w-]+\.mp4$/,
-      `${video.brandName} must carry a local preview clip`,
-    );
-  }
-  // Only the two Nexora showcase slots carry live destinations.
-  const live = BEAUTY_SPOTLIGHT_VIDEOS.filter((v) => v.youtubeUrl !== "");
-  assert.equal(live.length, 2);
-  for (const video of live) {
-    assert.match(video.thumbnailUrl, /^\/spotlight\/.+\.jpg$/);
-    assert.equal(safeExternalUrl(video.youtubeUrl), video.youtubeUrl);
-  }
-  // The rendered markup actually references both showcase posters.
-  assert.match(sectionHtml, /src="\/spotlight\/nexora-luxe-sourcing\.jpg"/);
-  assert.match(sectionHtml, /src="\/spotlight\/nexora-salon-glow\.jpg"/);
+/* ── YouTube URL helpers (pure) ──────────────────────────────────────────── */
+
+test("youtubeVideoId parses every common URL shape and rejects junk", () => {
+  const id = "dQw4w9WgXcQ";
+  assert.equal(youtubeVideoId(`https://www.youtube.com/watch?v=${id}`), id);
+  assert.equal(youtubeVideoId(`https://youtu.be/${id}`), id);
+  assert.equal(youtubeVideoId(`https://www.youtube.com/embed/${id}`), id);
+  assert.equal(youtubeVideoId(`https://m.youtube.com/watch?v=${id}&t=10s`), id);
+  assert.equal(youtubeVideoId(`https://www.youtube.com/shorts/${id}`), id);
+  assert.equal(youtubeVideoId("https://example.com/watch?v=12345678901"), null);
+  assert.equal(youtubeVideoId("javascript:alert(1)"), null);
+  assert.equal(youtubeVideoId(""), null);
+  assert.equal(youtubeVideoId(null), null);
+  assert.equal(youtubeVideoId("https://www.youtube.com/watch?v=short"), null);
 });
 
-test("every slot ships a real self-hosted editorial poster", () => {
-  for (const video of BEAUTY_SPOTLIGHT_VIDEOS) {
-    assert.match(
+test("watch, thumbnail and embed URLs derive from a single id", () => {
+  const id = "dQw4w9WgXcQ";
+  assert.equal(youtubeWatchUrl(id), `https://www.youtube.com/watch?v=${id}`);
+  assert.equal(youtubeThumbnailUrl(id), `https://i.ytimg.com/vi/${id}/hqdefault.jpg`);
+  const embed = youtubeEmbedUrl(id);
+  assert.ok(embed.startsWith(`https://www.youtube-nocookie.com/embed/${id}?`));
+  // Muted autoplay is what lets a hover start playback without a gesture.
+  assert.match(embed, /autoplay=1/);
+  assert.match(embed, /mute=1/);
+  assert.match(embed, /playsinline=1/);
+  assert.match(embed, /controls=0/);
+  assert.match(embed, new RegExp(`playlist=${id}`));
+});
+
+test("every visible slot's poster is its own YouTube thumbnail", () => {
+  for (const video of VISIBLE_BEAUTY_SPOTLIGHT_VIDEOS) {
+    const id = youtubeVideoId(video.youtubeUrl);
+    assert.ok(id, `${video.brandName} has a parsable id`);
+    assert.equal(
       video.thumbnailUrl,
-      /^\/spotlight\/[\w-]+\.jpg$/,
-      `${video.brandName} must carry a local poster`,
+      youtubeThumbnailUrl(id),
+      `${video.brandName} poster is the video's own thumbnail`,
     );
     assert.ok(
       sectionHtml.includes(`src="${video.thumbnailUrl}"`),
@@ -359,6 +425,12 @@ test("globals.css carries the section's responsive and motion contract", async (
   assert.match(css, /\.bis-eyebrow-line \{/);
   assert.match(css, /repeating-conic-gradient/);
   assert.match(css, /border-bottom: 1px solid rgba\(217, 180, 106/);
+  // The hover preview is the muted YouTube embed, click-transparent, with a
+  // CSS-only ramp-in on mount.
+  assert.match(css, /\.bis-preview \{[^}]*pointer-events: none/);
+  assert.match(css, /@keyframes bisPreviewIn/);
+  // Source-app line styles exist.
+  assert.match(css, /\.bis-source \{/);
   // Reduced motion is honoured.
   const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce) {", css.indexOf(".bis-section {")));
   assert.ok(reduced.includes(".bis-card:hover { transform: none; }"));
