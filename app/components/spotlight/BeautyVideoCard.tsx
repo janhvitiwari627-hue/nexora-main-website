@@ -60,6 +60,7 @@ export function BeautyVideoCard({ video, resolveComments }: BeautyVideoCardProps
             <HoverPreview
               url={video.previewUrl}
               active={preview.previewActive}
+              mounted={preview.previewMounted}
               onFailed={preview.markFailed}
             />
             <PlayButton previewing={preview.previewActive} />

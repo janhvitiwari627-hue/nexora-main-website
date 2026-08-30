@@ -3,8 +3,13 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 /*
- * Section header: eyebrow, title, subtitle on the left; the carousel arrows on
- * the right (per the reference layout).
+ * Section header, luxury-editorial style.
+ *
+ * Left: the flanked "THE PROFESSIONAL EDIT" eyebrow (thin champagne hairlines
+ * either side), the large serif headline — "Beauty Industry" in warm ivory,
+ * "Spotlight" in italic champagne — and the refined subtitle.
+ * Right: the two carousel pills, Previous and Next (Next carries the slightly
+ * stronger outlined treatment), aligned with the heading.
  *
  * The arrows are real buttons with honest disabled states: Previous is dead at
  * the first page and Next is dead once the final videos are on screen, so the
@@ -13,10 +18,11 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
  */
 interface SectionHeaderProps {
   eyebrow: string;
-  title: string;
+  /** Lead of the headline, e.g. "Beauty Industry" — warm ivory. */
+  titleLead: string;
+  /** Accent of the headline, e.g. "Spotlight" — italic champagne. */
+  titleAccent: string;
   subtitle: string;
-  /** Total video slots, surfaced as a quiet "N videos" chip. */
-  total: number;
   headingId: string;
   canPrev: boolean;
   canNext: boolean;
@@ -26,9 +32,9 @@ interface SectionHeaderProps {
 
 export function SectionHeader({
   eyebrow,
-  title,
+  titleLead,
+  titleAccent,
   subtitle,
-  total,
   headingId,
   canPrev,
   canNext,
@@ -39,10 +45,14 @@ export function SectionHeader({
     <header className="bis-header">
       <div className="bis-header-copy">
         <span className="bis-eyebrow">
+          <span className="bis-eyebrow-line" aria-hidden="true" />
           {eyebrow}
-          <span className="bis-eyebrow-count">{total} videos</span>
+          <span className="bis-eyebrow-line bis-eyebrow-line--right" aria-hidden="true" />
         </span>
-        <h2 id={headingId}>{title}</h2>
+        <h2 id={headingId}>
+          <span className="bis-title-lead">{titleLead}</span>{" "}
+          <span className="bis-title-accent">{titleAccent}</span>
+        </h2>
         <p className="bis-subtitle">{subtitle}</p>
       </div>
 
@@ -60,7 +70,7 @@ export function SectionHeader({
         </button>
         <button
           type="button"
-          className="bis-arrow"
+          className="bis-arrow bis-arrow--next"
           onClick={onNext}
           disabled={!canNext}
           aria-label="Next videos"

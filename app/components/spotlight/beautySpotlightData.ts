@@ -8,14 +8,18 @@
  * admin-managed table later). Swapping the ten placeholder entries for live
  * rows is a data change only — no component edit.
  *
- * HONEST PLACEHOLDERS
- * The ten slots below are the real partner brands the brief names, but their
- * `thumbnailUrl` / `previewUrl` / `youtubeUrl` are deliberately EMPTY strings.
- * No YouTube URL is invented here: an unconfigured entry renders the branded
- * fallback poster and an honest "link not configured" watch control instead of
- * a click that leads somewhere fabricated. Fill the three URL fields (or pass
- * your own array) and the card immediately gets a lazy poster image, a muted
- * hover preview and a new-tab destination — nothing else changes.
+ * HONEST PLACEHOLDERS + TWO LIVE SHOWCASE SLOTS
+ * Two of the ten slots (beauty-video-001 / -002) are LIVE: they carry real
+ * self-hosted media in `public/spotlight/` (a ~10 s muted cinematic teaser
+ * built for this carousel, plus its poster frame) and their watch link opens
+ * the Nexora app the teaser showcases. The remaining eight slots are the real
+ * partner brands the brief names, but their `thumbnailUrl` / `previewUrl` /
+ * `youtubeUrl` are deliberately EMPTY strings. No YouTube URL is invented
+ * here: an unconfigured entry renders the branded fallback poster and an
+ * honest "link not configured" watch control instead of a click that leads
+ * somewhere fabricated. Fill the three URL fields (or pass your own array)
+ * and the card immediately gets a lazy poster image, a muted hover preview
+ * and a new-tab destination — nothing else changes.
  */
 
 /** Partner tier shown as the top-left pill on every card. */
@@ -62,149 +66,158 @@ export interface BeautySpotlightVideo {
 }
 
 /**
- * The ten slots. Placeholder copy, real structure: each entry carries every
- * field the card renders, so the UI never branches on missing data.
+ * The ten slots. Two live showcase entries + placeholder copy, real structure:
+ * each entry carries every field the card renders, so the UI never branches
+ * on missing data.
+ *
+ * Slots 01–02 are the live Nexora showcase entries (self-hosted media in
+ * `public/spotlight/`, watch link = the app the teaser showcases). Slots 03–10
+ * are the professional-brand editorial lineup: real brands, placeholder demo
+ * copy, each with a self-generated thematic editorial poster AND a short
+ * self-hosted muted preview clip (no brand footage/logos) — and no fabricated
+ * claims. Their watch URLs alone stay empty until an approved one is supplied
+ * for the row: a playing preview never implies a working destination.
  */
 export const BEAUTY_SPOTLIGHT_VIDEOS: readonly BeautySpotlightVideo[] = [
   {
     id: "beauty-video-001",
-    brandName: "Lakmé Salon",
-    title: "The Bridal Glow Ritual",
-    category: "Bridal Beauty",
-    thumbnailUrl: "",
-    previewUrl: "",
-    youtubeUrl: "",
-    duration: "0:45",
+    brandName: "Nexora Luxe",
+    title: "Inside the B2B Beauty Marketplace",
+    category: "Nexora Apps",
+    thumbnailUrl: "/spotlight/nexora-luxe-sourcing.jpg",
+    previewUrl: "/spotlight/nexora-luxe-sourcing.mp4",
+    youtubeUrl: "https://beauty-shop-2.vercel.app/",
+    duration: "00:10",
     badge: "DIAMOND",
-    sponsored: true,
+    sponsored: false,
     likes: 1284,
     comments: 96,
   },
   {
     id: "beauty-video-002",
-    brandName: "Wahl Professional",
-    title: "Precision Clipper Masterclass",
-    category: "Barbering Tools",
-    thumbnailUrl: "",
-    previewUrl: "",
-    youtubeUrl: "",
-    duration: "1:12",
+    brandName: "Nexora Salon",
+    title: "The Salon Glow Ritual, On Demand",
+    category: "Nexora Apps",
+    thumbnailUrl: "/spotlight/nexora-salon-glow.jpg",
+    previewUrl: "/spotlight/nexora-salon-glow.mp4",
+    youtubeUrl: "https://remix-final-salon-app.vercel.app/",
+    duration: "00:10",
     badge: "PLATINUM",
-    sponsored: true,
+    sponsored: false,
     likes: 942,
     comments: 61,
   },
   {
     id: "beauty-video-003",
-    brandName: "L'Oréal Professionnel",
-    title: "Salon-Grade Colour Correction",
-    category: "Hair Colour",
-    thumbnailUrl: "",
-    previewUrl: "",
+    brandName: "Wahl Professional",
+    title: "Fade Fundamentals: Precision Clipper Techniques for Barbers",
+    category: "BARBERING",
+    thumbnailUrl: "/spotlight/vid-barbering.jpg",
+    previewUrl: "/spotlight/vid-barbering.mp4",
     youtubeUrl: "",
-    duration: "2:35",
+    duration: "08:47",
     badge: "DIAMOND",
-    sponsored: false,
-    likes: 2140,
-    comments: 158,
-  },
-  {
-    id: "beauty-video-004",
-    brandName: "Schwarzkopf Professional",
-    title: "Bond Repair for Bleached Hair",
-    category: "Hair Care",
-    thumbnailUrl: "",
-    previewUrl: "",
-    youtubeUrl: "",
-    duration: "1:00",
-    badge: "PLATINUM",
     sponsored: true,
-    likes: 1173,
-    comments: 84,
-  },
-  {
-    id: "beauty-video-005",
-    brandName: "Dyson Beauty",
-    title: "Heat-Control Styling Demo",
-    category: "Styling Tools",
-    thumbnailUrl: "",
-    previewUrl: "",
-    youtubeUrl: "",
-    duration: "4:21",
-    badge: "DIAMOND",
-    sponsored: false,
-    likes: 3208,
+    likes: 9800,
     comments: 241,
   },
   {
-    id: "beauty-video-006",
-    brandName: "Wella Professionals",
-    title: "Balayage Placement Technique",
-    category: "Hair Colour",
-    thumbnailUrl: "",
-    previewUrl: "",
+    id: "beauty-video-004",
+    brandName: "L'Oréal Professionnel",
+    title: "Color Diagnostics: Mastering Dimensional Blondes",
+    category: "HAIR COLOR",
+    thumbnailUrl: "/spotlight/vid-blondes.jpg",
+    previewUrl: "/spotlight/vid-blondes.mp4",
     youtubeUrl: "",
-    duration: "3:08",
+    duration: "12:05",
+    badge: "PLATINUM",
+    sponsored: true,
+    likes: 12400,
+    comments: 389,
+  },
+  {
+    id: "beauty-video-005",
+    brandName: "Schwarzkopf Professional",
+    title: "Bond Architecture: Repairing Lightened Hair",
+    category: "HAIR CARE",
+    thumbnailUrl: "/spotlight/vid-bondcare.jpg",
+    previewUrl: "/spotlight/vid-bondcare.mp4",
+    youtubeUrl: "",
+    duration: "09:58",
     badge: "GOLD",
     sponsored: false,
-    likes: 806,
-    comments: 52,
+    likes: 4120,
+    comments: 167,
+  },
+  {
+    id: "beauty-video-006",
+    brandName: "Dyson Beauty",
+    title: "Heat-Control Styling: The Science of Controlled Airflow",
+    category: "PROFESSIONAL TOOLS",
+    thumbnailUrl: "/spotlight/vid-heattools.jpg",
+    previewUrl: "/spotlight/vid-heattools.mp4",
+    youtubeUrl: "",
+    duration: "14:32",
+    badge: "DIAMOND",
+    sponsored: false,
+    likes: 15300,
+    comments: 512,
   },
   {
     id: "beauty-video-007",
-    brandName: "Olaplex",
-    title: "Bond Building Aftercare Routine",
-    category: "Hair Treatment",
-    thumbnailUrl: "",
-    previewUrl: "",
+    brandName: "Wella Professionals",
+    title: "Balayage Placement: A Dimensional Colour Study",
+    category: "TREND COLLECTIONS",
+    thumbnailUrl: "/spotlight/vid-balayage.jpg",
+    previewUrl: "/spotlight/vid-balayage.mp4",
     youtubeUrl: "",
-    duration: "1:47",
+    duration: "11:19",
     badge: "PLATINUM",
-    sponsored: true,
-    likes: 1655,
-    comments: 133,
+    sponsored: false,
+    likes: 6800,
+    comments: 203,
   },
   {
     id: "beauty-video-008",
-    brandName: "Moroccanoil",
-    title: "Argan Oil Finishing Ritual",
-    category: "Hair Care",
-    thumbnailUrl: "",
-    previewUrl: "",
+    brandName: "Olaplex",
+    title: "Bond Building Science: The Salon Treatment Protocol",
+    category: "SALON EDUCATION",
+    thumbnailUrl: "/spotlight/vid-treatment.jpg",
+    previewUrl: "/spotlight/vid-treatment.mp4",
     youtubeUrl: "",
-    duration: "0:58",
+    duration: "10:44",
     badge: "GOLD",
-    sponsored: false,
-    likes: 731,
-    comments: 47,
+    sponsored: true,
+    likes: 8900,
+    comments: 274,
   },
   {
     id: "beauty-video-009",
-    brandName: "Matrix Professional",
-    title: "Frizz Control Blow-Dry System",
-    category: "Hair Styling",
-    thumbnailUrl: "",
-    previewUrl: "",
+    brandName: "Moroccanoil",
+    title: "The Argan Ritual: Editorial Shine & Finish",
+    category: "HAIR CARE",
+    thumbnailUrl: "/spotlight/vid-argan.jpg",
+    previewUrl: "/spotlight/vid-argan.mp4",
     youtubeUrl: "",
-    duration: "2:12",
-    badge: "PLATINUM",
+    duration: "07:21",
+    badge: "GOLD",
     sponsored: false,
-    likes: 688,
-    comments: 39,
+    likes: 5400,
+    comments: 158,
   },
   {
     id: "beauty-video-010",
-    brandName: "Redken",
-    title: "Acidic Bonding for Coloured Hair",
-    category: "Hair Treatment",
-    thumbnailUrl: "",
-    previewUrl: "",
+    brandName: "Lakmé Salon",
+    title: "The Bridal Glow: Editorial Indian Bridal Beauty",
+    category: "SALON TRENDS",
+    thumbnailUrl: "/spotlight/vid-bridal.jpg",
+    previewUrl: "/spotlight/vid-bridal.mp4",
     youtubeUrl: "",
-    duration: "1:29",
-    badge: "GOLD",
+    duration: "09:12",
+    badge: "DIAMOND",
     sponsored: true,
-    likes: 964,
-    comments: 71,
+    likes: 11200,
+    comments: 346,
   },
 ];
 

@@ -64,7 +64,8 @@ const configuredHtml = renderToStaticMarkup(
 
 test("renders all ten beauty-industry slots in order", () => {
   const expected = [
-    "Lakmé Salon",
+    "Nexora Luxe",
+    "Nexora Salon",
     "Wahl Professional",
     "L'Oréal Professionnel",
     "Schwarzkopf Professional",
@@ -72,11 +73,10 @@ test("renders all ten beauty-industry slots in order", () => {
     "Wella Professionals",
     "Olaplex",
     "Moroccanoil",
-    "Matrix Professional",
-    "Redken",
+    "Lakmé Salon",
   ];
   assert.equal(BEAUTY_SPOTLIGHT_VIDEOS.length, 10);
-  const positions = expected.map((brand) => sectionHtml.indexOf(`>${esc(brand)}</p>`));
+  const positions = expected.map((brand) => sectionHtml.indexOf(`>${esc(brand)}</span>`));
   positions.forEach((position, index) => {
     assert.ok(position > -1, `${expected[index]} must render as a channel byline`);
   });
@@ -87,7 +87,13 @@ test("renders all ten beauty-industry slots in order", () => {
 });
 
 test("section header carries the briefed title, subtitle and arrows", () => {
-  assert.match(sectionHtml, /Beauty Industry Spotlight/);
+  // "Beauty Industry" in ivory, "Spotlight" in italic champagne — two spans,
+  // one serif headline.
+  assert.match(sectionHtml, /class="bis-title-lead">Beauty Industry<\/span>/);
+  assert.match(sectionHtml, /class="bis-title-accent">Spotlight<\/span>/);
+  // The flanked editorial eyebrow.
+  assert.match(sectionHtml, /class="bis-eyebrow-line"/);
+  assert.match(sectionHtml, /The Professional Edit/i);
   assert.match(
     sectionHtml,
     /Discover products, brands and innovations trusted by beauty professionals\./,
@@ -136,8 +142,11 @@ test("SPONSORED is disclosed only where the data says sponsored", () => {
     (sectionHtml.match(/class="bis-sponsored"/g) ?? []).length,
     sponsoredCount,
   );
-  // Unconfigured placeholders keep the branded poster, never a broken image.
-  assert.equal((sectionHtml.match(/class="bis-poster /g) ?? []).length, 10);
+  // Unconfigured placeholders keep the branded fallback, never a broken image.
+  // All ten slots ship real self-hosted editorial posters, so the branded
+  // fallback poster appears in SSR markup nowhere (it remains the on-error
+  // path in the browser).
+  assert.equal((sectionHtml.match(/class="bis-poster /g) ?? []).length, 0);
 });
 
 test("channel, title and category all render from the data row", () => {
@@ -146,6 +155,10 @@ test("channel, title and category all render from the data row", () => {
   assert.ok(sectionHtml.includes(`>${first.category}</p>`), "category renders");
   assert.match(sectionHtml, /class="bis-title"/);
   assert.match(sectionHtml, /class="bis-category"/);
+  // Channel identity: circular avatar with the brand monogram + tiny seal.
+  assert.match(sectionHtml, /class="bis-channel"/);
+  assert.match(sectionHtml, /class="bis-avatar bis-avatar--\w+"/);
+  assert.match(sectionHtml, /class="bis-verified"/);
 });
 
 /* ── Accessibility labels ────────────────────────────────────────────────── */
@@ -171,21 +184,68 @@ test("every interactive control has the briefed accessible label", () => {
 /* ── External navigation policy ──────────────────────────────────────────── */
 
 test("an unconfigured video never invents a destination", () => {
-  assert.equal(BEAUTY_SPOTLIGHT_VIDEOS.every((v) => v.youtubeUrl === ""), true);
-  // No fabricated YouTube URL anywhere in the shipped placeholder markup.
+  // The eight placeholder slots stay empty; the two live showcase slots each
+  // carry a safe absolute https destination (the Nexora app they showcase).
+  const live = BEAUTY_SPOTLIGHT_VIDEOS.filter((v) => v.youtubeUrl !== "");
+  const placeholders = BEAUTY_SPOTLIGHT_VIDEOS.filter((v) => v.youtubeUrl === "");
+  assert.equal(live.length, 2);
+  assert.equal(placeholders.length, 8);
+  for (const video of live) {
+    assert.equal(safeExternalUrl(video.youtubeUrl), video.youtubeUrl);
+    assert.match(video.youtubeUrl, /^https:\/\/[\w.-]+\.vercel\.app\/$/);
+  }
+  // No fabricated YouTube URL anywhere in the shipped markup.
   assert.doesNotMatch(sectionHtml, /youtube\.com/i);
   assert.doesNotMatch(sectionHtml, /youtu\.be/i);
   assert.match(sectionHtml, /video link not configured yet/);
-  // Every watch control renders as a disabled button, not a live anchor.
-  assert.equal((sectionHtml.match(/<a class="bis-thumb-link"/g) ?? []).length, 0);
+  // Live slots render real anchors; the eight placeholders stay disabled buttons.
+  assert.equal((sectionHtml.match(/<a class="bis-thumb-link"/g) ?? []).length, 2);
   assert.equal(
     (sectionHtml.match(/class="bis-thumb-link bis-thumb-link--unavailable"/g) ?? []).length,
-    10,
+    8,
   );
   assert.equal(
     (sectionHtml.match(/disabled="" aria-disabled="true"/g) ?? []).length,
-    20, // thumbnail control + title control, per card
+    16, // thumbnail control + title control, per unconfigured card
   );
+});
+
+test("every slot ships a dedicated local preview clip; destinations stay honest", () => {
+  // Hover previews never depend on the watch URL: every card carries its own
+  // short self-hosted muted clip.
+  for (const video of BEAUTY_SPOTLIGHT_VIDEOS) {
+    assert.match(
+      video.previewUrl,
+      /^\/spotlight\/[\w-]+\.mp4$/,
+      `${video.brandName} must carry a local preview clip`,
+    );
+  }
+  // Only the two Nexora showcase slots carry live destinations.
+  const live = BEAUTY_SPOTLIGHT_VIDEOS.filter((v) => v.youtubeUrl !== "");
+  assert.equal(live.length, 2);
+  for (const video of live) {
+    assert.match(video.thumbnailUrl, /^\/spotlight\/.+\.jpg$/);
+    assert.equal(safeExternalUrl(video.youtubeUrl), video.youtubeUrl);
+  }
+  // The rendered markup actually references both showcase posters.
+  assert.match(sectionHtml, /src="\/spotlight\/nexora-luxe-sourcing\.jpg"/);
+  assert.match(sectionHtml, /src="\/spotlight\/nexora-salon-glow\.jpg"/);
+});
+
+test("every slot ships a real self-hosted editorial poster", () => {
+  for (const video of BEAUTY_SPOTLIGHT_VIDEOS) {
+    assert.match(
+      video.thumbnailUrl,
+      /^\/spotlight\/[\w-]+\.jpg$/,
+      `${video.brandName} must carry a local poster`,
+    );
+    assert.ok(
+      sectionHtml.includes(`src="${video.thumbnailUrl}"`),
+      `${video.brandName} poster must render`,
+    );
+  }
+  // Ten lazy, async-decoded posters — one per card.
+  assert.equal((sectionHtml.match(/loading="lazy"/g) ?? []).length, 10);
 });
 
 test("a configured video opens in a new tab with a hardened rel", () => {
@@ -291,6 +351,14 @@ test("globals.css carries the section's responsive and motion contract", async (
   assert.match(css, /scroll-snap-type: x mandatory/);
   // Dark theme (the site default) must cover the section.
   assert.match(css, /html\.dark \.bis-section \{/);
+  // Luxury editorial tokens: near-black stage, champagne accent, italic serif accent.
+  assert.match(css, /--bis-stage: #161210/);
+  assert.match(css, /--bis-accent: #d9b46a/);
+  assert.match(css, /\.bis-title-accent \{\s*\n?\s*font-style: italic/);
+  // Flanked eyebrow hairlines + the starburst backdrop + the closing divider.
+  assert.match(css, /\.bis-eyebrow-line \{/);
+  assert.match(css, /repeating-conic-gradient/);
+  assert.match(css, /border-bottom: 1px solid rgba\(217, 180, 106/);
   // Reduced motion is honoured.
   const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce) {", css.indexOf(".bis-section {")));
   assert.ok(reduced.includes(".bis-card:hover { transform: none; }"));
